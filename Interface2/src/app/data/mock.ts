@@ -1,0 +1,775 @@
+import type { Operador, Operacao, GrupoArtigo, ConfiguracaoLayout, PostoTrabalho, RestricaoProximidade, Maquina } from "../types";
+
+export const operadoresMock: Operador[] = [
+  {
+    id: "ID001",
+    competencias: {
+      "POL_1": { operacao: "Fechar vista", ole: 94 },
+      "POL_2": { operacao: "Virar", ole: 91 },
+      "POL_3": { operacao: "Apontar vista", ole: 90 },
+      "POL_4": { operacao: "Pregar presilhas", ole: 93 },
+      "POL_5": { operacao: "Meter elástico", ole: 92 },
+      "POL_6": { operacao: "Apontar bainhas", ole: 89 },
+      "POL_7": null,
+      "POL_8": null,
+    },
+    oleHistorico: 92,
+    competenciasPorGrupo: {
+      "GRUPO001": 91,
+      "GRUPO002": 88,
+      "GRUPO003": 85,
+      "GRUPO004": 89,
+      "GRUPO005": 90,
+    },
+  },
+  {
+    id: "ID002",
+    competencias: {
+      "POL_1": { operacao: "Virar", ole: 90 },
+      "POL_2": { operacao: "Apontar vista", ole: 88 },
+      "POL_3": { operacao: "Fechar vista", ole: 87 },
+      "POL_4": { operacao: "Meter elástico", ole: 91 },
+      "POL_5": { operacao: "Pregar presilhas", ole: 89 },
+      "POL_6": { operacao: "Pregar ens. exterior", ole: 86 },
+      "POL_7": { operacao: "Unir gotas", ole: 88 },
+      "POL_8": null,
+    },
+    oleHistorico: 89,
+    competenciasPorGrupo: {
+      "GRUPO001": 89,
+      "GRUPO002": 87,
+      "GRUPO003": 82,
+      "GRUPO004": 85,
+      "GRUPO005": 91,
+    },
+  },
+  {
+    id: "ID003",
+    competencias: {
+      "POL_1": { operacao: "Pregar presilhas", ole: 88 },
+      "POL_2": { operacao: "Meter elástico", ole: 90 },
+      "POL_3": { operacao: "Pregar etiqueta", ole: 85 },
+      "POL_4": { operacao: "Fechar vista", ole: 84 },
+      "POL_5": { operacao: "Virar", ole: 87 },
+      "POL_6": { operacao: "Pressionar etiquetas", ole: 89 },
+      "POL_7": { operacao: "Unir etiquetas", ole: 86 },
+      "POL_8": null,
+    },
+    oleHistorico: 87,
+    competenciasPorGrupo: {
+      "GRUPO001": 86,
+      "GRUPO002": 88,
+      "GRUPO003": 90,
+      "GRUPO004": 87,
+      "GRUPO005": 84,
+    },
+  },
+  {
+    id: "ID004",
+    competencias: {
+      "POL_1": { operacao: "Apontar vista", ole: 93 },
+      "POL_2": { operacao: "Fechar vista", ole: 92 },
+      "POL_3": { operacao: "Virar", ole: 91 },
+      "POL_4": { operacao: "Pregar gola", ole: 90 },
+      "POL_5": { operacao: "Pregar presilhas", ole: 89 },
+      "POL_6": { operacao: "Meter elástico", ole: 92 },
+      "POL_7": { operacao: "Dar 2 pontadas", ole: 88 },
+      "POL_8": { operacao: "Unir etiquetas laterais", ole: 91 },
+    },
+    oleHistorico: 91,
+    competenciasPorGrupo: {
+      "GRUPO001": 92,
+      "GRUPO002": 91,
+      "GRUPO003": 89,
+      "GRUPO004": 90,
+      "GRUPO005": 88,
+    },
+  },
+  {
+    id: "ID005",
+    competencias: {
+      "POL_1": { operacao: "Pregar etiquetas laterais", ole: 87 },
+      "POL_2": { operacao: "Pregar etiquetas nas gangas", ole: 89 },
+      "POL_3": { operacao: "Pregar presilhas", ole: 90 },
+      "POL_4": { operacao: "Fechar vista", ole: 88 },
+      "POL_5": { operacao: "Virar", ole: 86 },
+      "POL_6": { operacao: "Fechar lateral", ole: 85 },
+      "POL_7": null,
+      "POL_8": null,
+    },
+    oleHistorico: 88,
+    competenciasPorGrupo: {
+      "GRUPO001": 87,
+      "GRUPO002": 84,
+      "GRUPO003": 88,
+      "GRUPO004": 86,
+      "GRUPO005": 89,
+    },
+  },
+  {
+    id: "ID006",
+    competencias: {
+      "POL_1": { operacao: "Meter elástico", ole: 85 },
+      "POL_2": { operacao: "Pregar presilhas", ole: 84 },
+      "POL_3": { operacao: "Apontar vista", ole: 82 },
+      "POL_4": { operacao: "Virar", ole: 81 },
+      "POL_5": { operacao: "Colocar elástico no fundo", ole: 86 },
+      "POL_6": { operacao: "Unir gotas ens", ole: 80 },
+      "POL_7": { operacao: "Fechar vista", ole: 83 },
+      "POL_8": { operacao: "Pregar etiquetas na fazenda", ole: 84 },
+    },
+    oleHistorico: 83,
+    competenciasPorGrupo: {
+      "GRUPO001": 83,
+      "GRUPO002": 80,
+      "GRUPO003": 85,
+      "GRUPO004": 81,
+      "GRUPO005": 87,
+    },
+  },
+  {
+    id: "ID007",
+    competencias: {
+      "POL_1": { operacao: "Pregar etiquetas no forro e na cinta", ole: 88 },
+      "POL_2": { operacao: "Pregar gola", ole: 86 },
+      "POL_3": { operacao: "Pregar etiquetas na fazenda", ole: 85 },
+      "POL_4": { operacao: "Dar 2 pontadas", ole: 84 },
+      "POL_5": { operacao: "Unir etiquetas laterais", ole: 83 },
+      "POL_6": null,
+      "POL_7": null,
+      "POL_8": null,
+    },
+    oleHistorico: 85,
+    competenciasPorGrupo: {
+      "GRUPO001": 85,
+      "GRUPO002": 86,
+      "GRUPO003": 82,
+      "GRUPO004": 88,
+      "GRUPO005": 83,
+    },
+  },
+  {
+    id: "ID008",
+    competencias: {
+      "POL_1": { operacao: "Fechar lateral", ole: 88 },
+      "POL_2": { operacao: "Colocar elástico no fundo", ole: 87 },
+      "POL_3": { operacao: "Pregar etiquetas laterais", ole: 86 },
+      "POL_4": { operacao: "Unir gotas", ole: 85 },
+      "POL_5": { operacao: "Unir gotas ens", ole: 84 },
+      "POL_6": { operacao: "Pregar ens. exterior", ole: 83 },
+      "POL_7": null,
+      "POL_8": null,
+    },
+    oleHistorico: 94,
+    competenciasPorGrupo: {
+      "GRUPO001": 86,
+      "GRUPO002": 89,
+      "GRUPO003": 87,
+      "GRUPO004": 84,
+      "GRUPO005": 92,
+    },
+  },
+];
+
+export const operacoesMock: Operacao[] = [
+  {
+    id: "OP1",
+    nome: "Fechar vista",
+    tipoMaquina: "P/P1",
+    tipoMaquina2: "P/P2 2 agulhas",
+    largura: 190,
+    ponto: "301",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 0.75, // 45 segundos
+    sequencia: 1,
+  },
+  {
+    id: "OP2",
+    nome: "Virar",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 0.82, // 49 segundos
+    sequencia: 2,
+  },
+  {
+    id: "OP3",
+    nome: "Apontar vista",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 1.08, // 65 segundos
+    sequencia: 3,
+  },
+  {
+    id: "OP4",
+    nome: "Pregar presilhas",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Presilhas",
+    permitirAgrupamento: false, // Setup diferente - não agrupar
+    tempo: 1.20, // 72 segundos
+    sequencia: 4,
+  },
+  {
+    id: "OP5",
+    nome: "Meter elástico",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Elástico",
+    permitirAgrupamento: false, // Setup diferente - não agrupar
+    tempo: 0.45, // 27 segundos
+    sequencia: 5,
+  },
+  {
+    id: "OP6",
+    nome: "Apontar bainhas",
+    tipoMaquina: "P/P2 2 agulhas",
+    largura: 254,
+    ponto: "401",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 1.50, // 90 segundos
+    sequencia: 6,
+  },
+  {
+    id: "OP7",
+    nome: "Pregar ens. exterior",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 0.80, // 48 segundos
+    sequencia: 7,
+  },
+  {
+    id: "OP8",
+    nome: "Unir gotas",
+    tipoMaquina: "P/C N flat lock",
+    largura: 320,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 0.90, // 54 segundos
+    sequencia: 8,
+  },
+  {
+    id: "OP9",
+    nome: "Unir gotas ens",
+    tipoMaquina: "P/C N flat lock",
+    largura: 320,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 0.90, // 54 segundos
+    sequencia: 9,
+  },
+  {
+    id: "OP10",
+    nome: "Pregar etiqueta",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Etiqueta",
+    permitirAgrupamento: false, // Setup específico
+    tempo: 0.70, // 42 segundos
+    sequencia: 10,
+  },
+  {
+    id: "OP11",
+    nome: "Pressionar etiquetas",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 0.80, // 48 segundos
+    sequencia: 11,
+  },
+  {
+    id: "OP12",
+    nome: "Unir etiquetas",
+    tipoMaquina: "P/C N flat lock",
+    largura: 320,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 0.80, // 48 segundos
+    sequencia: 12,
+  },
+  {
+    id: "OP13",
+    nome: "Pregar etiquetas no forro e na cinta",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Etiqueta dupla",
+    permitirAgrupamento: false, // Setup específico
+    tempo: 1.00, // 60 segundos
+    sequencia: 13,
+  },
+  {
+    id: "OP14",
+    nome: "Pregar gola",
+    tipoMaquina: "P/C N flat lock",
+    largura: 320,
+    ponto: "605",
+    setup: "Gola",
+    permitirAgrupamento: false, // Setup específico
+    tempo: 1.08, // 65 segundos
+    sequencia: 14,
+  },
+  {
+    id: "OP15",
+    nome: "Pregar etiquetas na fazenda",
+    tipoMaquina: "P/C N flat lock",
+    largura: 320,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 2.72, // 163 segundos
+    sequencia: 15,
+  },
+  {
+    id: "OP16",
+    nome: "Dar 2 pontadas",
+    tipoMaquina: "P/P1",
+    largura: 190,
+    ponto: "301",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 0.70, // 42 segundos
+    sequencia: 16,
+  },
+  {
+    id: "OP17",
+    nome: "Unir etiquetas laterais",
+    tipoMaquina: "P/C N flat lock",
+    largura: 320,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 1.63, // 98 segundos
+    sequencia: 17,
+  },
+  {
+    id: "OP18",
+    nome: "Pregar etiquetas laterais",
+    tipoMaquina: "P/C N flat lock",
+    largura: 320,
+    ponto: "605",
+    setup: "Etiqueta lateral",
+    permitirAgrupamento: false, // Setup específico
+    tempo: 4.02, // 241 segundos
+    sequencia: 18,
+  },
+  {
+    id: "OP19",
+    nome: "Pregar etiquetas nas gangas",
+    tipoMaquina: "P/C N flat lock",
+    largura: 320,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 1.33, // 80 segundos
+    sequencia: 19,
+  },
+  {
+    id: "OP20",
+    nome: "Fechar lateral",
+    tipoMaquina: "P/C N flat lock",
+    largura: 380,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    tempo: 4.03, // 242 segundos
+    sequencia: 20,
+  },
+  {
+    id: "OP21",
+    nome: "Colocar elástico no fundo",
+    tipoMaquina: "P/C 4 presilhas",
+    largura: 254,
+    ponto: "516",
+    setup: "Presilhas",
+    permitirAgrupamento: true,
+    tempo: 1.38, // 83 segundos
+    sequencia: 21,
+  },
+];
+
+export const produtosMock: GrupoArtigo[] = [
+  {
+    id: "GRUPO001",
+    nome: "Calças",
+    referencia: "GA-CALCAS",
+    cliente: "Diversos",
+    descricao: "Grupo de artigos: Calças (ganga, chino, cargo, social, etc.)",
+    operacoes: [...operacoesMock],
+    dataCriacao: "2026-01-15",
+    dataModificacao: "2026-03-01",
+  },
+  {
+    id: "GRUPO002",
+    nome: "Camisolas",
+    referencia: "GA-CAMISOLAS",
+    cliente: "Diversos",
+    descricao: "Grupo de artigos: Camisolas, t-shirts, polos, etc.",
+    operacoes: [
+      { id: "OP1", nome: "Fechar ombros", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 0.55, sequencia: 1 },
+      { id: "OP2", nome: "Pregar gola", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Gola", permitirAgrupamento: false, tempo: 0.85, sequencia: 2 },
+      { id: "OP3", nome: "Pregar mangas", tipoMaquina: "P/P2 2 agulhas", largura: 254, ponto: "401", setup: "Standard", permitirAgrupamento: true, tempo: 1.20, sequencia: 3 },
+      { id: "OP4", nome: "Fechar laterais", tipoMaquina: "P/C N flat lock", largura: 320, ponto: "605", setup: "Standard", permitirAgrupamento: true, tempo: 0.95, sequencia: 4 },
+      { id: "OP5", nome: "Bainha manga", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 0.40, sequencia: 5 },
+      { id: "OP6", nome: "Bainha corpo", tipoMaquina: "P/P2 2 agulhas", largura: 254, ponto: "401", setup: "Standard", permitirAgrupamento: true, tempo: 0.75, sequencia: 6 },
+      { id: "OP7", nome: "Pregar etiqueta", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Etiqueta", permitirAgrupamento: false, tempo: 0.35, sequencia: 7 },
+      { id: "OP8", nome: "Acabamentos", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 0.50, sequencia: 8 },
+    ],
+    dataCriacao: "2026-02-10",
+    dataModificacao: "2026-03-05",
+  },
+  {
+    id: "GRUPO003",
+    nome: "Casacos",
+    referencia: "GA-CASACOS",
+    cliente: "Diversos",
+    descricao: "Grupo de artigos: Casacos, jaquetas, blazers, etc.",
+    operacoes: [
+      { id: "OP1", nome: "Fechar ombros", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 0.70, sequencia: 1 },
+      { id: "OP2", nome: "Pregar gola e lapela", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Gola+Lapela", permitirAgrupamento: false, tempo: 2.10, sequencia: 2 },
+      { id: "OP3", nome: "Pregar mangas", tipoMaquina: "P/P2 2 agulhas", largura: 254, ponto: "401", setup: "Standard", permitirAgrupamento: true, tempo: 1.80, sequencia: 3 },
+      { id: "OP4", nome: "Fechar laterais", tipoMaquina: "P/C N flat lock", largura: 320, ponto: "605", setup: "Standard", permitirAgrupamento: true, tempo: 1.40, sequencia: 4 },
+      { id: "OP5", nome: "Pregar forro", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Forro", permitirAgrupamento: false, tempo: 2.50, sequencia: 5 },
+      { id: "OP6", nome: "Pregar bolsos", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Bolsos", permitirAgrupamento: false, tempo: 1.90, sequencia: 6 },
+      { id: "OP7", nome: "Colocar fecho/botões", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Fecho", permitirAgrupamento: false, tempo: 1.30, sequencia: 7 },
+      { id: "OP8", nome: "Acabamentos", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 1.10, sequencia: 8 },
+      { id: "OP9", nome: "Pregar etiqueta", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Etiqueta", permitirAgrupamento: false, tempo: 0.40, sequencia: 9 },
+    ],
+    dataCriacao: "2026-03-01",
+    dataModificacao: "2026-03-08",
+  },
+  {
+    id: "GRUPO004",
+    nome: "Vestidos",
+    referencia: "GA-VESTIDOS",
+    cliente: "Diversos",
+    descricao: "Grupo de artigos: Vestidos, saias, etc.",
+    operacoes: [
+      { id: "OP1", nome: "Fechar ombros", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 0.50, sequencia: 1 },
+      { id: "OP2", nome: "Pregar decote", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Decote", permitirAgrupamento: false, tempo: 0.95, sequencia: 2 },
+      { id: "OP3", nome: "Fechar laterais", tipoMaquina: "P/C N flat lock", largura: 320, ponto: "605", setup: "Standard", permitirAgrupamento: true, tempo: 1.10, sequencia: 3 },
+      { id: "OP4", nome: "Pregar fecho", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Fecho", permitirAgrupamento: false, tempo: 1.40, sequencia: 4 },
+      { id: "OP5", nome: "Bainha", tipoMaquina: "P/P2 2 agulhas", largura: 254, ponto: "401", setup: "Standard", permitirAgrupamento: true, tempo: 1.60, sequencia: 5 },
+      { id: "OP6", nome: "Pregar cinto", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Cinto", permitirAgrupamento: false, tempo: 0.80, sequencia: 6 },
+      { id: "OP7", nome: "Pregar etiqueta", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Etiqueta", permitirAgrupamento: false, tempo: 0.35, sequencia: 7 },
+      { id: "OP8", nome: "Acabamentos", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 0.65, sequencia: 8 },
+    ],
+    dataCriacao: "2026-02-20",
+    dataModificacao: "2026-03-10",
+  },
+  {
+    id: "GRUPO005",
+    nome: "Roupa Interior",
+    referencia: "GA-INTERIOR",
+    cliente: "Diversos",
+    descricao: "Grupo de artigos: Roupa interior, lingerie, etc.",
+    operacoes: [
+      { id: "OP1", nome: "Fechar laterais", tipoMaquina: "P/C N flat lock", largura: 320, ponto: "605", setup: "Standard", permitirAgrupamento: true, tempo: 0.45, sequencia: 1 },
+      { id: "OP2", nome: "Pregar elástico cintura", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Elástico", permitirAgrupamento: false, tempo: 0.70, sequencia: 2 },
+      { id: "OP3", nome: "Pregar elástico pernas", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Elástico", permitirAgrupamento: false, tempo: 0.85, sequencia: 3 },
+      { id: "OP4", nome: "Unir frente/trás", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 0.50, sequencia: 4 },
+      { id: "OP5", nome: "Pregar renda", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Renda", permitirAgrupamento: false, tempo: 0.95, sequencia: 5 },
+      { id: "OP6", nome: "Pregar etiqueta", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Etiqueta", permitirAgrupamento: false, tempo: 0.30, sequencia: 6 },
+      { id: "OP7", nome: "Acabamentos", tipoMaquina: "P/P1", largura: 190, ponto: "301", setup: "Standard", permitirAgrupamento: true, tempo: 0.40, sequencia: 7 },
+    ],
+    dataCriacao: "2026-01-25",
+    dataModificacao: "2026-03-12",
+  },
+];
+
+export const gruposArtigoMock = produtosMock;
+
+// Configuração de layout padrão (espinha com 8 postos por lado)
+const gerarPostosEspinha = (): PostoTrabalho[] => {
+  const postos: PostoTrabalho[] = [];
+  
+  // Lado A (8 postos)
+  for (let i = 1; i <= 8; i++) {
+    postos.push({
+      id: `POSTO_A${i}`,
+      numero: i,
+      lado: "A",
+      operacaoId: null,
+      tipoMaquina: null,
+      operadorId: null,
+      posicaoX: i,
+      posicaoY: 1,
+    });
+  }
+  
+  // Lado B (8 postos)
+  for (let i = 1; i <= 8; i++) {
+    postos.push({
+      id: `POSTO_B${i}`,
+      numero: i + 8,
+      lado: "B",
+      operacaoId: null,
+      tipoMaquina: null,
+      operadorId: null,
+      posicaoX: i,
+      posicaoY: 3,
+    });
+  }
+  
+  return postos;
+};
+
+const gerarPostosLinha = (numPostos: number = 8): PostoTrabalho[] => {
+  const postos: PostoTrabalho[] = [];
+  
+  for (let i = 1; i <= numPostos; i++) {
+    postos.push({
+      id: `POSTO_${i}`,
+      numero: i,
+      operacaoId: null,
+      tipoMaquina: null,
+      operadorId: null,
+      posicaoX: i,
+      posicaoY: 1,
+    });
+  }
+  
+  return postos;
+};
+
+export const layoutPadraoEspinha: ConfiguracaoLayout = {
+  tipo: "espinha",
+  postosPorLado: 8,
+  distanciaMaxima: 3, // operador pode avançar/regressar até 3 postos
+  permitirRetrocesso: true,
+  postos: gerarPostosEspinha(),
+  restricoesProximidade: [
+    {
+      id: "REST001",
+      tipoMaquina1: "P/P1",
+      tipoMaquina2: "P/P2 2 agulhas",
+      distanciaMaxima: 2,
+      obrigatoria: false,
+      motivo: "Sequência de operações similar - facilita fluxo",
+    },
+    {
+      id: "REST002",
+      tipoMaquina1: "P/C N flat lock",
+      tipoMaquina2: "P/C N flat lock",
+      distanciaMaxima: 3,
+      obrigatoria: false,
+      motivo: "Agrupar máquinas do mesmo tipo",
+    },
+    {
+      id: "REST003",
+      tipoMaquina1: "P/C 4 presilhas",
+      tipoMaquina2: "P/C N flat lock",
+      distanciaMaxima: 1,
+      obrigatoria: true,
+      motivo: "Transferência de material pesado - obrigatório proximidade",
+    },
+  ],
+};
+
+export const layoutPadraoLinha: ConfiguracaoLayout = {
+  tipo: "linha",
+  postosPorLado: 8,
+  distanciaMaxima: 2,
+  permitirRetrocesso: false, // em linha geralmente não permite retrocesso
+  postos: gerarPostosLinha(8),
+  restricoesProximidade: [
+    {
+      id: "REST001",
+      tipoMaquina1: "P/P1",
+      tipoMaquina2: "P/P2 2 agulhas",
+      distanciaMaxima: 2,
+      obrigatoria: false,
+      motivo: "Sequência de operações similar",
+    },
+  ],
+};
+
+// Catálogo de Máquinas Disponíveis
+export const maquinasMock: Maquina[] = [
+  {
+    id: "MAQ001",
+    tipo: "P/P1",
+    fabricante: "Juki",
+    modelo: "DDL-8700",
+    largura: 190,
+    ponto: "301",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    quantidade: 6,
+    operacoesCompativeis: [
+      "Fechar vista",
+      "Virar",
+      "Apontar vista",
+      "Pregar ens. exterior",
+      "Pressionar etiquetas",
+      "Dar 2 pontadas",
+    ],
+    ativa: true,
+    observacoes: "Máquinas de ponto fixo standard para operações gerais",
+  },
+  {
+    id: "MAQ002",
+    tipo: "P/P1",
+    fabricante: "Juki",
+    modelo: "DDL-8700",
+    largura: 190,
+    ponto: "301",
+    setup: "Presilhas",
+    permitirAgrupamento: false,
+    quantidade: 2,
+    operacoesCompativeis: ["Pregar presilhas"],
+    ativa: true,
+    observacoes: "Máquina dedicada para pregar presilhas - setup específico",
+  },
+  {
+    id: "MAQ003",
+    tipo: "P/P1",
+    fabricante: "Juki",
+    modelo: "DDL-8700",
+    largura: 190,
+    ponto: "301",
+    setup: "Elástico",
+    permitirAgrupamento: false,
+    quantidade: 2,
+    operacoesCompativeis: ["Meter elástico"],
+    ativa: true,
+    observacoes: "Máquina dedicada para aplicação de elástico",
+  },
+  {
+    id: "MAQ004",
+    tipo: "P/P1",
+    fabricante: "Juki",
+    modelo: "DDL-8700",
+    largura: 190,
+    ponto: "301",
+    setup: "Etiqueta",
+    permitirAgrupamento: false,
+    quantidade: 1,
+    operacoesCompativeis: ["Pregar etiqueta"],
+    ativa: true,
+    observacoes: "Máquina dedicada para pregar etiquetas simples",
+  },
+  {
+    id: "MAQ005",
+    tipo: "P/P1",
+    fabricante: "Juki",
+    modelo: "DDL-8700",
+    largura: 190,
+    ponto: "301",
+    setup: "Etiqueta dupla",
+    permitirAgrupamento: false,
+    quantidade: 1,
+    operacoesCompativeis: ["Pregar etiquetas no forro e na cinta"],
+    ativa: true,
+    observacoes: "Setup específico para etiquetas duplas",
+  },
+  {
+    id: "MAQ006",
+    tipo: "P/P2 2 agulhas",
+    fabricante: "Juki",
+    modelo: "LH-3528A",
+    largura: 254,
+    ponto: "401",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    quantidade: 3,
+    operacoesCompativeis: ["Apontar bainhas"],
+    ativa: true,
+    observacoes: "Máquina de 2 agulhas para bainhas e costuras paralelas",
+  },
+  {
+    id: "MAQ007",
+    tipo: "P/C N flat lock",
+    fabricante: "Pegasus",
+    modelo: "W562",
+    largura: 320,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    quantidade: 4,
+    operacoesCompativeis: [
+      "Unir gotas",
+      "Unir gotas ens",
+      "Unir etiquetas",
+      "Pregar etiquetas na fazenda",
+      "Unir etiquetas laterais",
+      "Pregar etiquetas nas gangas",
+    ],
+    ativa: true,
+    observacoes: "Flat lock para uniões e costuras decorativas",
+  },
+  {
+    id: "MAQ008",
+    tipo: "P/C N flat lock",
+    fabricante: "Pegasus",
+    modelo: "W562",
+    largura: 320,
+    ponto: "605",
+    setup: "Gola",
+    permitirAgrupamento: false,
+    quantidade: 1,
+    operacoesCompativeis: ["Pregar gola"],
+    ativa: true,
+    observacoes: "Flat lock dedicada para aplicação de gola",
+  },
+  {
+    id: "MAQ009",
+    tipo: "P/C N flat lock",
+    fabricante: "Pegasus",
+    modelo: "W562",
+    largura: 320,
+    ponto: "605",
+    setup: "Etiqueta lateral",
+    permitirAgrupamento: false,
+    quantidade: 1,
+    operacoesCompativeis: ["Pregar etiquetas laterais"],
+    ativa: true,
+    observacoes: "Setup específico para etiquetas laterais",
+  },
+  {
+    id: "MAQ010",
+    tipo: "P/C N flat lock",
+    fabricante: "Pegasus",
+    modelo: "W662",
+    largura: 380,
+    ponto: "605",
+    setup: "Standard",
+    permitirAgrupamento: true,
+    quantidade: 2,
+    operacoesCompativeis: ["Fechar lateral"],
+    ativa: true,
+    observacoes: "Flat lock de largura maior para fechos laterais",
+  },
+  {
+    id: "MAQ011",
+    tipo: "P/C 4 presilhas",
+    fabricante: "Kansai Special",
+    modelo: "DFB-1404P",
+    largura: 254,
+    ponto: "516",
+    setup: "Presilhas",
+    permitirAgrupamento: true,
+    quantidade: 2,
+    operacoesCompativeis: ["Colocar elástico no fundo"],
+    ativa: true,
+    observacoes: "Máquina especializada para aplicação de elástico com 4 presilhas",
+  },
+];
