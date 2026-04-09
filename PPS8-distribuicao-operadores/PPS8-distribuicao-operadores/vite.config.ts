@@ -21,7 +21,7 @@ const figmaAssetFallback = {
 }
 
 export default defineConfig({
-  base: '/texpact-wp3-pps8-operators/',
+  base: '/texpact-wp2-pps8-operators/',
   plugins: [
     figmaAssetFallback,
     react(),

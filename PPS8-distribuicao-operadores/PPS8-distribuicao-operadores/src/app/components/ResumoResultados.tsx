@@ -90,8 +90,8 @@ export function ResumoResultados({ resultados, config }: ResumoResultadosProps) 
     },
     {
       label: 'Perdas',
-      value: resultados.perdas.toFixed(1),
-      unit: '%',
+      value: isNaN(resultados.perdas) ? '-' : resultados.perdas.toFixed(1),
+      unit: isNaN(resultados.perdas) ? '' : '%',
       bgColor: 'bg-[#fef3c6]',
       iconColor: '#E17100',
       icon: (

@@ -11,6 +11,7 @@ import { operacoesMock, produtosMock } from "../data/mock";
 import { calcularBalanceamento } from "../utils/balanceamento";
 import { salvarHistorico, obterHistorico } from "../utils/historico";
 import { useStorage } from "../contexts/StorageContext";
+import axios from "axios";
 import {
   Select,
   SelectContent,
@@ -285,13 +286,108 @@ export default function Home() {
         operadoresSelecionados.includes(op.id)
       );
 
-      if (operadoresDisponiveis.length === 0) {
+      if (config.possibilidade !== 4 && operadoresDisponiveis.length === 0) {
         alert("Por favor, selecione pelo menos um operador.");
         return;
       }
 
       if (operacoes.length === 0) {
         alert("Por favor, selecione um produto com operações.");
+        return;
+      }
+
+      // ── Modo Custom (possibilidade 4): usar API allocate-custom ─────────────
+      if (config.possibilidade === 4) {
+        const assignments: {
+          machine_name: string;
+          operation_code: string;
+          operation_name: string;
+          operator_id: string;
+          time_seconds: number;
+        }[] = [];
+
+        for (const op of operacoesManual) {
+          const operadoresAtribuidos = atribuicoesManual[op.id] || [];
+          if (operadoresAtribuidos.length > 0) {
+            for (const operadorId of operadoresAtribuidos) {
+              assignments.push({
+                machine_name: op.tipoMaquina || "",
+                operation_code: op.id,
+                operation_name: op.nome,
+                operator_id: operadorId,
+                time_seconds: op.tempo * 60,
+              });
+            }
+          } else {
+            assignments.push({
+              machine_name: op.tipoMaquina || "",
+              operation_code: op.id,
+              operation_name: op.nome,
+              operator_id: "",
+              time_seconds: op.tempo * 60,
+            });
+          }
+        }
+
+        const taskCode = grupoArtigoSelecionado || "custom";
+        const resposta = await axios.post(
+          `http://192.168.54.202:7860/api/tasks/${taskCode}/allocate-custom`,
+          { assignments }
+        );
+        const r = resposta.data;
+
+        // Mapear resposta da API para ResultadosBalanceamento
+        const taktTime = (r.takt_time != null ? r.takt_time / 60 : (r.taktTime ?? 0));
+        const tempoCiclo = r.real_cycle_time_seconds != null ? r.real_cycle_time_seconds / 60 : (r.cycle_time ?? r.tempoCiclo ?? 0);
+        const numeroCiclosPorHora = r.production_per_hour ?? (tempoCiclo > 0 ? 60 / tempoCiclo : 0);
+        const produtividade = r.estimated_productivity ?? 0;
+        const perdas = NaN; // não disponível neste modo
+        const numeroOperadores = r.num_operators ?? r.numero_operadores ?? r.numeroOperadores ?? new Set(assignments.map((a) => a.operator_id).filter(Boolean)).size;
+
+        // Construir distribuicao a partir da resposta ou dos assignments
+        type DistItem = { operadorId: string; operacoes: string[]; cargaHoraria: number; ocupacao: number; ciclosPorHora: number };
+        let distribuicao: DistItem[] = [];
+        if (Array.isArray(r.distribuicao)) {
+          distribuicao = r.distribuicao;
+        } else if (Array.isArray(r.distribution)) {
+          distribuicao = r.distribution;
+        } else {
+          // Construir manualmente a partir dos assignments
+          const mapa: Record<string, { operacoes: string[]; tempoTotal: number }> = {};
+          for (const a of assignments) {
+            if (!mapa[a.operator_id]) mapa[a.operator_id] = { operacoes: [], tempoTotal: 0 };
+            mapa[a.operator_id].operacoes.push(a.operation_name);
+            mapa[a.operator_id].tempoTotal += a.time_seconds / 60;
+          }
+          distribuicao = Object.entries(mapa).map(([operadorId, dados]) => ({
+            operadorId,
+            operacoes: dados.operacoes,
+            cargaHoraria: dados.tempoTotal,
+            ocupacao: tempoCiclo > 0 ? (dados.tempoTotal / tempoCiclo) * 100 : 0,
+            ciclosPorHora: dados.tempoTotal > 0 ? 60 / dados.tempoTotal : 0,
+          }));
+        }
+
+        const resultadosCustom = {
+          distribuicao,
+          taktTime,
+          tempoCiclo,
+          numeroCiclosPorHora,
+          produtividade,
+          perdas,
+          numeroOperadores,
+        };
+
+        const dataToPass = {
+          resultados: resultadosCustom,
+          operadores: operadoresDisponiveis,
+          operacoes: operacoesManual,
+          config,
+          layoutConfig,
+        };
+
+        sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
+        navigate("/resultados", { state: dataToPass });
         return;
       }
 
