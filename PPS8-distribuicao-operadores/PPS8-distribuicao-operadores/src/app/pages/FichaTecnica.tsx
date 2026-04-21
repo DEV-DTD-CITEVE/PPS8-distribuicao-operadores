@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 import { Produto, Operacao } from "../types";
 import { produtosMock, operadoresMock } from "../data/mock";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
@@ -37,7 +37,6 @@ import {
   Cpu,
   CheckCircle2,
   Copy,
-  Upload,
   FileSpreadsheet,
   X,
 } from "lucide-react";
@@ -165,13 +164,19 @@ const mapApiTaskToProduto = (raw: ApiRecord, index: number, familyId: string): P
     pickString(raw, ["task_name", "name", "nome", "description", "descricao"]) ||
     `Ficha ${index + 1}`;
 
-  const operations = ensureArray(
+  const operationsRaw = ensureArray(
     raw.operations ??
       raw.operacoes ??
       raw.steps ??
       raw.sequence ??
       raw.gama_operatoria
   ).map((operation, operationIndex) => mapApiOperation(operation, operationIndex));
+  const operations = operationsRaw
+    .sort((a, b) => a.sequencia - b.sequencia)
+    .map((operation, operationIndex) => ({
+      ...operation,
+      sequencia: operationIndex + 1,
+    }));
 
   const numOperations =
     pickNumber(raw, ["num_operations", "numero_operacoes", "operations_count"]) ??
@@ -234,9 +239,18 @@ export default function FichaTecnica() {
   const [creatingProduto, setCreatingProduto] = useState(false);
   const [deletingProdutoId, setDeletingProdutoId] = useState<string | null>(null);
   const [addingOperacao, setAddingOperacao] = useState(false);
+  const [savingOperacoes, setSavingOperacoes] = useState(false);
   const [removingOperacaoId, setRemovingOperacaoId] = useState<string | null>(null);
   const [operacaoParaRemover, setOperacaoParaRemover] = useState<Operacao | null>(null);
   const [erroApi, setErroApi] = useState<string | null>(null);
+  const operacaoPendenteSyncIndexRef = useRef<number | null>(null);
+  const operacaoPendenteSyncCodeRef = useRef<string | null>(null);
+  const produtosRef = useRef<Produto[]>([]);
+
+  const setOperacaoPendenteSync = (index: number | null, code: string | null) => {
+    operacaoPendenteSyncIndexRef.current = index;
+    operacaoPendenteSyncCodeRef.current = code;
+  };
 
   const operadores = operadoresMock;
 
@@ -256,6 +270,10 @@ export default function FichaTecnica() {
   });
 
   const produto = produtos.find((p) => p.id === produtoSelecionado);
+
+  useEffect(() => {
+    produtosRef.current = produtos;
+  }, [produtos]);
 
   useEffect(() => {
     const carregarFamilias = async () => {
@@ -410,6 +428,7 @@ export default function FichaTecnica() {
 
   const handleSelecionarFicha = (produtoId: string) => {
     setProdutoSelecionado(produtoId);
+    setOperacaoPendenteSync(null, null);
     void handleCarregarFichaPorCodigo(produtoId);
   };
 
@@ -562,6 +581,7 @@ export default function FichaTecnica() {
       sequencia: produto.operacoes.length + 1,
       critica: Boolean(novaOperacao.critica),
     };
+    setOperacaoPendenteSync(produto.operacoes.length, newOp.id);
 
     const aplicarOperacaoLocal = (targetProdutoId: string, operacao: Operacao) => {
       setProdutos((current) =>
@@ -663,6 +683,7 @@ export default function FichaTecnica() {
   const concluirRemocaoOperacao = () => {
     if (!produto || !operacaoParaRemover) return;
     const operationId = operacaoParaRemover.id;
+    const operacoesRestantes = produto.operacoes.filter((op) => op.id !== operationId);
     setProdutos((current) =>
       current.map((p) => {
         if (p.id !== produto.id) return p;
@@ -676,6 +697,7 @@ export default function FichaTecnica() {
         };
       })
     );
+    setOperacaoPendenteSync(operacoesRestantes.length > 0 ? 0 : null, operacoesRestantes[0]?.id ?? null);
     setOperacaoParaRemover(null);
   };
 
@@ -746,23 +768,30 @@ export default function FichaTecnica() {
     }
   };
 
-  const handleReorder = (opId: string, direction: "up" | "down") => {
+  const handleReorder = (currentIndex: number, direction: "up" | "down") => {
     if (!produto) return;
-    const ops = [...produto.operacoes];
-    const idx = ops.findIndex((op) => op.id === opId);
-    if ((direction === "up" && idx === 0) || (direction === "down" && idx === ops.length - 1)) return;
-    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
-    [ops[idx], ops[targetIdx]] = [ops[targetIdx], ops[idx]];
-    ops.forEach((op, i) => (op.sequencia = i + 1));
-    const updated = produtos.map((p) =>
-      p.id === produto.id
-        ? { ...p, operacoes: ops, dataModificacao: new Date().toISOString().split("T")[0] }
-        : p
-    );
-    setProdutos(updated);
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    const operacoesOrdenadasAtuais = [...produto.operacoes].sort((a, b) => a.sequencia - b.sequencia);
+    if (targetIndex < 0 || targetIndex >= operacoesOrdenadasAtuais.length) return;
+    const movedOperationCode = operacoesOrdenadasAtuais[currentIndex]?.id ?? null;
+    const baseProdutos = produtosRef.current.length > 0 ? produtosRef.current : produtos;
+    const nextProdutos = baseProdutos.map((p) => {
+      if (p.id !== produto.id) return p;
+      const ops = [...p.operacoes].sort((a, b) => a.sequencia - b.sequencia);
+      [ops[currentIndex], ops[targetIndex]] = [ops[targetIndex], ops[currentIndex]];
+      const normalizedOps = ops.map((op, index) => ({ ...op, sequencia: index + 1 }));
+      return {
+        ...p,
+        operacoes: normalizedOps,
+        dataModificacao: new Date().toISOString().split("T")[0],
+      };
+    });
+    produtosRef.current = nextProdutos;
+    setProdutos(nextProdutos);
+    setOperacaoPendenteSync(targetIndex, movedOperationCode);
   };
 
-  const handleToggleCritica = (opId: string) => {
+  const handleToggleCritica = (opId: string, opIndex: number) => {
     if (!produto) return;
     const updated = produtos.map((p) => {
       if (p.id !== produto.id) return p;
@@ -775,9 +804,15 @@ export default function FichaTecnica() {
       };
     });
     setProdutos(updated);
+    setOperacaoPendenteSync(opIndex, opId);
   };
 
-  const handleEditOperacao = (opId: string, field: string, value: string | number) => {
+  const handleEditOperacao = (
+    opId: string,
+    field: string,
+    value: string | number,
+    opIndex: number
+  ) => {
     if (!produto) return;
     const updated = produtos.map((p) => {
       if (p.id !== produto.id) return p;
@@ -790,6 +825,101 @@ export default function FichaTecnica() {
       };
     });
     setProdutos(updated);
+    setOperacaoPendenteSync(opIndex, opId);
+  };
+
+  const handleGuardarOperacoes = async () => {
+    if (!produto) return;
+    const produtoAtual = produtosRef.current.find((item) => item.id === produto.id) || produto;
+
+    const operacoesNormalizadas = [...produtoAtual.operacoes]
+      .sort((a, b) => a.sequencia - b.sequencia)
+      .map((operacao, index) => ({
+      ...operacao,
+      sequencia: index + 1,
+      }));
+
+    setProdutos((current) =>
+      current.map((item) =>
+        item.id === produto.id
+          ? {
+              ...item,
+              operacoes: operacoesNormalizadas,
+              dataModificacao: new Date().toISOString().split("T")[0],
+            }
+          : item
+      )
+    );
+
+    if (operacoesNormalizadas.length === 0) {
+      setMensagemGuardado("Sem operacoes para guardar");
+      setTimeout(() => setMensagemGuardado(null), 3000);
+      return;
+    }
+
+    const isLocalOnly = /^PROD\d+$/i.test(produtoAtual.id) || /-FT\d{3}$/i.test(produtoAtual.id);
+    if (isLocalOnly) {
+      setMensagemGuardado("Operacoes guardadas localmente");
+      setTimeout(() => setMensagemGuardado(null), 3000);
+      return;
+    }
+
+    setSavingOperacoes(true);
+    setErroApi(null);
+
+    try {
+      const taskId = (produtoAtual.id || "").trim();
+      if (!taskId) {
+        throw new Error("Task ID invalido para guardar operacoes");
+      }
+
+      let updatedSheet: ApiRecord | null = null;
+      for (const operacao of operacoesNormalizadas) {
+        const payload = {
+          code: operacao.id,
+          designation: operacao.nome,
+          is_critical: Boolean(operacao.critica),
+          machine_type: operacao.tipoMaquina || "",
+          sequence_order: operacao.sequencia,
+          time_cmin: Math.round(operacao.tempo * 100),
+        };
+
+        const resposta = await axios.put(
+          `${API_BASE_URL}/technical-sheets/${encodeURIComponent(taskId)}/update-operation`,
+          payload
+        );
+
+        const candidate = ensureRecord(resposta.data);
+        if (candidate) updatedSheet = candidate;
+      }
+
+      if (updatedSheet) {
+        const familyId =
+          pickString(updatedSheet, ["family_id", "family", "group_id"]) || grupoArtigoSelecionado;
+        const mapped = mapApiTaskToProduto(updatedSheet, 0, familyId);
+        const produtoAtualizado: Produto = {
+          ...produtoAtual,
+          ...mapped,
+          id: produtoAtual.id,
+          referencia:
+            pickString(updatedSheet, ["code", "task_code", "reference", "referencia"]) ||
+            produtoAtual.referencia,
+        };
+
+        setProdutos((current) =>
+          current.map((item) => (item.id === produtoAtual.id ? produtoAtualizado : item))
+        );
+      }
+
+      setMensagemGuardado("Operacoes guardadas com sucesso");
+      setTimeout(() => setMensagemGuardado(null), 3000);
+      setOperacaoPendenteSync(null, null);
+    } catch (error) {
+      console.error("Erro ao guardar operacoes:", error);
+      setErroApi("Nao foi possivel guardar operacoes na API.");
+    } finally {
+      setSavingOperacoes(false);
+    }
   };
 
   const handleGuardar = () => {
@@ -880,6 +1010,9 @@ export default function FichaTecnica() {
   const numMaquinas = produto
     ? new Set(produto.operacoes.map((op) => op.tipoMaquina).filter(Boolean)).size
     : 0;
+  const operacoesTabela = produto
+    ? [...produto.operacoes].sort((a, b) => a.sequencia - b.sequencia)
+    : [];
 
   return (
     <main className="w-full px-6 py-8 space-y-6">
@@ -1215,6 +1348,7 @@ export default function FichaTecnica() {
                         </CardDescription>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2 ml-auto">
                     <Dialog open={showNovaOperacao} onOpenChange={setShowNovaOperacao}>
                       <DialogTrigger asChild>
                         <Button
@@ -1310,19 +1444,14 @@ export default function FichaTecnica() {
                     </Dialog>
                     <Button
                       size="sm"
-                      className="bg-gray-500 hover:bg-gray-600 rounded-sm text-xs font-medium"
-                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-emerald-600 hover:bg-emerald-700 rounded-sm text-xs font-medium"
+                      onClick={() => void handleGuardarOperacoes()}
+                      disabled={savingOperacoes || addingOperacao || Boolean(removingOperacaoId)}
                     >
-                      <Upload className="w-4 h-4 mr-2" />
-                      Importar Excel
+                      <Save className="w-4 h-4 mr-2" />
+                      {savingOperacoes ? "A guardar..." : "Guardar Operações"}
                     </Button>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      className="hidden"
-                      accept=".xlsx, .xls"
-                      onChange={handleImportExcel}
-                    />
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -1354,7 +1483,7 @@ export default function FichaTecnica() {
                         </tr>
                       </thead>
                       <tbody>
-                        {produto.operacoes.map((operacao, index) => (
+                        {operacoesTabela.map((operacao, index) => (
                           <tr
                             key={operacao.id}
                             className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
@@ -1366,7 +1495,7 @@ export default function FichaTecnica() {
                             </td>
                             <td className="p-3">
                               <button
-                                onClick={() => handleToggleCritica(operacao.id)}
+                                onClick={() => handleToggleCritica(operacao.id, index)}
                                 className={`flex items-center gap-1.5 px-2 py-1 rounded-sm text-xs font-medium transition-colors ${
                                   operacao.critica
                                     ? "bg-orange-200 text-orange-800 border border-orange-300"
@@ -1387,7 +1516,7 @@ export default function FichaTecnica() {
                                 <Input
                                   value={operacao.nome}
                                   onChange={(e) =>
-                                    handleEditOperacao(operacao.id, "nome", e.target.value)
+                                    handleEditOperacao(operacao.id, "nome", e.target.value, index)
                                   }
                                   onBlur={() => setEditandoOperacao(null)}
                                   onKeyDown={(e) =>
@@ -1425,7 +1554,8 @@ export default function FichaTecnica() {
                                   handleEditOperacao(
                                     operacao.id,
                                     "tempo",
-                                    Number(e.target.value)
+                                    Number(e.target.value),
+                                    index
                                   )
                                 }
                                 className="h-8 w-24 text-sm font-mono rounded-sm text-right"
@@ -1438,7 +1568,8 @@ export default function FichaTecnica() {
                                   handleEditOperacao(
                                     operacao.id,
                                     "tipoMaquina",
-                                    e.target.value
+                                    e.target.value,
+                                    index
                                   )
                                 }
                                 className="h-8 text-sm rounded-sm"
@@ -1450,7 +1581,7 @@ export default function FichaTecnica() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleReorder(operacao.id, "up")}
+                                  onClick={() => handleReorder(index, "up")}
                                   disabled={index === 0}
                                   className="h-7 w-7 p-0 rounded-sm hover:bg-gray-100"
                                 >
@@ -1459,8 +1590,8 @@ export default function FichaTecnica() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleReorder(operacao.id, "down")}
-                                  disabled={index === produto.operacoes.length - 1}
+                                  onClick={() => handleReorder(index, "down")}
+                                  disabled={index === operacoesTabela.length - 1}
                                   className="h-7 w-7 p-0 rounded-sm hover:bg-gray-100"
                                 >
                                   <ArrowDown className="w-3 h-3" />
@@ -1627,3 +1758,6 @@ export default function FichaTecnica() {
     </main>
   );
 }
+
+
+
