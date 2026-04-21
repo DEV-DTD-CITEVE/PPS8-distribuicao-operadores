@@ -82,21 +82,80 @@ const pickNumber = (obj: ApiRecord, keys: string[]): number | null => {
   return null;
 };
 
+const pickBoolean = (obj: ApiRecord, keys: string[]): boolean | undefined => {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value !== 0;
+    if (typeof value === "string" && value.trim()) {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "sim"].includes(normalized)) return true;
+      if (["false", "0", "no", "nao", "não"].includes(normalized)) return false;
+    }
+  }
+  return undefined;
+};
+
+const ensureRecord = (value: unknown): ApiRecord | null => {
+  if (Array.isArray(value)) {
+    return (value.find((entry) => entry && typeof entry === "object") as ApiRecord | undefined) || null;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as ApiRecord;
+    const hasDirectKeys = [
+      "code",
+      "id",
+      "name",
+      "description",
+      "operations",
+      "operacoes",
+      "task_id",
+      "task_code",
+      "family_id",
+    ].some((key) => key in record);
+
+    if (hasDirectKeys) return record;
+
+    const nestedRecord = Object.values(record).find(
+      (entry) => entry && typeof entry === "object" && !Array.isArray(entry)
+    );
+    if (nestedRecord && typeof nestedRecord === "object") {
+      return nestedRecord as ApiRecord;
+    }
+  }
+
+  return null;
+};
+
 const mapApiOperation = (raw: ApiRecord, index: number): Operacao =>
-  ({
+  (() => {
+    const timeMinutes = pickNumber(raw, [
+      "time_min",
+      "time_minutes",
+      "tempo_minutos",
+      "tempo",
+      "minutes",
+    ]);
+    const timeCmin = pickNumber(raw, ["time_cmin", "tempo_cmin", "cmin"]);
+
+    return {
     id:
       pickString(raw, ["operation_code", "operation_id", "id", "code"]) ||
       `OP${String(index + 1).padStart(3, "0")}`,
     nome:
-      pickString(raw, ["operation_name", "name", "nome", "description", "descricao"]) ||
+      pickString(raw, ["operation_name", "name", "nome", "designation", "description", "descricao"]) ||
       `Operacao ${index + 1}`,
     tempo:
-      pickNumber(raw, ["time_minutes", "tempo_minutos", "tempo", "minutes"]) ??
+      timeMinutes ??
+      (timeCmin != null ? timeCmin / 100 : null) ??
       ((pickNumber(raw, ["time_seconds", "tempo_segundos", "seconds"]) || 0) / 60),
     tipoMaquina: pickString(raw, ["machine_name", "machine_type", "tipo_maquina", "tipoMaquina"]),
     sequencia:
-      pickNumber(raw, ["sequence", "sequencia", "seq", "order"]) ?? index + 1,
-  }) as Operacao;
+      pickNumber(raw, ["sequence_order", "sequence", "sequencia", "seq", "order"]) ?? index + 1,
+    critica: pickBoolean(raw, ["is_critical", "critica"]),
+  } as Operacao;
+  })();
 
 const mapApiTaskToProduto = (raw: ApiRecord, index: number, familyId: string): Produto => {
   const taskId =
@@ -171,6 +230,12 @@ export default function FichaTecnica() {
   const [grupoArtigoSelecionado, setGrupoArtigoSelecionado] = useState<string>("");
   const [loadingFamilias, setLoadingFamilias] = useState(false);
   const [loadingFichas, setLoadingFichas] = useState(false);
+  const [loadingFichaPorCodigo, setLoadingFichaPorCodigo] = useState(false);
+  const [creatingProduto, setCreatingProduto] = useState(false);
+  const [deletingProdutoId, setDeletingProdutoId] = useState<string | null>(null);
+  const [addingOperacao, setAddingOperacao] = useState(false);
+  const [removingOperacaoId, setRemovingOperacaoId] = useState<string | null>(null);
+  const [operacaoParaRemover, setOperacaoParaRemover] = useState<Operacao | null>(null);
   const [erroApi, setErroApi] = useState<string | null>(null);
 
   const operadores = operadoresMock;
@@ -241,17 +306,25 @@ export default function FichaTecnica() {
       setErroApi(null);
       try {
         const resposta = await axios.get(
-          `${API_BASE_URL}/families/${encodeURIComponent(grupoArtigoSelecionado)}/tasks`
+          `${API_BASE_URL}/technical-sheets/family/${encodeURIComponent(grupoArtigoSelecionado)}`
         );
-        const tasks = ensureArray(resposta.data);
-        const fichas = tasks.map((task, index) =>
-          mapApiTaskToProduto(task, index, grupoArtigoSelecionado)
+        const technicalSheets = ensureArray(resposta.data);
+        const fichas = technicalSheets.map((technicalSheet, index) =>
+          mapApiTaskToProduto(technicalSheet, index, grupoArtigoSelecionado)
         );
 
         setProdutos(fichas);
-        setProdutoSelecionado((anterior) =>
-          fichas.some((ficha) => ficha.id === anterior) ? anterior : fichas[0]?.id || null
-        );
+        let proximoSelecionado: string | null = null;
+        setProdutoSelecionado((anterior) => {
+          proximoSelecionado = fichas.some((ficha) => ficha.id === anterior)
+            ? anterior
+            : fichas[0]?.id || null;
+          return proximoSelecionado;
+        });
+
+        if (proximoSelecionado) {
+          void handleCarregarFichaPorCodigo(proximoSelecionado, fichas);
+        }
       } catch (error) {
         console.error("Erro ao carregar fichas da familia:", error);
         setErroApi("Nao foi possivel carregar fichas tecnicas da familia selecionada.");
@@ -266,9 +339,82 @@ export default function FichaTecnica() {
     carregarFichasDaFamilia();
   }, [grupoArtigoSelecionado]);
 
-  const handleCriarProduto = () => {
-    if (!novoProduto.nome || !novoProduto.referencia) return;
-    const newProd: Produto = {
+  const handleCarregarFichaPorCodigo = async (
+    produtoId: string,
+    sourceProdutos: Produto[] = produtos
+  ) => {
+    const produtoBase = sourceProdutos.find((item) => item.id === produtoId);
+    if (!produtoBase) return;
+
+    const codigosTentativa = Array.from(
+      new Set([produtoBase.id, produtoBase.referencia].map((value) => value?.trim()).filter(Boolean))
+    ) as string[];
+    if (codigosTentativa.length === 0) return;
+
+    setLoadingFichaPorCodigo(true);
+    setErroApi(null);
+
+    try {
+      let technicalSheet: ApiRecord | null = null;
+      let codigoResolvido = codigosTentativa[0];
+      let ultimaFalha: unknown = null;
+
+      for (const codigo of codigosTentativa) {
+        try {
+          const resposta = await axios.get(
+            `${API_BASE_URL}/technical-sheets/code/${encodeURIComponent(codigo)}`
+          );
+          const candidate = ensureRecord(resposta.data);
+          if (candidate) {
+            technicalSheet = candidate;
+            codigoResolvido = codigo;
+            break;
+          }
+        } catch (error) {
+          ultimaFalha = error;
+        }
+      }
+
+      if (!technicalSheet) {
+        throw ultimaFalha || new Error("Resposta invalida para ficha tecnica por codigo");
+      }
+
+      const familyId =
+        pickString(technicalSheet, ["family_id", "family", "group_id"]) ||
+        grupoArtigoSelecionado;
+
+      const ficha = mapApiTaskToProduto(technicalSheet, 0, familyId);
+      const referenciaCodigo =
+        pickString(technicalSheet, ["code", "task_code", "reference", "referencia"]) ||
+        ficha.referencia ||
+        codigoResolvido;
+      const fichaNormalizada: Produto = {
+        ...produtoBase,
+        ...ficha,
+        id: produtoBase.id,
+        referencia: referenciaCodigo,
+      };
+
+      setProdutos((current) => {
+        const exists = current.some((item) => item.id === produtoId);
+        if (!exists) return [...current, fichaNormalizada];
+        return current.map((item) => (item.id === produtoId ? fichaNormalizada : item));
+      });
+    } catch (error) {
+      console.error("Erro ao carregar ficha por codigo:", error);
+      setErroApi("Nao foi possivel carregar detalhes da ficha tecnica pelo codigo.");
+    } finally {
+      setLoadingFichaPorCodigo(false);
+    }
+  };
+
+  const handleSelecionarFicha = (produtoId: string) => {
+    setProdutoSelecionado(produtoId);
+    void handleCarregarFichaPorCodigo(produtoId);
+  };
+
+  const buildLocalProduto = (): Produto => {
+    return {
       id: `${grupoArtigoSelecionado || "LOCAL"}-FT${String(produtos.length + 1).padStart(3, "0")}`,
       nome: novoProduto.nome,
       referencia: novoProduto.referencia,
@@ -278,10 +424,65 @@ export default function FichaTecnica() {
       dataCriacao: new Date().toISOString().split("T")[0],
       dataModificacao: new Date().toISOString().split("T")[0],
     };
-    setProdutos([...produtos, newProd]);
-    setProdutoSelecionado(newProd.id);
-    setShowNovoProduto(false);
-    setNovoProduto({ nome: "", referencia: "", cliente: "", descricao: "" });
+  };
+
+  const handleCriarProduto = async () => {
+    const nome = novoProduto.nome.trim();
+    const referencia = novoProduto.referencia.trim();
+    if (!nome || !referencia) return;
+
+    const familyId = grupoArtigoSelecionado || familias[0]?.id || "SEM_FAMILIA";
+    const fallbackProduto = buildLocalProduto();
+
+    setCreatingProduto(true);
+    setErroApi(null);
+
+    try {
+      const payload = {
+        code: referencia,
+        name: nome,
+        family_id: familyId,
+        description: novoProduto.descricao.trim(),
+        operations: [] as ApiRecord[],
+      };
+
+      const resposta = await axios.post(`${API_BASE_URL}/technical-sheets/`, payload);
+      const createdRecord = ensureRecord(resposta.data);
+
+      const createdProduto: Produto = createdRecord
+        ? (() => {
+            const mapped = mapApiTaskToProduto(createdRecord, produtos.length, familyId);
+            return {
+              ...mapped,
+              nome: pickString(createdRecord, ["name", "task_name", "nome"]) || nome,
+              referencia:
+                pickString(createdRecord, ["code", "reference", "referencia"]) || referencia,
+              cliente: novoProduto.cliente.trim() || mapped.cliente,
+            };
+          })()
+        : fallbackProduto;
+
+      setProdutos((current) => {
+        const existingIndex = current.findIndex((item) => item.id === createdProduto.id);
+        if (existingIndex === -1) return [...current, createdProduto];
+        const next = [...current];
+        next[existingIndex] = createdProduto;
+        return next;
+      });
+      setProdutoSelecionado(createdProduto.id);
+      setMensagemGuardado("Ficha tecnica criada com sucesso");
+      setTimeout(() => setMensagemGuardado(null), 3000);
+      void handleCarregarFichaPorCodigo(createdProduto.id, [createdProduto]);
+    } catch (error) {
+      console.error("Erro ao criar ficha tecnica:", error);
+      setErroApi("Nao foi possivel criar ficha tecnica na API. Criado localmente.");
+      setProdutos((current) => [...current, fallbackProduto]);
+      setProdutoSelecionado(fallbackProduto.id);
+    } finally {
+      setShowNovoProduto(false);
+      setNovoProduto({ nome: "", referencia: "", cliente: "", descricao: "" });
+      setCreatingProduto(false);
+    }
   };
 
   const handleDuplicarProduto = (prodId: string) => {
@@ -300,43 +501,249 @@ export default function FichaTecnica() {
     setProdutoSelecionado(newProd.id);
   };
 
-  const handleRemoverProduto = (prodId: string) => {
-    setProdutos(produtos.filter((p) => p.id !== prodId));
-    if (produtoSelecionado === prodId) setProdutoSelecionado(null);
+  const handleRemoverProduto = async (prodId: string) => {
+    const produtoAlvo = produtos.find((p) => p.id === prodId);
+    if (!produtoAlvo) return;
+
+    const removerLocalmente = () => {
+      setProdutos((current) => current.filter((p) => p.id !== prodId));
+      setProdutoSelecionado((current) => (current === prodId ? null : current));
+    };
+
+    const isLocalOnly = /^PROD\d+$/i.test(prodId) || /-FT\d{3}$/i.test(prodId);
+    if (isLocalOnly) {
+      removerLocalmente();
+      return;
+    }
+
+    setDeletingProdutoId(prodId);
+    setErroApi(null);
+
+    try {
+      const taskIds = Array.from(
+        new Set([produtoAlvo.id, produtoAlvo.referencia].map((value) => value?.trim()).filter(Boolean))
+      ) as string[];
+
+      let deleted = false;
+      let ultimaFalha: unknown = null;
+      for (const taskId of taskIds) {
+        try {
+          await axios.delete(`${API_BASE_URL}/technical-sheets/${encodeURIComponent(taskId)}`);
+          deleted = true;
+          break;
+        } catch (error) {
+          ultimaFalha = error;
+        }
+      }
+
+      if (!deleted) {
+        throw ultimaFalha || new Error("Falha ao eliminar ficha tecnica");
+      }
+
+      removerLocalmente();
+      setMensagemGuardado("Ficha tecnica eliminada com sucesso");
+      setTimeout(() => setMensagemGuardado(null), 3000);
+    } catch (error) {
+      console.error("Erro ao eliminar ficha tecnica:", error);
+      setErroApi("Nao foi possivel eliminar ficha tecnica na API.");
+    } finally {
+      setDeletingProdutoId((current) => (current === prodId ? null : current));
+    }
   };
 
-  const handleAddOperacao = () => {
+  const handleAddOperacao = async () => {
     if (!produto || !novaOperacao.id || !novaOperacao.nome || !novaOperacao.tempo) return;
-    const updated = produtos.map((p) => {
-      if (p.id !== produto.id) return p;
-      const newOp: Operacao = {
-        id: novaOperacao.id!,
-        nome: novaOperacao.nome!,
-        tempo: novaOperacao.tempo!,
-        tipoMaquina: novaOperacao.tipoMaquina || "",
-        sequencia: p.operacoes.length + 1,
+
+    const newOp: Operacao = {
+      id: String(novaOperacao.id).trim(),
+      nome: String(novaOperacao.nome).trim(),
+      tempo: Number(novaOperacao.tempo),
+      tipoMaquina: String(novaOperacao.tipoMaquina || "").trim(),
+      sequencia: produto.operacoes.length + 1,
+      critica: Boolean(novaOperacao.critica),
+    };
+
+    const aplicarOperacaoLocal = (targetProdutoId: string, operacao: Operacao) => {
+      setProdutos((current) =>
+        current.map((p) =>
+          p.id === targetProdutoId
+            ? {
+                ...p,
+                operacoes: [...p.operacoes, operacao],
+                dataModificacao: new Date().toISOString().split("T")[0],
+              }
+            : p
+        )
+      );
+    };
+
+    const concluirPopup = () => {
+      setShowNovaOperacao(false);
+      setNovaOperacao({ id: "", nome: "", tempo: 0, tipoMaquina: "", sequencia: 1 });
+    };
+
+    const isLocalOnly = /^PROD\d+$/i.test(produto.id) || /-FT\d{3}$/i.test(produto.id);
+    if (isLocalOnly) {
+      aplicarOperacaoLocal(produto.id, newOp);
+      concluirPopup();
+      return;
+    }
+
+    setAddingOperacao(true);
+    setErroApi(null);
+
+    try {
+      const payload = {
+        code: newOp.id,
+        designation: newOp.nome,
+        is_critical: Boolean(newOp.critica),
+        machine_type: newOp.tipoMaquina || "",
+        sequence_order: newOp.sequencia,
+        time_cmin: Math.round(newOp.tempo * 100),
       };
-      return {
-        ...p,
-        operacoes: [...p.operacoes, newOp],
-        dataModificacao: new Date().toISOString().split("T")[0],
-      };
-    });
-    setProdutos(updated);
-    setShowNovaOperacao(false);
-    setNovaOperacao({ id: "", nome: "", tempo: 0, tipoMaquina: "", sequencia: 1 });
+
+      const taskIds = Array.from(
+        new Set([produto.id, produto.referencia].map((value) => value?.trim()).filter(Boolean))
+      ) as string[];
+
+      let resposta: { data: unknown } | null = null;
+      let ultimaFalha: unknown = null;
+      for (const taskId of taskIds) {
+        try {
+          resposta = await axios.post(
+            `${API_BASE_URL}/technical-sheets/${encodeURIComponent(taskId)}/add-operation`,
+            payload
+          );
+          break;
+        } catch (error) {
+          ultimaFalha = error;
+        }
+      }
+
+      if (!resposta) {
+        throw ultimaFalha || new Error("Falha ao adicionar operacao na API");
+      }
+
+      const updatedSheet = ensureRecord(resposta.data);
+      if (updatedSheet) {
+        const familyId =
+          pickString(updatedSheet, ["family_id", "family", "group_id"]) || grupoArtigoSelecionado;
+        const mapped = mapApiTaskToProduto(updatedSheet, 0, familyId);
+        const produtoAtualizado: Produto = {
+          ...produto,
+          ...mapped,
+          id: produto.id,
+          referencia:
+            pickString(updatedSheet, ["code", "task_code", "reference", "referencia"]) ||
+            produto.referencia,
+        };
+
+        setProdutos((current) =>
+          current.map((item) => (item.id === produto.id ? produtoAtualizado : item))
+        );
+      } else {
+        aplicarOperacaoLocal(produto.id, newOp);
+      }
+
+      concluirPopup();
+    } catch (error) {
+      console.error("Erro ao adicionar operacao:", error);
+      setErroApi("Nao foi possivel adicionar operacao na API. Adicionada localmente.");
+      aplicarOperacaoLocal(produto.id, newOp);
+      concluirPopup();
+    } finally {
+      setAddingOperacao(false);
+    }
   };
 
-  const handleRemoveOperacao = (opId: string) => {
-    if (!produto) return;
-    const updated = produtos.map((p) => {
-      if (p.id !== produto.id) return p;
-      const newOps = p.operacoes
-        .filter((op) => op.id !== opId)
-        .map((op, idx) => ({ ...op, sequencia: idx + 1 }));
-      return { ...p, operacoes: newOps, dataModificacao: new Date().toISOString().split("T")[0] };
-    });
-    setProdutos(updated);
+  const solicitarRemocaoOperacao = (operacao: Operacao) => {
+    setOperacaoParaRemover(operacao);
+  };
+
+  const concluirRemocaoOperacao = () => {
+    if (!produto || !operacaoParaRemover) return;
+    const operationId = operacaoParaRemover.id;
+    setProdutos((current) =>
+      current.map((p) => {
+        if (p.id !== produto.id) return p;
+        const newOps = p.operacoes
+          .filter((op) => op.id !== operationId)
+          .map((op, idx) => ({ ...op, sequencia: idx + 1 }));
+        return {
+          ...p,
+          operacoes: newOps,
+          dataModificacao: new Date().toISOString().split("T")[0],
+        };
+      })
+    );
+    setOperacaoParaRemover(null);
+  };
+
+  const handleConfirmarRemocaoOperacao = async () => {
+    if (!produto || !operacaoParaRemover) return;
+
+    const operationCode = operacaoParaRemover.id;
+    const isLocalOnly = /^PROD\d+$/i.test(produto.id) || /-FT\d{3}$/i.test(produto.id);
+    if (isLocalOnly) {
+      concluirRemocaoOperacao();
+      return;
+    }
+
+    setRemovingOperacaoId(operationCode);
+    setErroApi(null);
+
+    try {
+      const taskIds = Array.from(
+        new Set([produto.id, produto.referencia].map((value) => value?.trim()).filter(Boolean))
+      ) as string[];
+
+      let resposta: { data: unknown } | null = null;
+      let ultimaFalha: unknown = null;
+      for (const taskId of taskIds) {
+        try {
+          resposta = await axios.delete(
+            `${API_BASE_URL}/technical-sheets/${encodeURIComponent(taskId)}/remove-operation/${encodeURIComponent(operationCode)}`
+          );
+          break;
+        } catch (error) {
+          ultimaFalha = error;
+        }
+      }
+
+      if (!resposta) {
+        throw ultimaFalha || new Error("Falha ao remover operacao na API");
+      }
+
+      const updatedSheet = ensureRecord(resposta.data);
+      if (updatedSheet) {
+        const familyId =
+          pickString(updatedSheet, ["family_id", "family", "group_id"]) || grupoArtigoSelecionado;
+        const mapped = mapApiTaskToProduto(updatedSheet, 0, familyId);
+        const produtoAtualizado: Produto = {
+          ...produto,
+          ...mapped,
+          id: produto.id,
+          referencia:
+            pickString(updatedSheet, ["code", "task_code", "reference", "referencia"]) ||
+            produto.referencia,
+        };
+
+        setProdutos((current) =>
+          current.map((item) => (item.id === produto.id ? produtoAtualizado : item))
+        );
+        setOperacaoParaRemover(null);
+      } else {
+        concluirRemocaoOperacao();
+      }
+
+      setMensagemGuardado("Operacao eliminada com sucesso");
+      setTimeout(() => setMensagemGuardado(null), 3000);
+    } catch (error) {
+      console.error("Erro ao remover operacao:", error);
+      setErroApi("Nao foi possivel eliminar operacao da ficha tecnica.");
+    } finally {
+      setRemovingOperacaoId(null);
+    }
   };
 
   const handleReorder = (opId: string, direction: "up" | "down") => {
@@ -557,9 +964,9 @@ export default function FichaTecnica() {
                 <Button
                   onClick={handleCriarProduto}
                   className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs"
-                  disabled={!novoProduto.nome || !novoProduto.referencia}
+                  disabled={!novoProduto.nome || !novoProduto.referencia || creatingProduto}
                 >
-                  Criar Produto
+                  {creatingProduto ? "A criar..." : "Criar Produto"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -615,14 +1022,16 @@ export default function FichaTecnica() {
               </Label>
               <Select
                 value={produtoSelecionado || undefined}
-                onValueChange={setProdutoSelecionado}
-                disabled={!grupoArtigoSelecionado || loadingFichas || produtos.length === 0}
+                onValueChange={handleSelecionarFicha}
+                disabled={loadingFichas || loadingFichaPorCodigo || produtos.length === 0}
               >
                 <SelectTrigger className="rounded-sm text-sm">
                   <SelectValue
                     placeholder={
                       loadingFichas
                         ? "A carregar fichas..."
+                        : loadingFichaPorCodigo
+                          ? "A carregar detalhes..."
                         : "Selecione uma ficha tecnica"
                     }
                   />
@@ -661,7 +1070,7 @@ export default function FichaTecnica() {
                       ? "border-blue-300 bg-blue-50/50"
                       : "border-gray-200 bg-white hover:border-gray-300"
                   }`}
-                  onClick={() => setProdutoSelecionado(prod.id)}
+                  onClick={() => handleSelecionarFicha(prod.id)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
@@ -750,10 +1159,11 @@ export default function FichaTecnica() {
                         variant="outline"
                         size="sm"
                         className="rounded-sm text-xs gap-1 text-gray-500 hover:text-orange-600 hover:border-orange-300"
-                        onClick={() => handleRemoverProduto(produto.id)}
+                        onClick={() => void handleRemoverProduto(produto.id)}
+                        disabled={deletingProdutoId === produto.id}
                       >
                         <Trash2 className="w-3 h-3" />
-                        Eliminar
+                        {deletingProdutoId === produto.id ? "A eliminar..." : "Eliminar"}
                       </Button>
                     </div>
                   </div>
@@ -884,13 +1294,16 @@ export default function FichaTecnica() {
                         </div>
                         <DialogFooter>
                           <Button
-                            onClick={handleAddOperacao}
+                            onClick={() => void handleAddOperacao()}
                             className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs"
                             disabled={
-                              !novaOperacao.id || !novaOperacao.nome || !novaOperacao.tempo
+                              !novaOperacao.id ||
+                              !novaOperacao.nome ||
+                              !novaOperacao.tempo ||
+                              addingOperacao
                             }
                           >
-                            Adicionar
+                            {addingOperacao ? "A adicionar..." : "Adicionar"}
                           </Button>
                         </DialogFooter>
                       </DialogContent>
@@ -1055,7 +1468,8 @@ export default function FichaTecnica() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleRemoveOperacao(operacao.id)}
+                                  onClick={() => solicitarRemocaoOperacao(operacao)}
+                                  disabled={Boolean(removingOperacaoId)}
                                   className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600"
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -1100,6 +1514,45 @@ export default function FichaTecnica() {
           onAtribuirManualmente={handleAtribuirManualmente}
         />
       )}
+
+      <Dialog
+        open={Boolean(operacaoParaRemover)}
+        onOpenChange={(open) => {
+          if (!open && !removingOperacaoId) {
+            setOperacaoParaRemover(null);
+          }
+        }}
+      >
+        <DialogContent className="rounded-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Confirmar remoção de operação</DialogTitle>
+            <DialogDescription className="text-xs">
+              {operacaoParaRemover
+                ? `Deseja remover a operação ${operacaoParaRemover.id} - ${operacaoParaRemover.nome}?`
+                : "Deseja remover esta operação?"}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-sm text-xs"
+              disabled={Boolean(removingOperacaoId)}
+              onClick={() => setOperacaoParaRemover(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-orange-600 hover:bg-orange-700 rounded-sm text-xs"
+              disabled={!operacaoParaRemover || Boolean(removingOperacaoId)}
+              onClick={() => void handleConfirmarRemocaoOperacao()}
+            >
+              {removingOperacaoId ? "A eliminar..." : "Confirmar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog de Importação */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
