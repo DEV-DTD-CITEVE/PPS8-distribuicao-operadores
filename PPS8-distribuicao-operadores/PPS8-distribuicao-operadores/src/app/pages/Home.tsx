@@ -532,88 +532,97 @@ const extrairDistribuicaoDeTableData = (
   };
 
   tableData.forEach((row) => {
-    const extracted = extrairOperacoesETemposDoRow(row, operacoesBase);
-    const operacaoDaLinha = findRowOperationId(row, operacoesBase);
-    const operacoes = new Set<string>(extracted.operacoes);
-    if (operacaoDaLinha) operacoes.add(operacaoDaLinha);
-    const temposOperacoes: Record<string, number> = { ...extracted.temposOperacoes };
+    // Tenta primeiro extrair operator direto (estrutura por linha)
+    const operadorOriginal = pickString(row, ["operator", "operator_id", "operador", "operador_id"]);
+    
+    if (operadorOriginal) {
+      // Estrutura por linha: cada linha tem um operador e suas operações
+      const operadorId = mapOperatorToCode(operadorOriginal, operadoresPool);
+      
+      const extracted = extrairOperacoesETemposDoRow(row, operacoesBase);
+      const operacaoDaLinha = findRowOperationId(row, operacoesBase);
+      const operacoes = new Set<string>(extracted.operacoes);
+      if (operacaoDaLinha) operacoes.add(operacaoDaLinha);
+      const temposOperacoes: Record<string, number> = { ...extracted.temposOperacoes };
 
-    // table_data matrix mode: each row is an operation and each operator is a dedicated column
-    if (operacoes.size === 1) {
-      const operacaoId = Array.from(operacoes)[0];
-      const tempoOperacaoBase = operacoesBase.find((op) => op.id === operacaoId)?.tempo ?? 0;
+      const ocupacaoRaw = pickNumber(row, [
+        "occupancy",
+        "occupancy_percent",
+        "operator_occupancy",
+        "worker_occupancy",
+        "ocupacao",
+        "utilization",
+        "load",
+      ]);
+      const ocupacao = ocupacaoRaw == null ? undefined : ocupacaoRaw <= 1 ? ocupacaoRaw * 100 : ocupacaoRaw;
 
-      const valoresPorOperador: Array<{ operadorId: string; tempoRaw: number }> = [];
-      Object.entries(row).forEach(([colKey, rawValue]) => {
+      const tempoSegundos = pickNumber(row, ["time_seconds", "tempo_segundos", "seconds"]);
+      const tempoMinutosDireto = pickNumber(row, [
+        "time_min",
+        "time_minutes",
+        "tempo_minutos",
+        "minutes",
+        "workload_minutes",
+        "workload_min",
+        "carga_horaria",
+      ]);
+      const tempoSomaOperacoes = Object.values(temposOperacoes).reduce((sum, value) => sum + value, 0);
+      const tempoMinutos =
+        tempoMinutosDireto ??
+        (tempoSegundos != null ? tempoSegundos / 60 : null) ??
+        (tempoSomaOperacoes > 0 ? tempoSomaOperacoes : null) ??
+        (ocupacao != null && tempoCiclo > 0 ? (tempoCiclo * ocupacao) / 100 : 0);
+
+      ensureOperador(operadorId, ocupacao);
+
+      operacoes.forEach((opId) => agrupado[operadorId].operacoes.add(opId));
+      Object.entries(temposOperacoes).forEach(([opId, tempoMin]) => {
+        agrupado[operadorId].temposOperacoes[opId] = (agrupado[operadorId].temposOperacoes[opId] || 0) + tempoMin;
+      });
+
+      agrupado[operadorId].cargaHoraria += Math.max(0, tempoMinutos || 0);
+      if (ocupacao != null) agrupado[operadorId].ocupacao = ocupacao;
+    } else {
+      // Estrutura por coluna: cada chave é um operador, dentro tem operações e tempos
+      Object.entries(row).forEach(([colKey, colValue]) => {
         const colKeyNorm = normalizeKey(colKey);
         if (!colKeyNorm || reservedRowKeys.has(colKeyNorm)) return;
 
-        const mappedOperator = resolveMatrixColumnOperatorId(colKey);
-        if (!mappedOperator) return;
+        const mappedOperator = mapOperatorToCode(String(colKey), operadoresPool);
+        if (!operadorExisteNoPool(mappedOperator)) return;
 
-        const tempoRaw = parseRawNumber(rawValue);
-        if (tempoRaw == null || !Number.isFinite(tempoRaw) || tempoRaw <= 0) return;
-        valoresPorOperador.push({ operadorId: mappedOperator, tempoRaw });
-      });
+        // colValue pode ser um objeto com operações como chaves, ou um número direto
+        if (!colValue || typeof colValue !== "object") return;
 
-      if (valoresPorOperador.length > 0) {
-        const totalRaw = valoresPorOperador.reduce((sum, v) => sum + v.tempoRaw, 0);
-        const usarSegundosParaMinutos = tempoOperacaoBase > 0 && totalRaw > tempoOperacaoBase * 2.5;
-        const fator = usarSegundosParaMinutos ? 1 / 60 : 1;
+        const operadorData = colValue as ApiRecord;
+        let tempoTotalOperador = 0;
+        
+        // Iterar pelas operações dentro do operador
+        Object.entries(operadorData).forEach(([opKey, opTime]) => {
+          const opKeyNorm = normalizeKey(opKey);
+          if (!opKeyNorm || reservedRowKeys.has(opKeyNorm)) return;
 
-        valoresPorOperador.forEach(({ operadorId, tempoRaw }) => {
-          ensureOperador(operadorId);
-          const tempoMin = tempoRaw * fator;
-          agrupado[operadorId].operacoes.add(operacaoId);
-          agrupado[operadorId].cargaHoraria += tempoMin;
-          agrupado[operadorId].temposOperacoes[operacaoId] =
-            (agrupado[operadorId].temposOperacoes[operacaoId] || 0) + tempoMin;
+          // Tentar mapear a chave para uma operação
+          const operacaoId = findOperacaoIdByReferencia(String(opKey), operacoesBase);
+          if (!operacaoId) return;
+
+          const tempoRaw = parseRawNumber(opTime);
+          if (tempoRaw == null || !Number.isFinite(tempoRaw) || tempoRaw <= 0) return;
+
+          // Detectar se está em segundos ou minutos
+          const tempoOperacaoBase = operacoesBase.find((op) => op.id === operacaoId)?.tempo ?? 0;
+          const ehSegundos = tempoRaw > tempoOperacaoBase * 2.5;
+          const tempoMin = ehSegundos ? tempoRaw / 60 : tempoRaw;
+
+          ensureOperador(mappedOperator);
+          agrupado[mappedOperator].operacoes.add(operacaoId);
+          agrupado[mappedOperador].temposOperacoes[operacaoId] = 
+            (agrupado[mappedOperador].temposOperacoes[operacaoId] || 0) + tempoMin;
+          agrupado[mappedOperador].cargaHoraria += tempoMin;
+          tempoTotalOperador += tempoMin;
         });
-        return;
-      }
+      });
     }
-
-    const operadorOriginal = pickString(row, ["operator", "operator_id", "operador", "operador_id"]);
-    if (!operadorOriginal) return;
-    const operadorId = mapOperatorToCode(operadorOriginal, operadoresPool);
-
-    const ocupacaoRaw = pickNumber(row, [
-      "occupancy",
-      "occupancy_percent",
-      "operator_occupancy",
-      "worker_occupancy",
-      "ocupacao",
-      "utilization",
-      "load",
-    ]);
-    const ocupacao = ocupacaoRaw == null ? undefined : ocupacaoRaw <= 1 ? ocupacaoRaw * 100 : ocupacaoRaw;
-
-    const tempoSegundos = pickNumber(row, ["time_seconds", "tempo_segundos", "seconds"]);
-    const tempoMinutosDireto = pickNumber(row, [
-      "time_min",
-      "time_minutes",
-      "tempo_minutos",
-      "minutes",
-      "workload_minutes",
-      "workload_min",
-      "carga_horaria",
-    ]);
-    const tempoSomaOperacoes = Object.values(temposOperacoes).reduce((sum, value) => sum + value, 0);
-    const tempoMinutos =
-      tempoMinutosDireto ??
-      (tempoSegundos != null ? tempoSegundos / 60 : null) ??
-      (tempoSomaOperacoes > 0 ? tempoSomaOperacoes : null) ??
-      (ocupacao != null && tempoCiclo > 0 ? (tempoCiclo * ocupacao) / 100 : 0);
-
-    ensureOperador(operadorId, ocupacao);
-
-    operacoes.forEach((opId) => agrupado[operadorId].operacoes.add(opId));
-    Object.entries(temposOperacoes).forEach(([opId, tempoMin]) => {
-      agrupado[operadorId].temposOperacoes[opId] = (agrupado[operadorId].temposOperacoes[opId] || 0) + tempoMin;
-    });
-
-    agrupado[operadorId].cargaHoraria += Math.max(0, tempoMinutos || 0);
-    if (ocupacao != null) agrupado[operadorId].ocupacao = ocupacao;
   });
 
   return Object.entries(agrupado).map(([operadorId, dados]) => {
