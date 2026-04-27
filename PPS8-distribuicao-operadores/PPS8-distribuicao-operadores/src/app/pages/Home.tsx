@@ -12,6 +12,7 @@ import { salvarHistorico, obterHistorico } from "../utils/historico";
 import { useStorage } from "../contexts/StorageContext";
 import axios from "axios";
 import { Label } from "../components/ui/label";
+import { API_BASE_URL } from "../config";
 import {
   Select,
   SelectContent,
@@ -40,12 +41,6 @@ const layoutPadrao: LayoutConfig = {
   permitirCruzamento: true,
   restricoes: [],
 };
-
-// â”€â”€â”€ API Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-const API_BASE_URL =
-  ((import.meta as unknown as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL as string | undefined) ||
-  "http://192.168.54.202:7860/api";
 
 // â”€â”€â”€ Types and Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

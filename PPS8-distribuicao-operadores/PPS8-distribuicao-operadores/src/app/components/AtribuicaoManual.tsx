@@ -14,11 +14,7 @@ import {
   DialogTrigger,
 } from "./ui/dialog";
 import axios from "axios";
-
-const API_BASE_URL =
-  ((import.meta as unknown as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL as
-    | string
-    | undefined) || "http://192.168.54.202:7860/api";
+import { API_BASE_URL } from "../config";
 
 type ApiRecord = Record<string, unknown>;
 
