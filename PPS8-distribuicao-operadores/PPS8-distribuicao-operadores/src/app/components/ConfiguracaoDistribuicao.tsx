@@ -80,7 +80,10 @@ export function ConfiguracaoDistribuicaoComponent({
               onChange({ ...config, possibilidade: Number(value) as 1 | 2 | 3 | 4 })
             }
           >
-            <div className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors">
+            <div
+              className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors cursor-pointer"
+              onClick={() => onChange({ ...config, possibilidade: 1 })}
+            >
               <RadioGroupItem value="1" id="r1" className="mt-0.5" />
               <div className="flex-1">
                 <Label htmlFor="r1" className="font-medium cursor-pointer text-gray-900 text-sm">
@@ -92,7 +95,10 @@ export function ConfiguracaoDistribuicaoComponent({
               </div>
             </div>
 
-            <div className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors">
+            <div
+              className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors cursor-pointer"
+              onClick={() => onChange({ ...config, possibilidade: 2 })}
+            >
               <RadioGroupItem value="2" id="r2" className="mt-0.5" />
               <div className="flex-1">
                 <Label htmlFor="r2" className="font-medium cursor-pointer text-gray-900 text-sm">
@@ -104,7 +110,10 @@ export function ConfiguracaoDistribuicaoComponent({
               </div>
             </div>
 
-            <div className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors">
+            <div
+              className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors cursor-pointer"
+              onClick={() => onChange({ ...config, possibilidade: 3 })}
+            >
               <RadioGroupItem value="3" id="r3" className="mt-0.5" />
               <div className="flex-1">
                 <Label htmlFor="r3" className="font-medium cursor-pointer text-gray-900 text-sm">
@@ -116,7 +125,10 @@ export function ConfiguracaoDistribuicaoComponent({
               </div>
             </div>
 
-            <div className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors">
+            <div
+              className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors cursor-pointer"
+              onClick={() => onChange({ ...config, possibilidade: 4 })}
+            >
               <RadioGroupItem value="4" id="r4" className="mt-0.5" />
               <div className="flex-1">
                 <Label htmlFor="r4" className="font-medium cursor-pointer text-gray-900 text-sm flex items-center gap-2">

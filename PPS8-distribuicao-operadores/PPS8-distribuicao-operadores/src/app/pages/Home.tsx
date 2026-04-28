@@ -1280,6 +1280,17 @@ export default function Home() {
 
   const handleCalcular = async () => {
     try {
+      const getMaxPostsPayload = () => {
+        const postosInputEl = document.getElementById("lc-postos") as HTMLInputElement | null;
+        const postosInputRaw = postosInputEl?.value?.trim() || "";
+        const postosInputNum = postosInputRaw ? Number(postosInputRaw.replace(",", ".")) : Number.NaN;
+        const postosBase = Number.isFinite(postosInputNum)
+          ? postosInputNum
+          : Number(layoutConfig.postosPorLado);
+        const postosPorLado = Math.max(1, Math.round(postosBase || 0));
+        return layoutConfig.tipoLayout === "espinha" ? postosPorLado * 2 : postosPorLado;
+      };
+
       const operadoresDisponiveis = operadores.filter((op) =>
         operadoresSelecionados.includes(op.id)
       );
@@ -1309,8 +1320,7 @@ export default function Home() {
         };
         const limitNotDivideUpper = Math.max(1.01, Number(config.naoDividirMaiorQue) || 1.1);
         const limitNotDivideLower = Math.min(0.99, Math.max(0, Number(config.naoDividirMenorQue) || 0.9));
-        const postosPorLado = Math.max(1, Math.trunc(Number(layoutConfig.postosPorLado) || 0));
-        const maxPosts = layoutConfig.tipoLayout === "espinha" ? postosPorLado * 2 : postosPorLado;
+        const maxPosts = getMaxPostsPayload();
 
         const payloadBase = {
           efficiency: normalizarRatio(config.produtividadeEstimada),
@@ -1468,8 +1478,7 @@ export default function Home() {
         };
         const limitNotDivideUpper = Math.max(1.01, Number(config.naoDividirMaiorQue) || 1.1);
         const limitNotDivideLower = Math.min(0.99, Math.max(0, Number(config.naoDividirMenorQue) || 0.9));
-        const postosPorLado = Math.max(1, Math.trunc(Number(layoutConfig.postosPorLado) || 0));
-        const maxPosts = layoutConfig.tipoLayout === "espinha" ? postosPorLado * 2 : postosPorLado;
+        const maxPosts = getMaxPostsPayload();
 
         const payloadBase = {
           efficiency: normalizarRatio(config.produtividadeEstimada),
@@ -1631,8 +1640,7 @@ export default function Home() {
         };
         const limitNotDivideUpper = Math.max(1.01, Number(config.naoDividirMaiorQue) || 1.1);
         const limitNotDivideLower = Math.min(0.99, Math.max(0, Number(config.naoDividirMenorQue) || 0.9));
-        const postosPorLado = Math.max(1, Math.trunc(Number(layoutConfig.postosPorLado) || 0));
-        const maxPosts = layoutConfig.tipoLayout === "espinha" ? postosPorLado * 2 : postosPorLado;
+        const maxPosts = getMaxPostsPayload();
 
         const payloadBase = {
           efficiency: normalizarRatio(config.produtividadeEstimada),
