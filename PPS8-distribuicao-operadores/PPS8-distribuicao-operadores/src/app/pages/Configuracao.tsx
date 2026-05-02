@@ -1,7 +1,9 @@
-import { useState, useMemo, useCallback } from "react";
+﻿import { useState, useMemo, useCallback, useEffect } from "react";
 import { Operador, Maquina, ConfiguracaoLayout } from "../types";
 import { operacoesMock, produtosMock, layoutPadraoEspinha } from "../data/mock";
 import { useStorage } from "../contexts/StorageContext";
+import axios from "axios";
+import { API_BASE_URL } from "../config";
 import { MatrizPolivalenciaGrupos } from "../components/MatrizPolivalenciaGrupos";
 import { ConfiguracaoLayoutComponent } from "../components/ConfiguracaoLayout";
 import { CatalogoMaquinas } from "../components/CatalogoMaquinas";
@@ -68,6 +70,41 @@ interface MaquinaSimples {
   operacoesCompativeis: string[];
 }
 
+type ApiRecord = Record<string, any>;
+
+const ensureArray = (value: unknown): ApiRecord[] => {
+  if (Array.isArray(value)) return value as ApiRecord[];
+  if (value && typeof value === "object") {
+    const nestedArray = Object.values(value as Record<string, unknown>).find((entry) => Array.isArray(entry));
+    if (Array.isArray(nestedArray)) return nestedArray as ApiRecord[];
+  }
+  return [];
+};
+
+const pickString = (obj: ApiRecord, keys: string[]): string => {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
+};
+
+const pickNumber = (obj: ApiRecord, keys: string[]): number | null => {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value.trim().replace(",", "."));
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+};
+
+const POLYVALENCE_API_BASE = "http://192.168.54.202:7860/api";
+const POLYVALENCE_ENDPOINT = `${POLYVALENCE_API_BASE}/polyvalence/`;
+
 function maquinaToSimples(m: Maquina): MaquinaSimples {
   return {
     id: m.id,
@@ -104,8 +141,12 @@ export default function Configuracao() {
     adicionarMaquina, removerMaquina, actualizarMaquina
   } = useStorage();
 
+  // Operadores da API (matriz de polivalência) para alimentar a 1ª tabela.
+  const [operadoresApi, setOperadoresApi] = useState<Operador[] | null>(null);
+  const [erroOperadoresApi, setErroOperadoresApi] = useState<string | null>(null);
+
   // Operadores e máquinas vêm sempre do contexto (fonte de verdade única)
-  const operadores: Operador[] = dados.operadores;
+  const operadores: Operador[] = operadoresApi ?? dados.operadores;
   const maquinas: MaquinaSimples[] = dados.maquinas.map(maquinaToSimples);
 
   // Feedback visual
@@ -256,7 +297,66 @@ export default function Configuracao() {
   const [filtroOperador, setFiltroOperador] = useState("");
   const [filtroOperacao, setFiltroOperacao] = useState("");
   const [filtroMaquina, setFiltroMaquina] = useState<string>("todas");
+  const [filtroPolivalenciaMin, setFiltroPolivalenciaMin] = useState("");
+  const [ordenacaoPolivalencia, setOrdenacaoPolivalencia] = useState<"nenhuma" | "asc" | "desc">("nenhuma");
   const [showFiltros, setShowFiltros] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+
+    const carregarMatrizPolivalencia = async () => {
+      try {
+        const params: Record<string, string | boolean> = { include_operation_names: true };
+        if (filtroFamilia !== "todas") params.family_id = filtroFamilia;
+
+        const resposta = await axios.get(POLYVALENCE_ENDPOINT, { params });
+        const colaboradores = ensureArray(resposta.data);
+
+        const mapeados: Operador[] = colaboradores.map((colaborador, index) => {
+          const id = pickString(colaborador, ["collaborator_id", "operator_id", "id"]) || `OP${String(index + 1).padStart(3, "0")}`;
+          const nome = pickString(colaborador, ["collaborator_name", "operator_name", "name"]);
+          const operacoes = ensureArray(colaborador.operations);
+
+          const competencias: Operador["competencias"] = {};
+
+          operacoes.forEach((op) => {
+            const operacaoNome = pickString(op, ["operation_name", "operation_id", "operation_code", "id"]);
+            if (!operacaoNome) return;
+            const ole = pickNumber(op, ["ole_percentage", "ole", "ole_percent"]) ?? 0;
+            competencias[operacaoNome] = { operacao: operacaoNome, ole };
+          });
+
+          const olesValidos = Object.values(competencias)
+            .map((c) => c?.ole)
+            .filter((v): v is number => typeof v === "number");
+          const oleHistorico = olesValidos.length
+            ? Math.round(olesValidos.reduce((acc, v) => acc + v, 0) / olesValidos.length)
+            : 0;
+
+          return {
+            id,
+            nome: nome || undefined,
+            oleHistorico,
+            competencias,
+          };
+        });
+
+        if (!cancelado) {
+          setOperadoresApi(mapeados);
+          setErroOperadoresApi(null);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar matriz de polivalencia:", error);
+        if (!cancelado) {
+          setOperadoresApi(null);
+          setErroOperadoresApi("Nao foi possivel carregar a matriz da API. A mostrar dados locais.");
+        }
+      }
+    };
+
+    void carregarMatrizPolivalencia();
+    return () => { cancelado = true; };
+  }, [filtroFamilia]);
 
   const operacoesFamiliaSelecionada = useMemo(() => {
     if (filtroFamilia === "todas") return todasOperacoesUnicas;
@@ -294,13 +394,42 @@ export default function Configuracao() {
         Object.values(op.competencias).some((c) => c && c.operacao && opsSet.has(c.operacao))
       );
     }
+    if (filtroPolivalenciaMin.trim()) {
+      const min = Number(filtroPolivalenciaMin);
+      if (Number.isFinite(min)) {
+        res = res.filter((op) =>
+          Object.values(op.competencias).some((c) => c && typeof c.ole === "number" && c.ole >= min)
+        );
+      }
+    }
     return res;
-  }, [operadores, filtroOperador, filtroOperacao, filtroMaquina, filtroFamilia, operacoesFamiliaSelecionada]);
+  }, [operadores, filtroOperador, filtroOperacao, filtroMaquina, filtroFamilia, filtroPolivalenciaMin, operacoesFamiliaSelecionada]);
 
-  const temFiltrosAtivos = filtroFamilia !== "todas" || filtroOperador.trim() !== "" || filtroOperacao.trim() !== "" || filtroMaquina !== "todas";
+  const temFiltrosAtivos =
+    filtroFamilia !== "todas" ||
+    filtroOperador.trim() !== "" ||
+    filtroOperacao.trim() !== "" ||
+    filtroMaquina !== "todas" ||
+    filtroPolivalenciaMin.trim() !== "";
+
+  const operadoresVisiveis = useMemo(() => {
+    if (ordenacaoPolivalencia === "nenhuma") return operadoresFiltrados;
+    const copia = [...operadoresFiltrados];
+    copia.sort((a, b) => {
+      const va = Number(a.oleHistorico) || 0;
+      const vb = Number(b.oleHistorico) || 0;
+      return ordenacaoPolivalencia === "asc" ? va - vb : vb - va;
+    });
+    return copia;
+  }, [operadoresFiltrados, ordenacaoPolivalencia]);
 
   const limparFiltros = () => {
-    setFiltroFamilia("todas"); setFiltroOperador(""); setFiltroOperacao(""); setFiltroMaquina("todas");
+    setFiltroFamilia("todas");
+    setFiltroOperador("");
+    setFiltroOperacao("");
+    setFiltroMaquina("todas");
+    setFiltroPolivalenciaMin("");
+    setOrdenacaoPolivalencia("nenhuma");
   };
 
   const getOleColorClasses = (ole: number) => {
@@ -314,6 +443,19 @@ export default function Configuracao() {
 
   const celulaKey = (opId: string, pol: string) => `${opId}-${pol}`;
   const posicoesPolivalencia = ["POL_1","POL_2","POL_3","POL_4","POL_5","POL_6","POL_7","POL_8"];
+  const tabelaSomenteLeitura = Boolean(operadoresApi);
+  const mostrarColunaEliminar = false;
+  const colunasPolivalencia = useMemo(() => {
+    if (!tabelaSomenteLeitura) return posicoesPolivalencia;
+    const colunas = new Set<string>();
+    for (const operador of operadoresVisiveis) {
+      for (const key of Object.keys(operador.competencias || {})) {
+        const competencia = operador.competencias[key];
+        if (competencia?.operacao) colunas.add(competencia.operacao);
+      }
+    }
+    return Array.from(colunas);
+  }, [tabelaSomenteLeitura, operadoresVisiveis]);
 
   const isGuardando = estadoConexao === "a-guardar";
 
@@ -326,7 +468,7 @@ export default function Configuracao() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Configuração</h1>
           <p className="text-gray-500 mt-1 text-sm">
-            Matrizes de polivalência de operadores e máquinas
+            Matrizes de polivalencia de operadores e maquinas
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -354,9 +496,9 @@ export default function Configuracao() {
                 <Users className="w-5 h-5 text-teal-600" />
               </div>
               <div>
-                <div className="text-base font-semibold">Matriz de Polivalência — Operadores</div>
+                <div className="text-base font-semibold">Matriz de Polivalencia - Operadores</div>
                 <CardDescription className="text-gray-500 mt-0.5 text-xs">
-                  Competências técnicas de cada operador — clique numa célula para editar
+                  Competencias tecnicas de cada operador - clique numa celula para editar
                 </CardDescription>
               </div>
             </div>
@@ -385,7 +527,7 @@ export default function Configuracao() {
                       />
                     </div>
                     <div>
-                      <Label className="text-xs font-medium">OLE Histórico (%)</Label>
+                      <Label className="text-xs font-medium">OLE Historico (%)</Label>
                       <Input
                         type="number" min={0} max={100}
                         value={novoOperador.oleHistorico}
@@ -411,17 +553,20 @@ export default function Configuracao() {
 
         {/* Barra de filtros */}
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 space-y-3">
+          {erroOperadoresApi && (
+            <div className="text-xs text-orange-600">{erroOperadoresApi}</div>
+          )}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <FolderTree className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Família de Artigos:</span>
+              <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Familia de Artigos:</span>
             </div>
             <Select value={filtroFamilia} onValueChange={(val) => { setFiltroFamilia(val); setFiltroMaquina("todas"); }}>
               <SelectTrigger className="w-[260px] rounded-sm text-xs h-8 bg-white">
-                <SelectValue placeholder="Todas as famílias" />
+                <SelectValue placeholder="Todas as familias" />
               </SelectTrigger>
               <SelectContent className="rounded-sm">
-                <SelectItem value="todas" className="text-xs">Todas as famílias</SelectItem>
+                <SelectItem value="todas" className="text-xs">Todas as familias</SelectItem>
                 {produtosMock.map((grupo) => (
                   <SelectItem key={grupo.id} value={grupo.id} className="text-xs">
                     <span className="font-mono text-[10px] text-gray-500 mr-1.5">{grupo.referencia}</span>
@@ -433,7 +578,7 @@ export default function Configuracao() {
             </Select>
             {filtroFamilia !== "todas" && (
               <Badge variant="secondary" className="rounded-sm text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
-                {operacoesFamiliaSelecionada.length} operações · {maquinasFamiliaSelecionada.length} máquinas
+                  {operacoesFamiliaSelecionada.length} operacoes · {maquinasFamiliaSelecionada.length} maquinas
               </Badge>
             )}
             <div className="ml-auto flex items-center gap-2">
@@ -447,7 +592,7 @@ export default function Configuracao() {
                 Filtros
                 {temFiltrosAtivos && (
                   <span className="ml-1.5 w-4 h-4 bg-blue-600 text-white rounded-full text-[9px] flex items-center justify-center">
-                    {[filtroOperador.trim() !== "", filtroOperacao.trim() !== "", filtroMaquina !== "todas", filtroFamilia !== "todas"].filter(Boolean).length}
+                    {[filtroOperador.trim() !== "", filtroOperacao.trim() !== "", filtroMaquina !== "todas", filtroFamilia !== "todas", filtroPolivalenciaMin.trim() !== ""].filter(Boolean).length}
                   </span>
                 )}
               </Button>
@@ -460,7 +605,7 @@ export default function Configuracao() {
           </div>
 
           {showFiltros && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 pt-2 border-t border-gray-200">
               <div>
                 <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Operador</Label>
                 <div className="relative">
@@ -469,22 +614,47 @@ export default function Configuracao() {
                 </div>
               </div>
               <div>
-                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Operação / Artigo</Label>
+                 <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Operacao / Artigo</Label>
                 <div className="relative">
                   <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <Input value={filtroOperacao} onChange={(e) => setFiltroOperacao(e.target.value)} placeholder="Pesquisar operação..." className="rounded-sm text-xs h-8 pl-7 bg-white" list="filtro-ops-list" />
+                  <Input value={filtroOperacao} onChange={(e) => setFiltroOperacao(e.target.value)} placeholder="Pesquisar operacao..." className="rounded-sm text-xs h-8 pl-7 bg-white" list="filtro-ops-list" />
                   <datalist id="filtro-ops-list">
                     {operacoesFamiliaSelecionada.map((op) => <option key={op} value={op} />)}
                   </datalist>
                 </div>
               </div>
               <div>
-                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Máquina</Label>
+                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Maquina</Label>
                 <Select value={filtroMaquina} onValueChange={setFiltroMaquina}>
-                  <SelectTrigger className="rounded-sm text-xs h-8 bg-white"><SelectValue placeholder="Todas as máquinas" /></SelectTrigger>
+                  <SelectTrigger className="rounded-sm text-xs h-8 bg-white"><SelectValue placeholder="Todas as maquinas" /></SelectTrigger>
                   <SelectContent className="rounded-sm">
-                    <SelectItem value="todas" className="text-xs">Todas as máquinas</SelectItem>
+                    <SelectItem value="todas" className="text-xs">Todas as maquinas</SelectItem>
                     {maquinasFamiliaSelecionada.map((maq) => <SelectItem key={maq} value={maq} className="text-xs">{maq}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Polivalencia min (%)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={filtroPolivalenciaMin}
+                  onChange={(e) => setFiltroPolivalenciaMin(e.target.value)}
+                  placeholder="ex: 85"
+                  className="rounded-sm text-xs h-8 bg-white"
+                />
+              </div>
+              <div>
+                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Ordenar por polivalencia</Label>
+                <Select value={ordenacaoPolivalencia} onValueChange={(v) => setOrdenacaoPolivalencia(v as "nenhuma" | "asc" | "desc")}>
+                  <SelectTrigger className="rounded-sm text-xs h-8 bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-sm">
+                    <SelectItem value="nenhuma" className="text-xs">Sem ordenacao</SelectItem>
+                    <SelectItem value="desc" className="text-xs">Maior OLE primeiro</SelectItem>
+                    <SelectItem value="asc" className="text-xs">Menor OLE primeiro</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -493,32 +663,34 @@ export default function Configuracao() {
 
           {temFiltrosAtivos && (
             <div className="text-[10px] text-gray-500">
-              A mostrar <span className="font-semibold text-gray-700">{operadoresFiltrados.length}</span> de <span className="font-semibold text-gray-700">{operadores.length}</span> operadores
+              A mostrar <span className="font-semibold text-gray-700">{operadoresVisiveis.length}</span> de <span className="font-semibold text-gray-700">{operadores.length}</span> operadores
             </div>
           )}
         </div>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[65vh]">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase sticky left-0 bg-gray-50 z-10 min-w-[140px]">Operador</th>
                   <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap w-16">OLE %</th>
-                  {posicoesPolivalencia.map((pol) => (
+                  {colunasPolivalencia.map((pol) => (
                     <th key={pol} className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{pol}</th>
                   ))}
-                  <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-16">Ações</th>
+                  {mostrarColunaEliminar && (
+                    <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-16 sticky right-0 bg-gray-50 z-10">Acoes</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {operadoresFiltrados.map((operador) => (
+                {operadoresVisiveis.map((operador) => (
                   <tr key={operador.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                     <td className="p-3 sticky left-0 bg-white z-10">
                       <div className="font-semibold text-sm text-gray-900">{operador.id}</div>
                     </td>
                     <td className="p-3 text-center">
-                      {editandoCelula === `${operador.id}-ole` ? (
+                      {!tabelaSomenteLeitura && editandoCelula === `${operador.id}-ole` ? (
                         <Input
                           type="number" min={0} max={100}
                           defaultValue={operador.oleHistorico}
@@ -531,18 +703,18 @@ export default function Configuracao() {
                         <Badge
                           variant="secondary"
                           className="font-mono font-semibold text-xs rounded-sm cursor-pointer"
-                          onClick={() => setEditandoCelula(`${operador.id}-ole`)}
+                          onClick={() => { if (!tabelaSomenteLeitura) setEditandoCelula(`${operador.id}-ole`); }}
                         >
                           {operador.oleHistorico}%
                         </Badge>
                       )}
                     </td>
-                    {posicoesPolivalencia.map((pol) => {
+                    {colunasPolivalencia.map((pol) => {
                       const key = celulaKey(operador.id, pol);
                       const competencia = operador.competencias[pol];
                       return (
                         <td key={pol} className="p-2 text-center">
-                          {editandoCelula === key ? (
+                          {!tabelaSomenteLeitura && editandoCelula === key ? (
                             <div className="space-y-1">
                               <Input
                                 defaultValue={competencia ? competencia.operacao || "" : ""}
@@ -551,7 +723,7 @@ export default function Configuracao() {
                                 autoFocus
                                 className="h-8 text-xs rounded-sm min-w-[120px]"
                                 list={`ops-${key}`}
-                                placeholder="Operação..."
+                                placeholder="Operacao..."
                               />
                               {competencia && competencia.operacao && (
                                 <Input
@@ -573,28 +745,29 @@ export default function Configuracao() {
                                   ? `px-3 py-2 font-medium text-xs ${getOleColorClasses(competencia.ole)}`
                                   : "w-10 h-10 bg-gray-100 text-gray-400 hover:bg-gray-200"
                               }`}
-                              onClick={() => setEditandoCelula(key)}
+                              onClick={() => { if (!tabelaSomenteLeitura) setEditandoCelula(key); }}
                             >
                               {competencia ? (
                                 <>
-                                  <span className="truncate max-w-[110px]">{competencia.operacao}</span>
-                                  <span className="text-[10px] opacity-90 font-mono mt-0.5">{competencia.ole}%</span>
+                                  <span className="text-xs font-mono">{competencia.ole}%</span>
                                 </>
-                              ) : "—"}
+                              ) : "-"}
                             </div>
                           )}
                         </td>
                       );
                     })}
-                    <td className="p-3 text-center">
-                      <Button
-                        variant="ghost" size="sm"
-                        onClick={() => handleRemoverOperador(operador.id)}
-                        className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </td>
+                    {mostrarColunaEliminar && (
+                      <td className="p-3 text-center sticky right-0 bg-white z-10">
+                        <Button
+                          variant="ghost" size="sm"
+                          onClick={() => handleRemoverOperador(operador.id)}
+                          className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -604,13 +777,13 @@ export default function Configuracao() {
           <div className="m-6 p-5 bg-gray-50 rounded-sm border border-gray-200">
             <div className="flex items-center gap-2 mb-4">
               <Info className="w-4 h-4 text-gray-500" />
-              <span className="font-semibold text-gray-900 text-xs uppercase tracking-wide">Informação</span>
+              <span className="font-semibold text-gray-900 text-xs uppercase tracking-wide">Informacao</span>
             </div>
             <div className="text-xs text-gray-600 space-y-1">
-              <p>Clique numa célula da matriz para editar a competência do operador</p>
-              <p>Cada posição (POL_1, POL_2, etc.) representa uma competência operacional específica</p>
-              <p>O OLE% indica a eficiência histórica do operador — clique para editar</p>
-              <p className="text-blue-600">Todas as alterações são guardadas automaticamente no ficheiro de sessão</p>
+              <p>Clique numa celula da matriz para editar a competencia do operador</p>
+              <p>{tabelaSomenteLeitura ? "Cada coluna representa uma operacao vinda da API de polivalencia" : "Cada posicao (POL_1, POL_2, etc.) representa uma competencia operacional especifica"}</p>
+              <p>O OLE% indica a eficiencia historica do operador - clique para editar</p>
+              <p className="text-blue-600">Todas as alteracoes sao guardadas automaticamente no ficheiro de sessao</p>
             </div>
           </div>
         </CardContent>
@@ -688,7 +861,7 @@ export default function Configuracao() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[65vh]">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
@@ -807,3 +980,5 @@ export default function Configuracao() {
     </main>
   );
 }
+
+

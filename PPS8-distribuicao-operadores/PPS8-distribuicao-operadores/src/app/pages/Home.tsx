@@ -67,11 +67,6 @@ type DistItem = {
   temposOperacoes?: Record<string, number>;
 };
 
-type PolyvalenceCapability = {
-  operatorId: string;
-  ole: number;
-};
-
 const ensureArray = (value: unknown): ApiRecord[] => {
   if (Array.isArray(value)) return value as ApiRecord[];
   if (value && typeof value === "object") {
@@ -1106,7 +1101,6 @@ export default function Home() {
   const [produtosApi, setProdutosApi] = useState<Produto[]>([]);
   const [produtoSelecionado, setProdutoSelecionado] = useState<string | null>(null);
   const [loadingFichas, setLoadingFichas] = useState(false);
-  const [polyvalenceByOperation, setPolyvalenceByOperation] = useState<Record<string, PolyvalenceCapability[]>>({});
   const [candidatePoolsByOperation, setCandidatePoolsByOperation] = useState<Record<string, string[]>>({});
   const [quantidadeObjetivoInput, setQuantidadeObjetivoInput] = useState("");
   const [numeroOperadoresInput, setNumeroOperadoresInput] = useState("");
@@ -1324,42 +1318,6 @@ export default function Home() {
 
     void carregarCandidatePools();
   }, [produtoSelecionado, produtosApi, dados.operadores]);
-
-  useEffect(() => {
-    if (!grupoArtigoSelecionado) {
-      setPolyvalenceByOperation({});
-      return;
-    }
-    const carregarPolyvalencia = async () => {
-      try {
-        const resposta = await axios.get(`${API_BASE_URL}/polyvalence`, {
-          params: { family_id: grupoArtigoSelecionado },
-        });
-        const colaboradores = ensureArray(resposta.data);
-        const capacidades: Record<string, PolyvalenceCapability[]> = {};
-
-        for (const colaborador of colaboradores) {
-          const colaboradorIdRaw = pickString(colaborador, ["collaborator_id", "operator_id", "id"]);
-          if (!colaboradorIdRaw) continue;
-          const operatorId = mapOperatorToCode(colaboradorIdRaw, dados.operadores);
-          const operacoesColaborador = ensureArray((colaborador as ApiRecord).operations);
-          for (const op of operacoesColaborador) {
-            const operationId = pickString(op, ["operation_id", "operation_code", "id"]);
-            if (!operationId) continue;
-            const ole = pickNumber(op, ["ole_percentage", "ole", "ole_percent"]) ?? 0;
-            if (!capacidades[operationId]) capacidades[operationId] = [];
-            capacidades[operationId].push({ operatorId, ole });
-          }
-        }
-
-        setPolyvalenceByOperation(capacidades);
-      } catch (error) {
-        console.error("Erro ao carregar polyvalence:", error);
-        setPolyvalenceByOperation({});
-      }
-    };
-    void carregarPolyvalencia();
-  }, [grupoArtigoSelecionado, dados.operadores]);
 
   // â”€â”€â”€ Atalhos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
