@@ -1541,7 +1541,7 @@ export default function FichaTecnica() {
           )}
           <Dialog open={showNovoProduto} onOpenChange={setShowNovoProduto}>
             <DialogTrigger asChild>
-              <Button className="bg-[#2d2d2d] hover:bg-[#3d3d3d] rounded-sm text-xs gap-2">
+              <Button className="bg-[#2d2d2d] hover:bg-[#3d3d3d] rounded-sm text-xs gap-2 cursor-pointer">
                 <Plus className="w-4 h-4" />
                 Novo Produto
               </Button>
@@ -1639,14 +1639,14 @@ export default function FichaTecnica() {
                 onValueChange={setGrupoArtigoSelecionado}
                 disabled={loadingFamilias || familias.length === 0}
               >
-                <SelectTrigger className="rounded-sm text-sm">
+                <SelectTrigger className="rounded-sm text-sm cursor-pointer">
                   <SelectValue
                     placeholder={loadingFamilias ? "A carregar grupos..." : "Selecione um grupo"}
                   />
                 </SelectTrigger>
                 <SelectContent className="rounded-sm">
                   {familias.map((familia) => (
-                    <SelectItem key={familia.id} value={familia.id} className="text-sm">
+                    <SelectItem key={familia.id} value={familia.id} className="text-sm cursor-pointer">
                       {familia.label}
                     </SelectItem>
                   ))}
@@ -1663,7 +1663,7 @@ export default function FichaTecnica() {
                 onValueChange={handleSelecionarFicha}
                 disabled={loadingFichas || loadingFichaPorCodigo || produtos.length === 0}
               >
-                <SelectTrigger className="rounded-sm text-sm">
+                <SelectTrigger className="rounded-sm text-sm cursor-pointer">
                   <SelectValue
                     placeholder={
                       loadingFichas
@@ -1676,7 +1676,7 @@ export default function FichaTecnica() {
                 </SelectTrigger>
                 <SelectContent className="rounded-sm">
                   {produtos.map((prod) => (
-                    <SelectItem key={prod.id} value={prod.id} className="text-sm">
+                    <SelectItem key={prod.id} value={prod.id} className="text-sm cursor-pointer">
                       <span className="font-mono text-xs text-gray-500 mr-2">{prod.referencia}</span>
                       {prod.nome}
                       <span className="text-gray-400 ml-2">({prod.operacoes.length} ops)</span>
@@ -1858,7 +1858,7 @@ export default function FichaTecnica() {
                       <DialogTrigger asChild>
                         <Button
                           size="sm"
-                          className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs font-medium"
+                          className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs font-medium cursor-pointer"
                         >
                           <Plus className="w-4 h-4 mr-2" />
                           Nova Operação

@@ -30,6 +30,11 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../components/ui/popover";
+import {
   Settings,
   Users,
   Info,
@@ -45,16 +50,14 @@ import {
   Filter,
   FolderTree,
   Loader2,
+  ChevronsUpDown,
+  Check,
 } from "lucide-react";
 
 // ─── Operações únicas disponíveis (read-only, do mock) ───────────────────────
 
 const todasOperacoesUnicas = Array.from(
   new Set(operacoesMock.map((op) => op.nome))
-).sort();
-
-const todasMaquinasUnicas = Array.from(
-  new Set(operacoesMock.map((op) => op.tipoMaquina).filter(Boolean))
 ).sort();
 
 // ─── Tipo local para tabela de máquinas (layout simples) ─────────────────────
@@ -68,6 +71,11 @@ interface MaquinaSimples {
   agrupavel: boolean;
   quantidade: number;
   operacoesCompativeis: string[];
+}
+
+interface FamilyOption {
+  id: string;
+  label: string;
 }
 
 type ApiRecord = Record<string, any>;
@@ -101,6 +109,13 @@ const pickNumber = (obj: ApiRecord, keys: string[]): number | null => {
   }
   return null;
 };
+
+const normalizeText = (value: string): string =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 
 const POLYVALENCE_API_BASE = "http://192.168.54.202:7860/api";
 const POLYVALENCE_ENDPOINT = `${POLYVALENCE_API_BASE}/polyvalence/`;
@@ -158,7 +173,8 @@ export default function Configuracao() {
 
   // Formulário novo operador
   const [showNovoOperador, setShowNovoOperador] = useState(false);
-  const [novoOperador, setNovoOperador] = useState({ id: "", oleHistorico: 85 });
+  const [novoOperador, setNovoOperador] = useState({ id: "", nome: "", ativo: true, oleHistorico: 85 });
+  const [reloadMatrizTick, setReloadMatrizTick] = useState(0);
 
   // Formulário nova máquina
   const [showNovaMaquina, setShowNovaMaquina] = useState(false);
@@ -177,18 +193,33 @@ export default function Configuracao() {
 
   const handleCriarOperador = useCallback(async () => {
     if (!novoOperador.id.trim()) return;
-    const novo: Operador = {
-      id: novoOperador.id.trim(),
-      oleHistorico: novoOperador.oleHistorico,
-      competencias: {
-        POL_1: null, POL_2: null, POL_3: null, POL_4: null,
-        POL_5: null, POL_6: null, POL_7: null, POL_8: null,
-      },
-    };
-    await adicionarOperador(novo);
+    const code = novoOperador.id.trim();
+    const name = novoOperador.nome.trim() || code;
+    try {
+      await axios.post(`${API_BASE_URL}/collaborators/`, {
+        code,
+        name,
+        active: novoOperador.ativo,
+      });
+      setReloadMatrizTick((prev) => prev + 1);
+      setErroOperadoresApi(null);
+    } catch (error) {
+      console.error("Erro ao criar colaborador na API, a usar fallback local:", error);
+      const novo: Operador = {
+        id: code,
+        nome: name,
+        oleHistorico: novoOperador.oleHistorico,
+        competencias: {
+          POL_1: null, POL_2: null, POL_3: null, POL_4: null,
+          POL_5: null, POL_6: null, POL_7: null, POL_8: null,
+        },
+      };
+      await adicionarOperador(novo);
+      setErroOperadoresApi("Colaborador criado localmente (fallback). Verifique o endpoint /collaborators/.");
+    }
     mostrarFeedback();
     setShowNovoOperador(false);
-    setNovoOperador({ id: "", oleHistorico: 85 });
+    setNovoOperador({ id: "", nome: "", ativo: true, oleHistorico: 85 });
   }, [novoOperador, adicionarOperador, mostrarFeedback]);
 
   const handleRemoverOperador = useCallback(async (id: string) => {
@@ -293,10 +324,11 @@ export default function Configuracao() {
 
   // ── Filtros ───────────────────────────────────────────────────────────────
 
-  const [filtroFamilia, setFiltroFamilia] = useState<string>("todas");
+  const [filtroFamilia, setFiltroFamilia] = useState<string>("");
+  const [familias, setFamilias] = useState<FamilyOption[]>([]);
+  const [loadingFamilias, setLoadingFamilias] = useState(false);
   const [filtroOperador, setFiltroOperador] = useState("");
-  const [filtroOperacao, setFiltroOperacao] = useState("");
-  const [filtroMaquina, setFiltroMaquina] = useState<string>("todas");
+  const [filtroOperacoesSelecionadas, setFiltroOperacoesSelecionadas] = useState<string[]>([]);
   const [filtroPolivalenciaMin, setFiltroPolivalenciaMin] = useState("");
   const [ordenacaoPolivalencia, setOrdenacaoPolivalencia] = useState<"nenhuma" | "asc" | "desc">("nenhuma");
   const [showFiltros, setShowFiltros] = useState(false);
@@ -304,10 +336,63 @@ export default function Configuracao() {
   useEffect(() => {
     let cancelado = false;
 
+    const carregarFamilias = async () => {
+      setLoadingFamilias(true);
+      try {
+        const resposta = await axios.get(`${API_BASE_URL}/families/`);
+        const families = ensureArray(resposta.data).map((family, index) => {
+          const id =
+            pickString(family, ["family_id", "id", "code", "reference"]) ||
+            `FAM${String(index + 1).padStart(3, "0")}`;
+          const name = pickString(family, ["family_name", "name", "nome"]) || id;
+          return {
+            id,
+            label: name,
+          };
+        });
+
+        if (!cancelado) {
+          if (families.length > 0) {
+            setFamilias(families);
+            setFiltroFamilia((current) => {
+              if (current && families.some((f) => f.id === current)) return current;
+              return families[0].id;
+            });
+          } else {
+            const fallbackFamilies = produtosMock.map((family) => ({ id: family.id, label: family.nome }));
+            setFamilias(fallbackFamilies);
+            setFiltroFamilia((current) => {
+              if (current && fallbackFamilies.some((f) => f.id === current)) return current;
+              return fallbackFamilies[0]?.id || "";
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Erro ao carregar familias:", error);
+        if (!cancelado) {
+          const fallbackFamilies = produtosMock.map((family) => ({ id: family.id, label: family.nome }));
+          setFamilias(fallbackFamilies);
+          setFiltroFamilia((current) => {
+            if (current && fallbackFamilies.some((f) => f.id === current)) return current;
+            return fallbackFamilies[0]?.id || "";
+          });
+        }
+      } finally {
+        if (!cancelado) setLoadingFamilias(false);
+      }
+    };
+
+    void carregarFamilias();
+    return () => { cancelado = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelado = false;
+
     const carregarMatrizPolivalencia = async () => {
       try {
         const params: Record<string, string | boolean> = { include_operation_names: true };
-        if (filtroFamilia !== "todas") params.family_id = filtroFamilia;
+        if (filtroFamilia) params.family_id = filtroFamilia;
 
         const resposta = await axios.get(POLYVALENCE_ENDPOINT, { params });
         const colaboradores = ensureArray(resposta.data);
@@ -356,60 +441,66 @@ export default function Configuracao() {
 
     void carregarMatrizPolivalencia();
     return () => { cancelado = true; };
-  }, [filtroFamilia]);
+  }, [filtroFamilia, reloadMatrizTick]);
 
   const operacoesFamiliaSelecionada = useMemo(() => {
-    if (filtroFamilia === "todas") return todasOperacoesUnicas;
+    if (!filtroFamilia) return todasOperacoesUnicas;
     const grupo = produtosMock.find((g) => g.id === filtroFamilia);
     return grupo ? Array.from(new Set(grupo.operacoes.map((op) => op.nome))).sort() : todasOperacoesUnicas;
   }, [filtroFamilia]);
 
-  const maquinasFamiliaSelecionada = useMemo(() => {
-    if (filtroFamilia === "todas") return todasMaquinasUnicas;
-    const grupo = produtosMock.find((g) => g.id === filtroFamilia);
-    return grupo ? Array.from(new Set(grupo.operacoes.map((op) => op.tipoMaquina).filter(Boolean))).sort() : todasMaquinasUnicas;
-  }, [filtroFamilia]);
+  const tabelaSomenteLeitura = Boolean(operadoresApi);
+  const posicoesPolivalencia = ["POL_1","POL_2","POL_3","POL_4","POL_5","POL_6","POL_7","POL_8"];
+  const colunasBasePolivalencia = useMemo(() => {
+    if (!tabelaSomenteLeitura) return posicoesPolivalencia;
+    const colunas = new Set<string>();
+    for (const operador of operadores) {
+      for (const key of Object.keys(operador.competencias || {})) {
+        const competencia = operador.competencias[key];
+        if (competencia?.operacao) colunas.add(competencia.operacao);
+      }
+    }
+    return Array.from(colunas);
+  }, [tabelaSomenteLeitura, operadores]);
 
   const operadoresFiltrados = useMemo(() => {
     let res = operadores;
     if (filtroOperador.trim()) {
-      const t = filtroOperador.toLowerCase();
-      res = res.filter((op) => op.id.toLowerCase().includes(t));
+      const t = normalizeText(filtroOperador);
+      res = res.filter((op) => {
+        const idMatch = normalizeText(op.id).includes(t);
+        const nomeMatch = normalizeText(op.nome || "").includes(t);
+        return idMatch || nomeMatch;
+      });
     }
-    if (filtroOperacao.trim()) {
-      const t = filtroOperacao.toLowerCase();
+    if (!tabelaSomenteLeitura && filtroFamilia) {
+      const opsSet = new Set(operacoesFamiliaSelecionada.map((op) => normalizeText(op)));
       res = res.filter((op) =>
-        Object.values(op.competencias).some((c) => c && c.operacao && c.operacao.toLowerCase().includes(t))
-      );
-    }
-    if (filtroMaquina !== "todas") {
-      const opsD = new Set(operacoesMock.filter((op) => op.tipoMaquina === filtroMaquina).map((op) => op.nome));
-      res = res.filter((op) =>
-        Object.values(op.competencias).some((c) => c && c.operacao && opsD.has(c.operacao))
-      );
-    }
-    if (filtroFamilia !== "todas") {
-      const opsSet = new Set(operacoesFamiliaSelecionada);
-      res = res.filter((op) =>
-        Object.values(op.competencias).some((c) => c && c.operacao && opsSet.has(c.operacao))
+        Object.values(op.competencias).some(
+          (c) => c && c.operacao && opsSet.has(normalizeText(c.operacao))
+        )
       );
     }
     if (filtroPolivalenciaMin.trim()) {
       const min = Number(filtroPolivalenciaMin);
       if (Number.isFinite(min)) {
-        res = res.filter((op) =>
-          Object.values(op.competencias).some((c) => c && typeof c.ole === "number" && c.ole >= min)
-        );
+        res = res.filter((op) => (Number(op.oleHistorico) || 0) >= min);
       }
     }
+    if (filtroOperacoesSelecionadas.length > 0) {
+      const opsSet = new Set(filtroOperacoesSelecionadas.map((op) => normalizeText(op)));
+      res = res.filter((op) =>
+        Object.values(op.competencias).some(
+          (c) => c && c.operacao && opsSet.has(normalizeText(c.operacao))
+        )
+      );
+    }
     return res;
-  }, [operadores, filtroOperador, filtroOperacao, filtroMaquina, filtroFamilia, filtroPolivalenciaMin, operacoesFamiliaSelecionada]);
+  }, [operadores, filtroOperador, filtroFamilia, filtroPolivalenciaMin, operacoesFamiliaSelecionada, tabelaSomenteLeitura, filtroOperacoesSelecionadas]);
 
   const temFiltrosAtivos =
-    filtroFamilia !== "todas" ||
     filtroOperador.trim() !== "" ||
-    filtroOperacao.trim() !== "" ||
-    filtroMaquina !== "todas" ||
+    filtroOperacoesSelecionadas.length > 0 ||
     filtroPolivalenciaMin.trim() !== "";
 
   const operadoresVisiveis = useMemo(() => {
@@ -424,10 +515,9 @@ export default function Configuracao() {
   }, [operadoresFiltrados, ordenacaoPolivalencia]);
 
   const limparFiltros = () => {
-    setFiltroFamilia("todas");
+    setFiltroFamilia(familias[0]?.id || "");
     setFiltroOperador("");
-    setFiltroOperacao("");
-    setFiltroMaquina("todas");
+    setFiltroOperacoesSelecionadas([]);
     setFiltroPolivalenciaMin("");
     setOrdenacaoPolivalencia("nenhuma");
   };
@@ -442,20 +532,20 @@ export default function Configuracao() {
   };
 
   const celulaKey = (opId: string, pol: string) => `${opId}-${pol}`;
-  const posicoesPolivalencia = ["POL_1","POL_2","POL_3","POL_4","POL_5","POL_6","POL_7","POL_8"];
-  const tabelaSomenteLeitura = Boolean(operadoresApi);
   const mostrarColunaEliminar = false;
   const colunasPolivalencia = useMemo(() => {
-    if (!tabelaSomenteLeitura) return posicoesPolivalencia;
-    const colunas = new Set<string>();
-    for (const operador of operadoresVisiveis) {
-      for (const key of Object.keys(operador.competencias || {})) {
-        const competencia = operador.competencias[key];
-        if (competencia?.operacao) colunas.add(competencia.operacao);
-      }
-    }
-    return Array.from(colunas);
-  }, [tabelaSomenteLeitura, operadoresVisiveis]);
+    if (filtroOperacoesSelecionadas.length === 0) return colunasBasePolivalencia;
+    const selected = new Set(filtroOperacoesSelecionadas.map((op) => normalizeText(op)));
+    return colunasBasePolivalencia.filter((col) => selected.has(normalizeText(col)));
+  }, [colunasBasePolivalencia, filtroOperacoesSelecionadas]);
+
+  const toggleFiltroOperacao = useCallback((operacao: string) => {
+    setFiltroOperacoesSelecionadas((prev) =>
+      prev.some((item) => normalizeText(item) === normalizeText(operacao))
+        ? prev.filter((item) => normalizeText(item) !== normalizeText(operacao))
+        : [...prev, operacao]
+    );
+  }, []);
 
   const isGuardando = estadoConexao === "a-guardar";
 
@@ -506,11 +596,11 @@ export default function Configuracao() {
               <Badge variant="secondary" className="rounded-sm text-xs">{operadores.length} operadores</Badge>
               <Dialog open={showNovoOperador} onOpenChange={setShowNovoOperador}>
                 <DialogTrigger asChild>
-                  <Button size="sm" className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs font-medium">
+                  <Button size="sm" className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs font-medium cursor-pointer">
                     <Plus className="w-4 h-4 mr-2" />Novo Operador
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="rounded-sm">
+                <DialogContent className="rounded-sm [&>button]:cursor-pointer">
                   <DialogHeader>
                     <DialogTitle className="text-base font-semibold">Adicionar Novo Operador</DialogTitle>
                     <DialogDescription className="text-xs">Preencha os dados do operador</DialogDescription>
@@ -527,19 +617,30 @@ export default function Configuracao() {
                       />
                     </div>
                     <div>
-                      <Label className="text-xs font-medium">OLE Historico (%)</Label>
+                      <Label className="text-xs font-medium">Nome do Operador</Label>
                       <Input
-                        type="number" min={0} max={100}
-                        value={novoOperador.oleHistorico}
-                        onChange={(e) => setNovoOperador({ ...novoOperador, oleHistorico: Number(e.target.value) })}
+                        value={novoOperador.nome}
+                        onChange={(e) => setNovoOperador({ ...novoOperador, nome: e.target.value })}
+                        placeholder="ex: Maria Silva"
                         className="rounded-sm text-sm mt-1"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-sm border border-gray-200">
+                      <div>
+                        <Label className="text-xs font-medium">Ativo</Label>
+                        <p className="text-[10px] text-gray-500 mt-0.5">Enviado para a API como campo `active`</p>
+                      </div>
+                      <Switch
+                        className="cursor-pointer"
+                        checked={novoOperador.ativo}
+                        onCheckedChange={(checked) => setNovoOperador({ ...novoOperador, ativo: checked })}
                       />
                     </div>
                   </div>
                   <DialogFooter>
                     <Button
                       onClick={handleCriarOperador}
-                      className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs"
+                      className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs cursor-pointer"
                       disabled={!novoOperador.id.trim()}
                     >
                       Adicionar
@@ -561,24 +662,21 @@ export default function Configuracao() {
               <FolderTree className="w-4 h-4 text-blue-600" />
               <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Familia de Artigos:</span>
             </div>
-            <Select value={filtroFamilia} onValueChange={(val) => { setFiltroFamilia(val); setFiltroMaquina("todas"); }}>
-              <SelectTrigger className="w-[260px] rounded-sm text-xs h-8 bg-white">
-                <SelectValue placeholder="Todas as familias" />
+            <Select value={filtroFamilia} onValueChange={setFiltroFamilia}>
+              <SelectTrigger className="w-[260px] rounded-sm text-xs h-8 bg-white cursor-pointer">
+                <SelectValue placeholder={loadingFamilias ? "A carregar familias..." : "Todas as familias"} />
               </SelectTrigger>
               <SelectContent className="rounded-sm">
-                <SelectItem value="todas" className="text-xs">Todas as familias</SelectItem>
-                {produtosMock.map((grupo) => (
-                  <SelectItem key={grupo.id} value={grupo.id} className="text-xs">
-                    <span className="font-mono text-[10px] text-gray-500 mr-1.5">{grupo.referencia}</span>
-                    {grupo.nome}
-                    <span className="text-gray-400 ml-1.5">({grupo.operacoes.length} ops)</span>
+                {familias.map((familia) => (
+                  <SelectItem key={familia.id} value={familia.id} className="text-xs cursor-pointer">
+                    {familia.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {filtroFamilia !== "todas" && (
+            {filtroFamilia && (
               <Badge variant="secondary" className="rounded-sm text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
-                  {operacoesFamiliaSelecionada.length} operacoes · {maquinasFamiliaSelecionada.length} maquinas
+                  {operacoesFamiliaSelecionada.length} operacoes
               </Badge>
             )}
             <div className="ml-auto flex items-center gap-2">
@@ -592,7 +690,7 @@ export default function Configuracao() {
                 Filtros
                 {temFiltrosAtivos && (
                   <span className="ml-1.5 w-4 h-4 bg-blue-600 text-white rounded-full text-[9px] flex items-center justify-center">
-                    {[filtroOperador.trim() !== "", filtroOperacao.trim() !== "", filtroMaquina !== "todas", filtroFamilia !== "todas", filtroPolivalenciaMin.trim() !== ""].filter(Boolean).length}
+                    {[filtroOperador.trim() !== "", filtroOperacoesSelecionadas.length > 0, filtroPolivalenciaMin.trim() !== ""].filter(Boolean).length}
                   </span>
                 )}
               </Button>
@@ -605,7 +703,7 @@ export default function Configuracao() {
           </div>
 
           {showFiltros && (
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 pt-2 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-gray-200">
               <div>
                 <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Operador</Label>
                 <div className="relative">
@@ -614,24 +712,48 @@ export default function Configuracao() {
                 </div>
               </div>
               <div>
-                 <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Operacao / Artigo</Label>
-                <div className="relative">
-                  <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <Input value={filtroOperacao} onChange={(e) => setFiltroOperacao(e.target.value)} placeholder="Pesquisar operacao..." className="rounded-sm text-xs h-8 pl-7 bg-white" list="filtro-ops-list" />
-                  <datalist id="filtro-ops-list">
-                    {operacoesFamiliaSelecionada.map((op) => <option key={op} value={op} />)}
-                  </datalist>
-                </div>
-              </div>
-              <div>
-                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Maquina</Label>
-                <Select value={filtroMaquina} onValueChange={setFiltroMaquina}>
-                  <SelectTrigger className="rounded-sm text-xs h-8 bg-white"><SelectValue placeholder="Todas as maquinas" /></SelectTrigger>
-                  <SelectContent className="rounded-sm">
-                    <SelectItem value="todas" className="text-xs">Todas as maquinas</SelectItem>
-                    {maquinasFamiliaSelecionada.map((maq) => <SelectItem key={maq} value={maq} className="text-xs">{maq}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Operacoes (colunas)</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between rounded-sm text-xs h-8 bg-white border-gray-200">
+                      {filtroOperacoesSelecionadas.length > 0
+                        ? `${filtroOperacoesSelecionadas.length} selecionada(s)`
+                        : "Todas as operacoes"}
+                      <ChevronsUpDown className="w-3 h-3 text-gray-500" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[320px] p-2">
+                    <div className="max-h-64 overflow-auto space-y-1">
+                      {colunasBasePolivalencia.map((op) => {
+                        const checked = filtroOperacoesSelecionadas.some(
+                          (item) => normalizeText(item) === normalizeText(op)
+                        );
+                        return (
+                          <button
+                            key={op}
+                            type="button"
+                            onClick={() => toggleFiltroOperacao(op)}
+                            className="w-full flex items-center justify-between px-2 py-1.5 text-xs rounded-sm hover:bg-gray-100"
+                          >
+                            <span className="text-left">{op}</span>
+                            {checked ? <Check className="w-3.5 h-3.5 text-blue-600" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="pt-2 mt-2 border-t border-gray-200">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs w-full"
+                        onClick={() => setFiltroOperacoesSelecionadas([])}
+                      >
+                        Limpar selecao
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Polivalencia min (%)</Label>
@@ -808,11 +930,11 @@ export default function Configuracao() {
               <Badge variant="secondary" className="rounded-sm text-xs">{maquinas.length} tipos</Badge>
               <Dialog open={showNovaMaquina} onOpenChange={setShowNovaMaquina}>
                 <DialogTrigger asChild>
-                  <Button size="sm" className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs font-medium">
+                  <Button size="sm" className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs font-medium cursor-pointer">
                     <Plus className="w-4 h-4 mr-2" />Nova Máquina
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="rounded-sm">
+                <DialogContent className="rounded-sm [&>button]:cursor-pointer">
                   <DialogHeader>
                     <DialogTitle className="text-base font-semibold">Adicionar Nova Máquina</DialogTitle>
                     <DialogDescription className="text-xs">Máquinas com ponto, largura ou setup diferente são consideradas máquinas distintas</DialogDescription>
@@ -847,11 +969,11 @@ export default function Configuracao() {
                         <Label className="text-xs font-medium">Permitir Agrupamento</Label>
                         <p className="text-[10px] text-gray-500 mt-0.5">Agrupar com máquinas de mesma configuração</p>
                       </div>
-                      <Switch checked={novaMaquina.agrupavel} onCheckedChange={(checked) => setNovaMaquina({ ...novaMaquina, agrupavel: checked })} />
+                      <Switch className="cursor-pointer" checked={novaMaquina.agrupavel} onCheckedChange={(checked) => setNovaMaquina({ ...novaMaquina, agrupavel: checked })} />
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button onClick={handleCriarMaquina} className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs" disabled={!novaMaquina.tipo.trim()}>
+                    <Button onClick={handleCriarMaquina} className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs cursor-pointer" disabled={!novaMaquina.tipo.trim()}>
                       Adicionar
                     </Button>
                   </DialogFooter>
