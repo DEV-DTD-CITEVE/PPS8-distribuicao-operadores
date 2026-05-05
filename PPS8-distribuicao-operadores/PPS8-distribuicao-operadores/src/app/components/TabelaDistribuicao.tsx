@@ -401,6 +401,14 @@ function TabelaAllocacoes({
   }, [rows, operatorColumns]);
 
   const totalTime = rows.reduce((sum, row) => sum + (parseNumberLike(row.total_time_seconds) ?? 0), 0);
+  const operatorColumnWidth = useMemo(() => {
+    const count = operatorColumns.length;
+    if (count >= 24) return 64;
+    if (count >= 18) return 72;
+    if (count >= 14) return 84;
+    if (count >= 10) return 96;
+    return 110;
+  }, [operatorColumns.length]);
   const totalsByOperatorPercent = useMemo(() => {
     const percentages: Record<string, number> = {};
     operatorColumns.forEach((column) => {
@@ -515,7 +523,7 @@ function TabelaAllocacoes({
             width: "max-content",
             tableLayout: "fixed",
             borderCollapse: "collapse",
-            minWidth: `max(100%, ${530 + operatorColumns.length * 110}px)`,
+            minWidth: `max(100%, ${530 + operatorColumns.length * operatorColumnWidth}px)`,
           }}
         >
           <colgroup>
@@ -524,20 +532,22 @@ function TabelaAllocacoes({
             <col style={{ width: 220 }} />
             <col style={{ width: 110 }} />
             {operatorColumns.map((column) => (
-              <col key={column.key} style={{ width: 110 }} />
+              <col key={column.key} style={{ width: operatorColumnWidth }} />
             ))}
           </colgroup>
 
           <thead style={{ position: "sticky", top: 0, zIndex: 30 }}>
             <tr style={{ height: 32 }}>
               <th style={thBase({ textAlign: "center" })}>SEQ</th>
-              <th style={thBase()}>Operacao</th>
-              <th style={thBase()}>Maquina</th>
+              <th style={thBase()}>Operação</th>
+              <th style={thBase()}>Máquina</th>
               <th style={thBase({ textAlign: "center" })}>Total (s)</th>
               {operatorColumns.map((column) => (
                 <th key={column.key} style={thBase({ textAlign: "center" })} title={column.label}>
                   <div className="flex flex-col items-center leading-tight">
-                    <span className="max-w-[96px] truncate">{column.code}</span>
+                    <span className="truncate" style={{ maxWidth: Math.max(44, operatorColumnWidth - 14) }}>
+                      {column.code}
+                    </span>
                     {column.positionLabel || column.positionSide || column.positionNumber != null ? (
                       <span className="text-[9px] font-normal text-gray-400">
                         {[column.positionSide, column.positionLabel, column.positionNumber != null ? String(column.positionNumber) : ""]

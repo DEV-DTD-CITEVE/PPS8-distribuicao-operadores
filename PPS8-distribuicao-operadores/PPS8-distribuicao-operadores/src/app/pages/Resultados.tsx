@@ -258,10 +258,10 @@ export default function Resultados() {
                 </div>
                 <div>
                   <h1 className="text-sm font-semibold text-gray-900">
-                    Analise de Resultados
+                    Análise de Resultados
                   </h1>
                   <p className="text-gray-500 text-[10px]">
-                    Relatorio do balanceamento calculado
+                    Relatório do balanceamento calculado
                   </p>
                 </div>
               </div>

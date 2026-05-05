@@ -142,7 +142,7 @@ export function DashboardResultados({
           <div className="content-stretch flex flex-col gap-[6px] items-start p-[24px] relative w-full">
             <div className="h-[20px] relative shrink-0 w-full">
               <p className="absolute font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[20px] left-0 not-italic text-[#101828] text-[14px] top-0 tracking-[-0.1504px] whitespace-nowrap">
-                Ocupacao por Trabalhador
+                Ocupação por Trabalhador
               </p>
             </div>
             <div className="content-stretch flex h-[16px] items-start relative shrink-0 w-full">
