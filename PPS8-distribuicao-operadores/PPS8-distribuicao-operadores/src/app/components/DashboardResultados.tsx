@@ -10,8 +10,11 @@ interface DashboardResultadosProps {
   onRecalcular: (novosResultados: ResultadosBalanceamento, novaConfig: ConfiguracaoDistribuicao) => void;
   onDistribuicaoChange?: (novaDistribuicao: DistribuicaoCarga[]) => void;
   viewMode?: "tempo" | "percentagem";
+  onViewModeChange?: (mode: "tempo" | "percentagem") => void;
   onConfirmarEdicao?: (editedRows: any[]) => Promise<void>;
   isAjustando?: boolean;
+  showOccupacaoCard?: boolean;
+  showTabela?: boolean;
 }
 
 function normalizeKey(value: string): string {
@@ -106,8 +109,11 @@ export function DashboardResultados({
   operacoes,
   onDistribuicaoChange,
   viewMode = "tempo",
+  onViewModeChange,
   onConfirmarEdicao,
   isAjustando = false,
+  showOccupacaoCard = true,
+  showTabela = true,
 }: DashboardResultadosProps) {
   const displayCodeByOperatorId = buildDisplayCodeMap(resultados.distribuicao || []);
   const dadosCarga = resultados.distribuicao.map((dist, index) => {
@@ -126,8 +132,9 @@ export function DashboardResultados({
   });
 
   return (
-    <div className="flex flex-col gap-4 items-start lg:flex-row">
-      <div className="bg-white content-stretch flex flex-col gap-[41px] items-center pb-[24px] pt-px px-px relative rounded-[6px] w-full min-w-0 lg:basis-[35%] lg:max-w-[35%] lg:flex-none">
+    <div className="flex flex-col gap-4 items-start w-full">
+      {showOccupacaoCard && (
+      <div className="bg-white content-stretch flex flex-col gap-[41px] items-center pb-[24px] pt-px px-px relative rounded-[6px] w-full min-w-0">
         <div aria-hidden="true" className="absolute border border-[#e5e7eb] border-solid inset-0 pointer-events-none rounded-[6px] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_0px_rgba(0,0,0,0.1)]" />
 
         <div className="relative shrink-0 w-full">
@@ -246,19 +253,23 @@ export function DashboardResultados({
           </div>
         </div>
       </div>
+      )}
 
-      <div className="w-full min-w-0 lg:flex-1">
+      {showTabela && (
+      <div className="w-full min-w-0">
         <TabelaDistribuicao
           resultados={resultados}
           operadores={operadores}
           operacoes={operacoes}
           viewMode={viewMode}
+          onViewModeChange={onViewModeChange}
           unidadeTempo="s"
           onDistribuicaoChange={onDistribuicaoChange}
           onConfirmarEdicao={onConfirmarEdicao}
           isAjustando={isAjustando}
         />
       </div>
+      )}
     </div>
   );
 }

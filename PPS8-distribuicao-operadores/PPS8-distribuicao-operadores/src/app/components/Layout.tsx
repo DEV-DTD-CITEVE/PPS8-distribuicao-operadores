@@ -65,12 +65,7 @@ function FileStatusBadge({
   }
 
   if (estado === "sem-suporte") {
-    return (
-      <div className="flex items-center gap-1.5 px-2 py-1 bg-[#3d3d3d] rounded-sm" title="Browser não suporta File System Access API — a usar localStorage">
-        <HardDrive className="w-3 h-3 text-gray-500" />
-        <span className="text-xs text-gray-500">localStorage</span>
-      </div>
-    );
+    return null;
   }
 
   return null;
@@ -285,6 +280,4 @@ export default function Layout() {
     </div>
   );
 }
-
-
 

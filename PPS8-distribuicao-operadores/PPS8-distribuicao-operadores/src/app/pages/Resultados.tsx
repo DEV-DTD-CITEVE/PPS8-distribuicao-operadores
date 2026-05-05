@@ -34,6 +34,10 @@ export default function Resultados() {
     }
   }, [dataSource, navigate]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, []);
+
   // Early return if no state
   if (!dataSource || !dataSource.resultados) {
     return null;
@@ -47,6 +51,7 @@ export default function Resultados() {
   };
   const initialTaskCode = String((dataSource as any)?.taskCode || "").trim();
   const initialAjusteBodyBase = (dataSource as any)?.ajusteBodyBase;
+  const mostrarTaktTimeKpi = Number((dataSource as any)?.config?.possibilidade) === 2;
 
   // Estado para resultados editaveis
   const [resultadosAtuais, setResultadosAtuais] = useState<ResultadosBalanceamento>(resultados);
@@ -287,53 +292,51 @@ export default function Resultados() {
 
       {/* Main Content */}
       <main className="px-6 py-6 space-y-6">
-        {/* KPIs */}
-        <div className="sticky top-[95px] z-30 bg-gray-50 pb-3">
-          <ResumoResultados resultados={resultadosAtuais} config={config} />
-        </div>
-
-        <div className="space-y-6">
-          <div className="flex items-center justify-end print:hidden">
-            <div className="inline-flex items-center rounded-sm border border-gray-200 bg-white p-0.5">
-              <Button
-                type="button"
-                size="sm"
-                variant={viewMode === "tempo" ? "default" : "ghost"}
-                onClick={() => setViewMode("tempo")}
-                className="h-7 px-2.5 text-[10px]"
-              >
-                Tempo
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={viewMode === "percentagem" ? "default" : "ghost"}
-                onClick={() => setViewMode("percentagem")}
-                className="h-7 px-2.5 text-[10px]"
-              >
-                Percentagem
-              </Button>
-            </div>
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-6 items-start xl:items-stretch">
+          <div className="sticky top-[95px] z-30 bg-gray-50 pb-3 xl:h-full">
+            <ResumoResultados
+              resultados={resultadosAtuais}
+              config={configAtual}
+              mostrarTaktTime={mostrarTaktTimeKpi}
+              layout="column"
+            />
           </div>
 
-          <DashboardResultados
-            resultados={resultadosAtuais}
-            operadores={operadores}
-            operacoes={operacoes}
-            config={configAtual}
-            onRecalcular={handleRecalcular}
-            viewMode={viewMode}
-            onConfirmarEdicao={handleConfirmarEdicao}
-            isAjustando={isAjustando}
-          />
-
-          <VisualizadorFluxo
-            resultados={resultadosAtuais}
-            operadores={operadores}
-            operacoes={operacoes}
-            layoutConfig={dataSource.layoutConfig}
-          />
+          <div className="space-y-6 min-w-0">
+            <DashboardResultados
+              resultados={resultadosAtuais}
+              operadores={operadores}
+              operacoes={operacoes}
+              config={configAtual}
+              onRecalcular={handleRecalcular}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onConfirmarEdicao={handleConfirmarEdicao}
+              isAjustando={isAjustando}
+              showTabela={false}
+            />
+          </div>
         </div>
+
+        <DashboardResultados
+          resultados={resultadosAtuais}
+          operadores={operadores}
+          operacoes={operacoes}
+          config={configAtual}
+          onRecalcular={handleRecalcular}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onConfirmarEdicao={handleConfirmarEdicao}
+          isAjustando={isAjustando}
+          showOccupacaoCard={false}
+        />
+
+        <VisualizadorFluxo
+          resultados={resultadosAtuais}
+          operadores={operadores}
+          operacoes={operacoes}
+          layoutConfig={dataSource.layoutConfig}
+        />
       </main>
     </div>
   );

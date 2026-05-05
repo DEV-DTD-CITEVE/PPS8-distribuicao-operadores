@@ -10,6 +10,7 @@ interface TabelaDistribuicaoProps {
   onDistribuicaoChange?: (novaDistribuicao: DistribuicaoCarga[]) => void;
   unidadeTempo?: "min" | "s";
   viewMode?: "tempo" | "percentagem";
+  onViewModeChange?: (mode: "tempo" | "percentagem") => void;
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
   isAjustando?: boolean;
 }
@@ -182,6 +183,13 @@ const getOperatorPercentage = (
   row: OperationAllocationRow,
   column: OperatorColumn
 ): number | null => {
+  const candidateKeys = new Set<string>([
+    column.code,
+    column.key,
+    normalizeKey(column.code),
+    normalizeKey(column.label || ""),
+  ]);
+
   const percentageMaps = [
     (row as Record<string, unknown>).occupancy_percentage,
     (row as Record<string, unknown>).occupancy_percentages,
@@ -193,13 +201,18 @@ const getOperatorPercentage = (
 
   for (const map of percentageMaps) {
     if (!map || typeof map !== "object") continue;
-    const entries = Object.entries(map as Record<string, unknown>);
-    const direct = parseNumberLike((map as Record<string, unknown>)[column.code]);
-    if (direct != null) return normalizePercentageValue(direct);
-    const normalized = entries.find(([candidate]) => normalizeKey(candidate) === column.key);
-    if (!normalized) continue;
-    const parsed = parseNumberLike(normalized[1]);
-    if (parsed != null) return normalizePercentageValue(parsed);
+    for (const [rawKey, rawValue] of Object.entries(map as Record<string, unknown>)) {
+      const parsed = parseNumberLike(rawValue);
+      if (parsed == null) continue;
+      const normalizedRawKey = normalizeKey(rawKey);
+      if (
+        candidateKeys.has(rawKey) ||
+        candidateKeys.has(normalizedRawKey) ||
+        normalizedRawKey === column.key
+      ) {
+        return normalizePercentageValue(parsed);
+      }
+    }
   }
 
   const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
@@ -207,14 +220,18 @@ const getOperatorPercentage = (
     const record = allocation as Record<string, unknown>;
     const operatorCode = String(
       record.operator_code ??
-        record.operator_id ??
-        record.operador_id ??
-        record.operator ??
-        record.operador ??
-        record.code ??
-        ""
+      record.operator_id ??
+      record.operador_id ??
+      record.operator ??
+      record.operador ??
+      record.code ??
+      ""
     ).trim();
-    if (!operatorCode || normalizeKey(operatorCode) !== column.key) continue;
+    if (!operatorCode) continue;
+    const normalizedOperatorCode = normalizeKey(operatorCode);
+    if (!candidateKeys.has(operatorCode) && !candidateKeys.has(normalizedOperatorCode) && normalizedOperatorCode !== column.key) {
+      continue;
+    }
 
     const percentageValue =
       record.occupancy_percentage ??
@@ -226,12 +243,6 @@ const getOperatorPercentage = (
       record.share;
     const parsed = parseNumberLike(percentageValue);
     if (parsed != null) return normalizePercentageValue(parsed);
-  }
-
-  const totalTime = parseNumberLike(row.total_time_seconds) ?? 0;
-  if (totalTime > 0) {
-    const operatorTime = getOperatorTime(row, column);
-    if (operatorTime != null) return (operatorTime / totalTime) * 100;
   }
 
   return null;
@@ -340,6 +351,7 @@ function TabelaAllocacoes({
   operadores,
   operacoes,
   viewMode = "tempo",
+  onViewModeChange,
   onConfirmarEdicao,
   isAjustando = false,
 }: {
@@ -347,6 +359,7 @@ function TabelaAllocacoes({
   operadores: any[];
   operacoes: any[];
   viewMode?: "tempo" | "percentagem";
+  onViewModeChange?: (mode: "tempo" | "percentagem") => void;
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
   isAjustando?: boolean;
 }) {
@@ -421,6 +434,28 @@ function TabelaAllocacoes({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          {onViewModeChange ? (
+            <div className="inline-flex items-center rounded-sm border border-gray-200 bg-white p-0.5">
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === "tempo" ? "default" : "ghost"}
+                onClick={() => onViewModeChange("tempo")}
+                className="h-6 px-2 text-[10px]"
+              >
+                Tempo
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === "percentagem" ? "default" : "ghost"}
+                onClick={() => onViewModeChange("percentagem")}
+                className="h-6 px-2 text-[10px]"
+              >
+                Percentagem
+              </Button>
+            </div>
+          ) : null}
           {onConfirmarEdicao ? (
             isEditing ? (
               <>
@@ -617,6 +652,7 @@ export function TabelaDistribuicao({
   operadores,
   operacoes,
   viewMode = "tempo",
+  onViewModeChange,
   onConfirmarEdicao,
   isAjustando = false,
 }: TabelaDistribuicaoProps) {
@@ -626,6 +662,7 @@ export function TabelaDistribuicao({
       operadores={operadores}
       operacoes={operacoes}
       viewMode={viewMode}
+      onViewModeChange={onViewModeChange}
       onConfirmarEdicao={onConfirmarEdicao}
       isAjustando={isAjustando}
     />

@@ -13,11 +13,15 @@ interface ResumoResultadosProps {
     naoDividirMaiorQue: number;
     naoDividirMenorQue: number;
   };
+  mostrarTaktTime?: boolean;
+  layout?: "row" | "column";
 }
 
-export function ResumoResultados({ resultados, config }: ResumoResultadosProps) {
+export function ResumoResultados({ resultados, config, mostrarTaktTime, layout = "row" }: ResumoResultadosProps) {
   // Compatibilidade retroativa: suporta tanto numeroCiclosPorHora (novo) como numeroPecasHora (legado)
   const ciclosPorHora = (resultados.numeroCiclosPorHora ?? (resultados as any).numeroPecasHora ?? 0);
+  const exibirTaktTime = mostrarTaktTime ?? (config.possibilidade === 2);
+  const isColumn = layout === "column";
 
   const kpis = [
     {
@@ -37,26 +41,28 @@ export function ResumoResultados({ resultados, config }: ResumoResultadosProps) 
         </svg>
       ),
     },
-    {
-      label: 'Takt Time',
-      value: resultados.taktTime.toFixed(2),
-      unit: 'min',
-      bgColor: 'bg-[#dbeafe]',
-      iconColor: '#155DFC',
-      icon: (
-        <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 14 14">
-          <g clipPath="url(#clip0_266_1141)">
-            <path d={svgPaths.pc012c00} stroke="#155DFC" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
-            <path d="M7 3.5V7L9.33333 8.16667" stroke="#155DFC" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
-          </g>
-          <defs>
-            <clipPath id="clip0_266_1141">
-              <rect fill="white" height="14" width="14" />
-            </clipPath>
-          </defs>
-        </svg>
-      ),
-    },
+    ...(exibirTaktTime
+      ? [{
+          label: 'Takt Time',
+          value: resultados.taktTime.toFixed(2),
+          unit: 'min',
+          bgColor: 'bg-[#dbeafe]',
+          iconColor: '#155DFC',
+          icon: (
+            <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 14 14">
+              <g clipPath="url(#clip0_266_1141)">
+                <path d={svgPaths.pc012c00} stroke="#155DFC" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
+                <path d="M7 3.5V7L9.33333 8.16667" stroke="#155DFC" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
+              </g>
+              <defs>
+                <clipPath id="clip0_266_1141">
+                  <rect fill="white" height="14" width="14" />
+                </clipPath>
+              </defs>
+            </svg>
+          ),
+        }]
+      : []),
     {
       label: 'Tempo Ciclo',
       value: resultados.tempoCiclo.toFixed(2),
@@ -124,11 +130,11 @@ export function ResumoResultados({ resultados, config }: ResumoResultadosProps) 
   ];
 
   return (
-    <div className="flex flex-1 gap-2">
+    <div className={isColumn ? "flex flex-col h-full justify-between" : "flex flex-1 gap-2"}>
       {kpis.map((kpi, index) => (
         <div
           key={index}
-          className="bg-white flex-1 rounded-md border border-[#e5e7eb] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_0px_rgba(0,0,0,0.1)]"
+          className={`bg-white rounded-md border border-[#e5e7eb] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_0px_rgba(0,0,0,0.1)] ${isColumn ? "w-full" : "flex-1"}`}
         >
           <div className="flex flex-col justify-center size-full">
             <div className="flex flex-col items-start justify-center p-[7px]">

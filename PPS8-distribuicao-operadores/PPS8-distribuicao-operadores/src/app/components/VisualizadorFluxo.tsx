@@ -1,7 +1,7 @@
 import { ResultadosBalanceamento } from "../types";
 import { LayoutConfig } from "./LayoutConfigurador";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { ArrowRight, Factory, Layout, Zap, RotateCcw, BarChart2 } from "lucide-react";
+import { ArrowRight, Factory, Layout, BarChart2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,15 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
-import { Button } from "./ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import React from "react";
 
 interface VisualizadorFluxoProps {
@@ -33,11 +25,147 @@ export function VisualizadorFluxo({
   operacoes,
   layoutConfig,
 }: VisualizadorFluxoProps) {
-  const [estacoesConfiguradas, setEstacoesConfiguradas] = useState<{[key: string]: string}>({});
-
   const tipoLayout = layoutConfig?.tipoLayout || "linha";
   const postosPorLado = layoutConfig?.postosPorLado || 8;
   const permitirCruzamento = layoutConfig?.permitirCruzamento ?? true;
+
+  const normalizeKey = (value: unknown): string =>
+    String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+  const maxPositionsFromApi = useMemo(() => {
+    let maxLine = 0;
+    let maxA = 0;
+    let maxB = 0;
+
+    const rows = Array.isArray(resultados.operation_allocations) ? resultados.operation_allocations : [];
+    const bump = (labelRaw: unknown, sideRaw: unknown, numberRaw: unknown) => {
+      const label = String(labelRaw || "").trim().toUpperCase();
+      const side = String(sideRaw || "").trim().toUpperCase();
+      const num = Number(numberRaw);
+
+      if (label) {
+        const mA = label.match(/^A(\d+)$/);
+        const mB = label.match(/^B(\d+)$/);
+        const mP = label.match(/^[AP](\d+)$/);
+        if (mA) maxA = Math.max(maxA, Number(mA[1]));
+        if (mB) maxB = Math.max(maxB, Number(mB[1]));
+        if (mP) maxLine = Math.max(maxLine, Number(mP[1]));
+      }
+
+      if (Number.isFinite(num) && num > 0) {
+        if (side === "A") maxA = Math.max(maxA, Math.trunc(num));
+        else if (side === "B") maxB = Math.max(maxB, Math.trunc(num));
+        else maxLine = Math.max(maxLine, Math.trunc(num));
+      }
+    };
+
+    rows.forEach((row: any) => {
+      const positions = row?.operator_positions && typeof row.operator_positions === "object" ? row.operator_positions : {};
+      Object.values(positions).forEach((pos: any) => {
+        bump(pos?.position_label, pos?.position_side, pos?.position_number);
+      });
+
+      if (Array.isArray(row?.operator_allocations)) {
+        row.operator_allocations.forEach((alloc: any) => {
+          bump(alloc?.position_label, alloc?.position_side, alloc?.position_number);
+        });
+      }
+    });
+
+    return { maxLine, maxA, maxB };
+  }, [resultados.operation_allocations]);
+
+  const postosPorLadoEfetivo = useMemo(() => {
+    if (tipoLayout === "linha") {
+      return Math.max(postosPorLado, maxPositionsFromApi.maxLine, maxPositionsFromApi.maxA);
+    }
+    // Espinha: maximo de 16 postos totais => 8 por lado.
+    return Math.min(8, Math.max(postosPorLado, maxPositionsFromApi.maxA, maxPositionsFromApi.maxB));
+  }, [tipoLayout, postosPorLado, maxPositionsFromApi]);
+
+  const estacoesBase = useMemo(
+    () =>
+      tipoLayout === "linha"
+        ? Array.from({ length: postosPorLadoEfetivo }, (_, i) => `A${i + 1}`)
+        : [
+            ...Array.from({ length: postosPorLadoEfetivo }, (_, i) => `A${i + 1}`),
+            ...Array.from({ length: postosPorLadoEfetivo }, (_, i) => `B${i + 1}`),
+          ],
+    [tipoLayout, postosPorLadoEfetivo]
+  );
+
+  const estacoesSet = useMemo(() => new Set(estacoesBase.map((e) => e.toUpperCase())), [estacoesBase]);
+
+  const resolveOperatorCode = (raw: string): string => {
+    const ref = String(raw || "").trim();
+    if (!ref) return "";
+    const key = normalizeKey(ref);
+    const byId = operadores.find((op) => normalizeKey(op?.id) === key);
+    if (byId?.id) return String(byId.id);
+    const byNome = operadores.find((op) => normalizeKey(op?.nome) === key);
+    if (byNome?.id) return String(byNome.id);
+    const inParens = ref.match(/\(([^)]+)\)/)?.[1]?.trim();
+    return inParens || ref;
+  };
+
+  const extrairCodigoEstacao = (position: any): string => {
+    const label = String(position?.position_label || "").trim().toUpperCase();
+    if (label && estacoesSet.has(label)) return label;
+
+    const side = String(position?.position_side || "").trim().toUpperCase();
+    const number = Number(position?.position_number);
+    if ((side === "A" || side === "B") && Number.isFinite(number)) {
+      const code = `${side}${Math.trunc(number)}`;
+      if (estacoesSet.has(code)) return code;
+    }
+    if (tipoLayout === "linha" && Number.isFinite(number)) {
+      const code = `A${Math.trunc(number)}`;
+      if (estacoesSet.has(code)) return code;
+    }
+    return "";
+  };
+
+  const estacoesMapeadas = useMemo(() => {
+    const mapped: Record<string, { maquina: string; operador: string }> = {};
+    estacoesBase.forEach((est) => {
+      mapped[est] = { maquina: "", operador: "" };
+    });
+
+    const rows = Array.isArray(resultados.operation_allocations) ? resultados.operation_allocations : [];
+    rows.forEach((row: any) => {
+      const maquina = String(row?.machine_type || "").trim();
+      const operatorPositions = row?.operator_positions && typeof row.operator_positions === "object"
+        ? row.operator_positions
+        : {};
+
+      Object.entries(operatorPositions).forEach(([operatorRef, pos]) => {
+        const est = extrairCodigoEstacao(pos);
+        if (!est || !mapped[est]) return;
+        if (!mapped[est].maquina && maquina) mapped[est].maquina = maquina;
+        if (!mapped[est].operador) mapped[est].operador = resolveOperatorCode(operatorRef);
+      });
+
+      if (Array.isArray(row?.operator_allocations)) {
+        row.operator_allocations.forEach((alloc: any) => {
+          const est = extrairCodigoEstacao(alloc);
+          if (!est || !mapped[est]) return;
+          if (!mapped[est].maquina && maquina) mapped[est].maquina = maquina;
+          if (!mapped[est].operador) {
+            const opRef = String(
+              alloc?.operator_code ?? alloc?.operator_id ?? alloc?.operador_id ?? alloc?.operator ?? alloc?.operador ?? ""
+            ).trim();
+            mapped[est].operador = resolveOperatorCode(opRef);
+          }
+        });
+      }
+    });
+
+    return mapped;
+  }, [resultados.operation_allocations, estacoesBase, estacoesSet]);
 
   // Agrupar operações por tipo de máquina
   const maquinasPorTipo = useMemo(() => operacoes.reduce((acc: any, op: any) => {
@@ -553,93 +681,39 @@ export function VisualizadorFluxo({
                 <div>
                   <div className="text-sm font-semibold">Layout - Planta de Chão</div>
                   <p className="text-[10px] text-gray-500 font-normal mt-0.5">
-                    {tipoLayout === "linha" ? "Linha" : "Espinha"} · {tipoLayout === "linha" ? postosPorLado : postosPorLado * 2} estações
+                    {tipoLayout === "linha" ? "Linha" : "Espinha"} · {tipoLayout === "linha" ? postosPorLadoEfetivo : postosPorLadoEfetivo * 2} estações
                     {permitirCruzamento && tipoLayout === "espinha" ? " · Cruzamento activo" : ""}
                   </p>
                 </div>
               </CardTitle>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    const tiposMaq = Array.from(new Set(operacoes.map((op) => op.tipoMaquina || "Geral")));
-                    const listaMaq = tiposMaq.filter((t) => t !== "Geral");
-                    if (tiposMaq.includes("Geral")) listaMaq.push("Geral");
-                    const estacoes =
-                      tipoLayout === "linha"
-                        ? Array.from({ length: postosPorLado }, (_, i) => `P${i + 1}`)
-                        : [
-                            ...Array.from({ length: postosPorLado }, (_, i) => `A${i + 1}`),
-                            ...Array.from({ length: postosPorLado }, (_, i) => `B${i + 1}`),
-                          ];
-                    const novas: { [k: string]: string } = {};
-                    estacoes.forEach((est, idx) => {
-                      novas[est] = listaMaq[idx % listaMaq.length] || "Geral";
-                    });
-                    setEstacoesConfiguradas(novas);
-                  }}
-                  className="bg-blue-700 hover:bg-blue-800 text-[9px] h-6 px-2 rounded-sm"
-                >
-                  <Zap className="w-3 h-3 mr-0.5" />
-                  Atribuir Auto
-                </Button>
-                {Object.keys(estacoesConfiguradas).length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setEstacoesConfiguradas({})}
-                    className="text-[9px] h-6 px-2 rounded-sm"
-                  >
-                    <RotateCcw className="w-3 h-3 mr-0.5" />
-                    Limpar
-                  </Button>
-                )}
-              </div>
+              <div />
             </div>
           </CardHeader>
           <CardContent className="p-4">
             {(() => {
-              const estacoes =
-                tipoLayout === "linha"
-                  ? Array.from({ length: postosPorLado }, (_, i) => `P${i + 1}`)
-                  : [
-                      ...Array.from({ length: postosPorLado }, (_, i) => `A${i + 1}`),
-                      ...Array.from({ length: postosPorLado }, (_, i) => `B${i + 1}`),
-                    ];
-              const tiposMaq = Array.from(new Set(operacoes.map((op) => op.tipoMaquina || "Geral")));
-
-              const handleAtribuirMaquina = (estacao: string, maquina: string) => {
-                setEstacoesConfiguradas((prev) => ({
-                  ...prev,
-                  [estacao]: maquina === "__vazio__" ? "" : maquina,
-                }));
-              };
+              const estacoes = estacoesBase;
 
               if (tipoLayout === "linha") {
                 return (
                   <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm">
                     <div className="flex gap-2 justify-center items-center flex-wrap">
                       {estacoes.map((est, idx) => {
-                        const maq = estacoesConfiguradas[est];
+                        const maq = estacoesMapeadas[est]?.maquina || "";
+                        const operador = estacoesMapeadas[est]?.operador || "";
                         const hasMaq = maq && maq !== "";
                         return (
                           <div key={`est-linha-${est}`} className="flex items-center gap-2">
-                            <div className="rounded border border-gray-300 bg-white p-3 w-[120px] min-h-[110px] flex flex-col items-center gap-2 justify-between">
+                            <div className="rounded border border-gray-300 bg-white p-3 w-[120px] min-h-[124px] flex flex-col items-center gap-2 justify-between">
                               <div className={`w-10 h-10 ${hasMaq ? "bg-purple-500" : "bg-gray-300"} rounded flex items-center justify-center`}>
                                 <Factory className="w-5 h-5 text-white" />
                               </div>
                               <div className="text-xs font-bold text-gray-900">{est}</div>
-                              <Select value={maq || "__vazio__"} onValueChange={(v) => handleAtribuirMaquina(est, v)}>
-                                <SelectTrigger className="h-6 text-[9px] rounded-sm w-full px-1.5 border-gray-300">
-                                  <SelectValue placeholder="Máquina..." />
-                                </SelectTrigger>
-                                <SelectContent className="rounded-sm">
-                                  <SelectItem value="__vazio__" className="text-[10px] text-gray-400">Vazio</SelectItem>
-                                  {tiposMaq.map((tipo) => (
-                                    <SelectItem key={`linha-opt-${tipo}`} value={tipo} className="text-[10px]">{tipo}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="w-full text-[9px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
+                                {maq || "--"}
+                              </div>
+                              <div className="w-full text-[9px] text-center rounded-sm border border-blue-200 bg-blue-50 text-blue-700 px-1 py-0.5 truncate">
+                                {operador || "--"}
+                              </div>
                             </div>
                             {idx < estacoes.length - 1 && <ArrowRight className="w-4 h-4 text-blue-400 flex-shrink-0" />}
                           </div>
@@ -681,12 +755,13 @@ export function VisualizadorFluxo({
               fluxoSeq.forEach((e, i) => { ordemFluxo[e] = i + 1; });
 
               const renderCard = (est: string) => {
-                const maq = estacoesConfiguradas[est];
+                const maq = estacoesMapeadas[est]?.maquina || "";
+                const operador = estacoesMapeadas[est]?.operador || "";
                 const hasMaq = maq && maq !== "";
                 const ordem = ordemFluxo[est];
                 const isA = est.startsWith("A");
                 return (
-                  <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[120px] flex flex-col items-center justify-between relative">
+                  <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[132px] flex flex-col items-center justify-between relative">
                     <div className={`absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white z-10 ${
                       permitirCruzamento ? "bg-blue-700" : isA ? "bg-blue-600" : "bg-green-600"
                     }`}>{ordem}</div>
@@ -694,17 +769,12 @@ export function VisualizadorFluxo({
                       <Factory className="w-4 h-4 text-white" />
                     </div>
                     <div className="text-[11px] font-bold text-gray-900">{est}</div>
-                    <Select value={maq || "__vazio__"} onValueChange={(v) => handleAtribuirMaquina(est, v)}>
-                      <SelectTrigger className="h-5 text-[8px] rounded-sm w-full px-1 border-gray-300">
-                        <SelectValue placeholder="Máq..." />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-sm">
-                        <SelectItem value="__vazio__" className="text-[10px] text-gray-400">Vazio</SelectItem>
-                        {tiposMaq.map((tipo) => (
-                          <SelectItem key={`esp-opt-${tipo}`} value={tipo} className="text-[10px]">{tipo}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="w-full text-[8px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
+                      {maq || "--"}
+                    </div>
+                    <div className="w-full text-[8px] text-center rounded-sm border border-blue-200 bg-blue-50 text-blue-700 px-1 py-0.5 truncate">
+                      {operador || "--"}
+                    </div>
                   </div>
                 );
               };
