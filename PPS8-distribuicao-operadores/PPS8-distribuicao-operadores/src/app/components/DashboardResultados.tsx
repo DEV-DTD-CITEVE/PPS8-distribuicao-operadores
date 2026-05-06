@@ -12,7 +12,9 @@ interface DashboardResultadosProps {
   viewMode?: "tempo" | "percentagem";
   onViewModeChange?: (mode: "tempo" | "percentagem") => void;
   onConfirmarEdicao?: (editedRows: any[]) => Promise<void>;
+  onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
+  isGuardandoHistorico?: boolean;
   showOccupacaoCard?: boolean;
   showTabela?: boolean;
 }
@@ -111,7 +113,9 @@ export function DashboardResultados({
   viewMode = "tempo",
   onViewModeChange,
   onConfirmarEdicao,
+  onGuardarHistorico,
   isAjustando = false,
+  isGuardandoHistorico = false,
   showOccupacaoCard = true,
   showTabela = true,
 }: DashboardResultadosProps) {
@@ -266,7 +270,9 @@ export function DashboardResultados({
           unidadeTempo="s"
           onDistribuicaoChange={onDistribuicaoChange}
           onConfirmarEdicao={onConfirmarEdicao}
+          onGuardarHistorico={onGuardarHistorico}
           isAjustando={isAjustando}
+          isGuardandoHistorico={isGuardandoHistorico}
         />
       </div>
       )}

@@ -36,6 +36,20 @@ export function VisualizadorFluxo({
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "");
 
+  const extractStationToken = (value: unknown): string => {
+    const text = String(value ?? "").trim().toUpperCase();
+    if (!text) return "";
+    const normalized = text.replace(/\s+/g, "");
+    const direct = normalized.match(/\b([AB])[-_]?(\d{1,2})\b/);
+    if (direct) return `${direct[1]}${Number(direct[2])}`;
+    const words = text.match(/(LADO\s*[AB]).*?(\d{1,2})/);
+    if (words) {
+      const side = words[1].includes("B") ? "B" : "A";
+      return `${side}${Number(words[2])}`;
+    }
+    return "";
+  };
+
   const maxPositionsFromApi = useMemo(() => {
     let maxLine = 0;
     let maxA = 0;
@@ -46,6 +60,7 @@ export function VisualizadorFluxo({
       const label = String(labelRaw || "").trim().toUpperCase();
       const side = String(sideRaw || "").trim().toUpperCase();
       const num = Number(numberRaw);
+      const token = extractStationToken(labelRaw);
 
       if (label) {
         const mA = label.match(/^A(\d+)$/);
@@ -54,6 +69,12 @@ export function VisualizadorFluxo({
         if (mA) maxA = Math.max(maxA, Number(mA[1]));
         if (mB) maxB = Math.max(maxB, Number(mB[1]));
         if (mP) maxLine = Math.max(maxLine, Number(mP[1]));
+      }
+      if (token) {
+        const sideFromToken = token[0];
+        const nFromToken = Number(token.slice(1));
+        if (sideFromToken === "A") maxA = Math.max(maxA, nFromToken);
+        if (sideFromToken === "B") maxB = Math.max(maxB, nFromToken);
       }
 
       if (Number.isFinite(num) && num > 0) {
@@ -76,8 +97,38 @@ export function VisualizadorFluxo({
       }
     });
 
+    const machineLayout = Array.isArray((resultados as any)?.machine_layout)
+      ? (resultados as any).machine_layout
+      : Array.isArray((resultados as any)?.machineLayout)
+        ? (resultados as any).machineLayout
+        : [];
+    machineLayout.forEach((row: any) => {
+      // Formato flat por posto (API nova)
+      bump(row?.position_label, row?.position_side, row?.position_number);
+      bump(row?.primary_post_label, row?.position_side, row?.position_number);
+
+      const operadoresRows = Array.isArray(row?.operators)
+        ? row.operators
+        : Array.isArray(row?.operator_allocations)
+          ? row.operator_allocations
+          : [];
+
+      operadoresRows.forEach((op: any) => {
+        const primary = op?.primary_position ?? op?.main_position ?? op?.position ?? op?.position_label;
+        bump(primary?.position_label ?? primary, primary?.position_side, primary?.position_number);
+        const outras = Array.isArray(op?.other_positions)
+          ? op.other_positions
+          : Array.isArray(op?.secondary_positions)
+            ? op.secondary_positions
+            : Array.isArray(op?.positions)
+              ? op.positions
+              : [];
+        outras.forEach((pos: any) => bump(pos?.position_label ?? pos, pos?.position_side, pos?.position_number));
+      });
+    });
+
     return { maxLine, maxA, maxB };
-  }, [resultados.operation_allocations]);
+  }, [resultados]);
 
   const postosPorLadoEfetivo = useMemo(() => {
     if (tipoLayout === "linha") {
@@ -113,6 +164,12 @@ export function VisualizadorFluxo({
   };
 
   const extrairCodigoEstacao = (position: any): string => {
+    const token = extractStationToken(position);
+    if (token && estacoesSet.has(token)) return token;
+
+    const direct = String(position ?? "").trim().toUpperCase();
+    if (direct && estacoesSet.has(direct)) return direct;
+
     const label = String(position?.position_label || "").trim().toUpperCase();
     if (label && estacoesSet.has(label)) return label;
 
@@ -129,11 +186,122 @@ export function VisualizadorFluxo({
     return "";
   };
 
+  const machineLayoutAssignments = useMemo(() => {
+    const rawLayout = (resultados as any)?.machine_layout ?? (resultados as any)?.machineLayout;
+    const rows = Array.isArray(rawLayout) ? rawLayout : [];
+    const out: Array<{ estacao: string; maquina: string; operador: string; prioridade: number }> = [];
+
+    const pushPos = (pos: any, maquina: string, operadorRaw: string, prioridade: number) => {
+      const estacao = extrairCodigoEstacao(pos);
+      if (!estacao) return;
+      out.push({
+        estacao,
+        maquina,
+        operador: resolveOperatorCode(operadorRaw),
+        prioridade,
+      });
+    };
+
+    const resolveMachine = (row: any, op?: any) =>
+      String(
+        op?.machine_type ??
+        op?.machine_name ??
+        op?.machine ??
+        row?.machine_type ??
+        row?.machine_name ??
+        row?.machine ??
+        row?.tipo_maquina ??
+        ""
+      ).trim();
+    const resolveOperatorRaw = (op: any) =>
+      String(
+        op?.operator_id ??
+        op?.operator_code ??
+        op?.operador_id ??
+        op?.operator ??
+        op?.operador ??
+        op?.primary_operator ??
+        op?.main_operator ??
+        op?.operador_principal ??
+        op?.name ??
+        op?.operator_name ??
+        ""
+      ).trim();
+    const resolvePrimaryPos = (op: any) =>
+      op?.primary_position ??
+      op?.main_position ??
+      op?.position ??
+      op?.position_label ??
+      op?.primary_station ??
+      op?.main_station ??
+      op?.station;
+
+    rows.forEach((row: any) => {
+      // Formato flat por posto (API nova)
+      if (!Array.isArray(row?.operators) && !Array.isArray(row?.operator_allocations)) {
+        const isPrimary = Boolean(row?.is_primary_post);
+        const operadorRaw = String(row?.operator_id ?? row?.operator_code ?? row?.operator ?? "").trim();
+        const maquina = String(row?.machine_name ?? row?.machine_type ?? row?.machine ?? "").trim();
+        const pos = row?.position_label ?? row?.primary_post_label ?? row?.position;
+        if (operadorRaw && pos) {
+          pushPos(pos, maquina, operadorRaw, isPrimary ? 0 : 10);
+        }
+        return;
+      }
+
+      const maquinaRow = resolveMachine(row);
+      const operadorRows = Array.isArray(row?.operators)
+        ? row.operators
+        : Array.isArray(row?.operator_allocations)
+          ? row.operator_allocations
+          : [];
+
+      const rowPrimaryOperator = String(
+        row?.primary_operator ?? row?.main_operator ?? row?.operador_principal ?? ""
+      ).trim();
+      const rowPrimaryPos =
+        row?.primary_position ?? row?.main_position ?? row?.position ?? row?.position_label ?? row?.station;
+      if (rowPrimaryOperator) {
+        pushPos(rowPrimaryPos, maquinaRow, rowPrimaryOperator, 0);
+      }
+
+      operadorRows.forEach((op: any) => {
+        const operadorRaw = resolveOperatorRaw(op);
+        if (!operadorRaw) return;
+        const maquina = resolveMachine(row, op) || maquinaRow;
+        const isPrimary = Boolean(op?.is_primary_post ?? op?.isPrimaryPost);
+
+        pushPos(resolvePrimaryPos(op), maquina, operadorRaw, isPrimary ? 0 : 10);
+
+        const outras = Array.isArray(op?.other_positions)
+          ? op.other_positions
+          : Array.isArray(op?.secondary_positions)
+            ? op.secondary_positions
+            : Array.isArray(op?.positions)
+              ? op.positions
+              : [];
+        outras.forEach((pos: any, idx: number) => pushPos(pos, maquina, operadorRaw, idx + 1));
+      });
+    });
+
+    return out;
+  }, [resultados, estacoesSet]);
+
   const estacoesMapeadas = useMemo(() => {
     const mapped: Record<string, { maquina: string; operador: string }> = {};
     estacoesBase.forEach((est) => {
       mapped[est] = { maquina: "", operador: "" };
     });
+
+    if (machineLayoutAssignments.length > 0) {
+      const sorted = [...machineLayoutAssignments].sort((a, b) => a.prioridade - b.prioridade);
+      sorted.forEach((item) => {
+        if (!mapped[item.estacao]) return;
+        if (!mapped[item.estacao].maquina && item.maquina) mapped[item.estacao].maquina = item.maquina;
+        if (!mapped[item.estacao].operador && item.operador) mapped[item.estacao].operador = item.operador;
+      });
+      return mapped;
+    }
 
     const rows = Array.isArray(resultados.operation_allocations) ? resultados.operation_allocations : [];
     rows.forEach((row: any) => {
@@ -165,7 +333,7 @@ export function VisualizadorFluxo({
     });
 
     return mapped;
-  }, [resultados.operation_allocations, estacoesBase, estacoesSet]);
+  }, [machineLayoutAssignments, resultados.operation_allocations, estacoesBase, estacoesSet]);
 
   // Agrupar operaÃ§Ãµes por tipo de mÃ¡quina
   const maquinasPorTipo = useMemo(() => operacoes.reduce((acc: any, op: any) => {

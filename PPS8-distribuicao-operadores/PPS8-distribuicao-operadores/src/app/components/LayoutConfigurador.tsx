@@ -119,7 +119,10 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
               </Label>
               <div className="flex flex-col gap-1.5 w-[72px]">
                 <button
-                  onClick={() => setTipoLayout("linha")}
+                  onClick={() => {
+                    setTipoLayout("linha");
+                    setPostosPorLado(8);
+                  }}
                   className={`p-1.5 border-2 rounded-sm transition-all ${
                     tipoLayout === "linha"
                       ? "border-blue-700 bg-blue-50"
@@ -134,7 +137,10 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
                   </div>
                 </button>
                 <button
-                  onClick={() => setTipoLayout("espinha")}
+                  onClick={() => {
+                    setTipoLayout("espinha");
+                    setPostosPorLado(16);
+                  }}
                   className={`p-1.5 border-2 rounded-sm transition-all ${
                     tipoLayout === "espinha"
                       ? "border-blue-700 bg-blue-50"

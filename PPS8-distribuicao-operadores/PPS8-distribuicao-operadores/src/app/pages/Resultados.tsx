@@ -61,13 +61,14 @@ export default function Resultados() {
   const mostrarTaktTimeKpi = Number((dataSource as any)?.config?.possibilidade) === 2;
 
   // Estado para resultados editaveis
-  const [resultadosAtuais, setResultadosAtuais] = useState<ResultadosBalanceamento>(resultados);
   const [configAtual, setConfigAtual] = useState<ConfiguracaoDistribuicao>(config);
   const [viewMode, setViewMode] = useState<"tempo" | "percentagem">("tempo");
   const [taskCode] = useState<string>(initialTaskCode);
   const [ajusteBodyBase, setAjusteBodyBase] = useState<any>(initialAjusteBodyBase);
   const [isAjustando, setIsAjustando] = useState(false);
+  const [isGuardandoHistorico, setIsGuardandoHistorico] = useState(false);
   const [erroPopup, setErroPopup] = useState<string | null>(null);
+  const [sucessoPopup, setSucessoPopup] = useState<string | null>(null);
 
   const parseNumberLike = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -79,7 +80,33 @@ export default function Resultados() {
     return null;
   };
 
-  const ensureArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+  const ensureArray = (value: unknown): any[] => {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      const nested = Object.values(record).find((entry) => Array.isArray(entry));
+      if (Array.isArray(nested)) return nested as any[];
+    }
+    return [];
+  };
+  const resolveMachineLayout = (raw: any): any[] =>
+    ensureArray(
+      raw?.machine_layout ??
+      raw?.machineLayout ??
+      raw?.layout_machines ??
+      raw?.machine_positions ??
+      raw?.machines_layout
+    );
+
+  const [resultadosAtuais, setResultadosAtuais] = useState<ResultadosBalanceamento>(() => ({
+    ...(resultados as any),
+    machine_layout:
+      resolveMachineLayout(resultados).length > 0
+        ? resolveMachineLayout(resultados)
+        : resolveMachineLayout(initialAjusteBodyBase),
+  }));
+  const normalizeToken = (value: unknown): string =>
+    String(value ?? "").trim().toLowerCase().replace(/^0+(\d)/, "$1");
 
   const buildDistribuicaoFromAllocations = (operationAllocations: any[]): any[] => {
     const byOperator: Record<string, { operacoes: Set<string>; segundos: number; temposOperacoes: Record<string, number> }> = {};
@@ -122,35 +149,35 @@ export default function Resultados() {
     if (originalRows.length === 0) return clone;
 
     const editedByKey = new Map<string, any>();
+    const editedBySeq = new Map<string, any>();
+    const editedByOp = new Map<string, any>();
     editedRows.forEach((row) => {
-      const key = `${String(row?.seq ?? "")}::${String(row?.operation_code || row?.operation_id || "")}`;
+      const seq = String(row?.seq ?? "").trim();
+      const op = normalizeToken(row?.operation_code || row?.operation_id || "");
+      const key = `${seq}::${op}`;
       editedByKey.set(key, row);
+      if (seq) editedBySeq.set(seq, row);
+      if (op) editedByOp.set(op, row);
     });
 
     clone.operation_allocations = originalRows.map((row: any) => {
-      const key = `${String(row?.seq ?? "")}::${String(row?.operation_code || row?.operation_id || "")}`;
-      const edited = editedByKey.get(key);
+      const seq = String(row?.seq ?? "").trim();
+      const op = normalizeToken(row?.operation_code || row?.operation_id || "");
+      const key = `${seq}::${op}`;
+      const edited =
+        editedByKey.get(key) ||
+        (seq ? editedBySeq.get(seq) : undefined) ||
+        (op ? editedByOp.get(op) : undefined);
       if (!edited) return row;
 
       const nextRow = { ...row };
-      const nextOperatorTimes = { ...(nextRow.operator_times || {}) };
-      Object.entries(edited.operator_times || {}).forEach(([opKey, value]) => {
-        const seconds = Math.max(0, parseNumberLike(value) ?? 0);
-        nextOperatorTimes[opKey] = seconds;
-      });
-      nextRow.operator_times = nextOperatorTimes;
-
-      if (Array.isArray(nextRow.operator_allocations)) {
-        nextRow.operator_allocations = nextRow.operator_allocations.map((alloc: any) => {
-          const operatorCode = String(
-            alloc?.operator_code ?? alloc?.operator_id ?? alloc?.operador_id ?? alloc?.operator ?? alloc?.operador ?? alloc?.code ?? ""
-          ).trim();
-          if (!operatorCode) return alloc;
-          const seconds = parseNumberLike(nextOperatorTimes[operatorCode]);
-          if (seconds == null) return alloc;
-          return { ...alloc, time_seconds: seconds };
-        });
-      }
+      const editedTotal = parseNumberLike(edited?.total_time_seconds);
+      const fromOperatorTimes = Object.values(edited?.operator_times || {}).reduce(
+        (sum: number, raw) => sum + Math.max(0, parseNumberLike(raw) ?? 0),
+        0
+      );
+      const nextTotal = editedTotal != null ? Math.max(0, editedTotal) : fromOperatorTimes;
+      nextRow.total_time_seconds = nextTotal;
 
       return nextRow;
     });
@@ -171,6 +198,8 @@ export default function Resultados() {
     return {
       distribuicao: distribuicao as any,
       operation_allocations: operationAllocations as any,
+      machine_layout: resolveMachineLayout(raw),
+      machine_times_per_operator: (raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator ?? null) as any,
       taktTime: taktSeconds / 60,
       tempoCiclo,
       numeroCiclosPorHora:
@@ -202,7 +231,13 @@ export default function Resultados() {
         const novoRaw = resposta.data ?? {};
         const novosResultados = buildResultadosFromApi(novoRaw);
         setResultadosAtuais(novosResultados);
-        setAjusteBodyBase(novoRaw);
+        setAjusteBodyBase((prev: any) => ({
+          ...(prev || {}),
+          ...(novoRaw || {}),
+          operation_allocations: ensureArray(
+            novoRaw?.operation_allocations ?? novoRaw?.operationAllocations ?? prev?.operation_allocations
+          ),
+        }));
       } catch (error) {
         console.error("Erro ao ajustar alocacao:", error);
         setErroPopup("Erro ao ajustar alocação. Verifica os valores editados e tenta novamente.");
@@ -218,6 +253,32 @@ export default function Resultados() {
     setResultadosAtuais(novosResultados);
     setConfigAtual(novaConfig);
   }, []);
+
+  const handleGuardarHistorico = useCallback(async () => {
+    if (isGuardandoHistorico) return;
+    setIsGuardandoHistorico(true);
+    try {
+      const payload = {
+        task_code: taskCode || undefined,
+        content: {
+          ...(ajusteBodyBase && typeof ajusteBodyBase === "object" ? ajusteBodyBase : {}),
+          ...resultadosAtuais,
+          distribuicao: (resultadosAtuais as any)?.distribuicao ?? [],
+          operation_allocations: ensureArray((resultadosAtuais as any)?.operation_allocations),
+          takt_time_seconds: (parseNumberLike((resultadosAtuais as any)?.taktTime) ?? 0) * 60,
+          real_cycle_time_seconds: (parseNumberLike((resultadosAtuais as any)?.tempoCiclo) ?? 0) * 60,
+          num_operators: parseNumberLike((resultadosAtuais as any)?.numeroOperadores) ?? 0,
+        },
+      };
+      await axios.post(`${API_BASE_URL}/history/`, payload);
+      setSucessoPopup("Histórico guardado com sucesso.");
+    } catch (error) {
+      console.error("Erro ao guardar historico:", error);
+      setErroPopup("Erro ao guardar no histórico. Tenta novamente.");
+    } finally {
+      setIsGuardandoHistorico(false);
+    }
+  }, [ajusteBodyBase, taskCode, resultadosAtuais, isGuardandoHistorico]);
 
   const handlePrint = () => {
     window.print();
@@ -250,6 +311,14 @@ export default function Resultados() {
           <DialogHeader>
             <DialogTitle>Erro</DialogTitle>
             <DialogDescription>{erroPopup || ""}</DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(sucessoPopup)} onOpenChange={(open) => { if (!open) setSucessoPopup(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sucesso</DialogTitle>
+            <DialogDescription>{sucessoPopup || ""}</DialogDescription>
           </DialogHeader>
         </DialogContent>
       </Dialog>
@@ -329,7 +398,9 @@ export default function Resultados() {
               viewMode={viewMode}
               onViewModeChange={setViewMode}
               onConfirmarEdicao={handleConfirmarEdicao}
+              onGuardarHistorico={handleGuardarHistorico}
               isAjustando={isAjustando}
+              isGuardandoHistorico={isGuardandoHistorico}
               showTabela={false}
             />
           </div>
@@ -344,7 +415,9 @@ export default function Resultados() {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           onConfirmarEdicao={handleConfirmarEdicao}
+          onGuardarHistorico={handleGuardarHistorico}
           isAjustando={isAjustando}
+          isGuardandoHistorico={isGuardandoHistorico}
           showOccupacaoCard={false}
         />
 

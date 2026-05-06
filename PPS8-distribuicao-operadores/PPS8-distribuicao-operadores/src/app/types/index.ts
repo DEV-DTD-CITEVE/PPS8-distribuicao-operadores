@@ -135,6 +135,8 @@ export interface OperationAllocation {
 export interface ResultadosBalanceamento {
   distribuicao: DistribuicaoCarga[];
   operation_allocations?: OperationAllocation[];
+  machine_layout?: any[] | null;
+  machine_times_per_operator?: Record<string, any> | null;
   numeroCiclosPorHora: number;
   taktTime: number; // minutos
   tempoCiclo: number; // minutos

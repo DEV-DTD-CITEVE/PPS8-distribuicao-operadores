@@ -1633,6 +1633,7 @@ export default function Home() {
         const resultadosApi = {
           distribuicao,
           operation_allocations: operationAllocations,
+          machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
           taktTime,
           tempoCiclo,
@@ -1793,6 +1794,7 @@ export default function Home() {
         const resultadosApi = {
           distribuicao,
           operation_allocations: operationAllocations,
+          machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
           taktTime,
           tempoCiclo,
@@ -1954,6 +1956,7 @@ export default function Home() {
         const resultadosApi = {
           distribuicao,
           operation_allocations: operationAllocations,
+          machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
           taktTime,
           tempoCiclo,

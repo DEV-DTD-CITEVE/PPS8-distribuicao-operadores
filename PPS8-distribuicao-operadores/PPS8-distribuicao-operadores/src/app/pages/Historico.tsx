@@ -14,6 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
@@ -28,6 +36,15 @@ const ensureArray = (value: unknown): ApiRecord[] => {
   }
   return [];
 };
+
+const resolveMachineLayout = (raw: ApiRecord): ApiRecord[] =>
+  ensureArray(
+    raw?.machine_layout ??
+    raw?.machineLayout ??
+    raw?.layout_machines ??
+    raw?.machine_positions ??
+    raw?.machines_layout
+  );
 
 const pickString = (obj: ApiRecord, keys: string[]): string => {
   for (const key of keys) {
@@ -51,12 +68,29 @@ const pickNumber = (obj: ApiRecord, keys: string[]): number | null => {
 };
 
 const parseMetodo = (row: ApiRecord): 1 | 2 | 3 => {
+  const modeText = pickString(row, ["mode_label", "method_label", "metodo_label", "mode"]);
+  const modeKey = modeText
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  // Priorizar label textual da API quando existir
+  if (modeKey) {
+    if (
+      modeKey.includes("objetivo") ||
+      modeKey.includes("producao") ||
+      modeKey.includes("quantidade")
+    ) return 2;
+    if (modeKey.includes("fixo") || modeKey.includes("n fixo")) return 3;
+    if (modeKey.includes("ideal")) return 1;
+    if (modeKey.startsWith("2")) return 2;
+    if (modeKey.startsWith("3")) return 3;
+  }
+
   const n = pickNumber(row, ["mode", "method", "possibility", "metodo"]);
   if (n === 2) return 2;
   if (n === 3) return 3;
-  const modeText = pickString(row, ["mode", "mode_label", "method_label", "metodo_label"]);
-  if (modeText.startsWith("2")) return 2;
-  if (modeText.startsWith("3")) return 3;
   return 1;
 };
 
@@ -171,28 +205,77 @@ const buildResultadosFromDetail = (raw: ApiRecord): ResultadosBalanceamento => {
     raw.operations_allocations
   );
   const taktSeconds = pickNumber(raw, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0;
-  const realCycleSeconds = pickNumber(raw, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time"]) ?? 0;
-  const numeroOperadores = pickNumber(raw, ["num_operators", "numero_operadores"]) ?? 0;
-  const produtividadeRaw = pickNumber(raw, ["productivity_pct", "productivity", "produtividade"]) ?? 0;
-  const perdas = pickNumber(raw, ["balance_loss_pct", "perdas"]) ?? Math.max(0, 100 - produtividadeRaw);
-  const ciclosHora = pickNumber(raw, ["cycles_per_hour", "numero_ciclos_hora"]) ?? 0;
-
-  const tempoCiclo = realCycleSeconds > 10 ? realCycleSeconds / 60 : realCycleSeconds;
+  const cicloApi = pickNumber(raw, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]) ?? 0;
+  const tempoCiclo = cicloApi > 10 ? cicloApi / 60 : cicloApi;
+  const produtividadeRaw = pickNumber(raw, ["estimated_productivity", "productivity_pct", "productivity", "produtividade", "efficiency"]) ?? 0;
   const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
+  const perdas = pickNumber(raw, ["balance_loss_pct", "perdas", "loss_pct"]) ?? Math.max(0, 100 - produtividade);
+  const distribuicaoApi = ensureArray(
+    raw?.distribuicao ??
+    raw?.distribution ??
+    raw?.content?.distribuicao ??
+    raw?.content?.distribution ??
+    raw?.resultados?.distribuicao ??
+    raw?.resultados?.distribution
+  );
+  const normalizeDistribuicao = (rows: ApiRecord[]) =>
+    rows.map((row) => {
+      const operadorId = String(row?.operadorId ?? row?.operator_id ?? row?.operatorId ?? row?.operator ?? "").trim();
+      const operacoesRaw = row?.operacoes ?? row?.operations ?? [];
+      const operacoes = Array.isArray(operacoesRaw) ? operacoesRaw.map((v) => String(v).trim()).filter(Boolean) : [];
+      const cargaHorariaRaw =
+        pickNumber(row, ["cargaHoraria", "workload_minutes", "carga_horaria"]) ??
+        (() => {
+          const seconds = pickNumber(row, ["workload_seconds", "carga_segundos", "seconds"]);
+          return seconds != null ? seconds / 60 : null;
+        })() ??
+        0;
+      const ocupacaoRaw = pickNumber(row, ["ocupacao", "occupancy", "occupancy_pct", "occupancy_percent"]) ?? 0;
+      const ocupacao = ocupacaoRaw <= 1 ? ocupacaoRaw * 100 : ocupacaoRaw;
+      const ciclosPorHora =
+        pickNumber(row, ["ciclosPorHora", "cycles_per_hour", "cyclesPerHour"]) ??
+        (cargaHorariaRaw > 0 ? 60 / cargaHorariaRaw : 0);
+
+      return {
+        operadorId,
+        operacoes,
+        cargaHoraria: cargaHorariaRaw,
+        ocupacao,
+        ciclosPorHora,
+        temposOperacoes: (row?.temposOperacoes ?? row?.operation_times ?? row?.times_by_operation ?? {}) as Record<string, number>,
+      };
+    }).filter((row) => row.operadorId);
+
+  const distribuicao =
+    distribuicaoApi.length > 0
+      ? normalizeDistribuicao(distribuicaoApi)
+      : buildDistribuicaoFromAllocations(operationAllocations, tempoCiclo);
+  const numeroOperadores =
+    pickNumber(raw, ["num_operators", "numero_operadores", "numeroOperadores"]) ??
+    distribuicao.length;
+  const ciclosHora =
+    pickNumber(raw, ["production_per_hour", "cycles_per_hour", "numero_ciclos_hora", "numero_ciclos_por_hora"]) ??
+    (tempoCiclo > 0 ? 60 / tempoCiclo : 0);
+  const ocupacaoTotal =
+    pickNumber(raw, ["occupancy_total", "ocupacao_total", "total_occupancy", "total_load"]) ??
+    distribuicao.reduce((sum: number, d: any) => sum + ((pickNumber(d, ["cargaHoraria"]) ?? 0) * 60), 0);
 
   return {
-    distribuicao: [],
+    distribuicao: distribuicao as any,
     operation_allocations: operationAllocations,
-    numeroCiclosPorHora: ciclosHora,
+    machine_layout: resolveMachineLayout(raw),
+    machine_times_per_operator: (raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator ?? null) as any,
+    numeroCiclosPorHora: ciclosHora || 0,
     taktTime: taktSeconds / 60,
     tempoCiclo,
     produtividade,
     perdas,
-    numeroOperadores,
+    numeroOperadores: numeroOperadores || 0,
+    ocupacaoTotal: ocupacaoTotal || 0,
   };
 };
 
-const buildDistribuicaoFromAllocations = (operationAllocations: ApiRecord[], taktSeconds: number) => {
+const buildDistribuicaoFromAllocations = (operationAllocations: ApiRecord[], tempoCicloMin: number) => {
   const byOperator: Record<string, { operacoes: Set<string>; segundos: number; temposOperacoes: Record<string, number> }> = {};
 
   operationAllocations.forEach((row) => {
@@ -209,27 +292,39 @@ const buildDistribuicaoFromAllocations = (operationAllocations: ApiRecord[], tak
     };
 
     const operatorTimes = row?.operator_times && typeof row.operator_times === "object" ? row.operator_times : {};
-    Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
-      addTime(operatorRef, secondsRaw);
-    });
+    if (Object.keys(operatorTimes).length > 0) {
+      Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
+        addTime(operatorRef, secondsRaw);
+      });
+      return;
+    }
 
     const operatorAllocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
-    operatorAllocations.forEach((alloc: ApiRecord) => {
-      const operatorRef = String(
-        alloc?.operator_id ??
-        alloc?.operator_code ??
-        alloc?.operator ??
-        alloc?.code ??
-        ""
-      ).trim();
-      const secondsRaw = alloc?.time_seconds ?? alloc?.seconds ?? alloc?.time;
+    if (operatorAllocations.length > 0) {
+      operatorAllocations.forEach((alloc: ApiRecord) => {
+        const operatorRef = String(
+          alloc?.operator_id ??
+          alloc?.operator_code ??
+          alloc?.operator ??
+          alloc?.code ??
+          ""
+        ).trim();
+        const secondsRaw = alloc?.time_seconds ?? alloc?.seconds ?? alloc?.time;
+        addTime(operatorRef, secondsRaw);
+      });
+      return;
+    }
+
+    const operatorPositions = row?.operator_positions && typeof row.operator_positions === "object" ? row.operator_positions : {};
+    Object.entries(operatorPositions).forEach(([operatorRef, position]) => {
+      const secondsRaw = (position as ApiRecord)?.time_seconds ?? (position as ApiRecord)?.seconds;
       addTime(operatorRef, secondsRaw);
     });
   });
 
   return Object.entries(byOperator).map(([operadorId, dados]) => {
     const cargaHoraria = dados.segundos / 60;
-    const ocupacao = taktSeconds > 0 ? (dados.segundos / taktSeconds) * 100 : 0;
+    const ocupacao = tempoCicloMin > 0 ? (cargaHoraria / tempoCicloMin) * 100 : 0;
     return {
       operadorId,
       operacoes: Array.from(dados.operacoes),
@@ -281,6 +376,8 @@ export default function Historico() {
   const [loadingHistorico, setLoadingHistorico] = useState(false);
   const [loadingDetalheId, setLoadingDetalheId] = useState<string | null>(null);
   const [erroApi, setErroApi] = useState<string | null>(null);
+  const [confirmarRemocaoId, setConfirmarRemocaoId] = useState<string | null>(null);
+  const [confirmarLimpeza, setConfirmarLimpeza] = useState(false);
   const [detalheSelecionado, setDetalheSelecionado] = useState<{
     id: string;
     raw: ApiRecord;
@@ -348,7 +445,6 @@ export default function Historico() {
   }, [historico, filtroMetodo, filtroOperador, pesquisaFichaTecnica]);
 
   const handleRemoverItem = async (id: string) => {
-    if (!window.confirm("Tem certeza que deseja remover este registro?")) return;
     try {
       await axios.delete(`${API_BASE_URL}/history/${encodeURIComponent(id)}`);
       const novo = historico.filter((h) => h.id !== id);
@@ -363,7 +459,6 @@ export default function Historico() {
   };
 
   const handleLimparHistorico = async () => {
-    if (!window.confirm("Tem certeza que deseja limpar todo o historico? Esta acao nao pode ser desfeita.")) return;
     try {
       await Promise.all(historico.map((item) => axios.delete(`${API_BASE_URL}/history/${encodeURIComponent(item.id)}`)));
       setHistorico([]);
@@ -388,9 +483,6 @@ export default function Historico() {
         detalhe.allocations ??
         detalhe.operations_allocations
       );
-      const taktSeconds = pickNumber(detalhe, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0;
-      const distribuicao = buildDistribuicaoFromAllocations(operationAllocations, taktSeconds);
-      resultados.distribuicao = distribuicao as any;
       const config: ConfiguracaoDistribuicao = {
         possibilidade: parseMetodo(detalhe),
         horasTurno: 8,
@@ -454,13 +546,64 @@ export default function Historico() {
 
   return (
     <main className="w-full px-6 py-8 space-y-8">
+      <Dialog open={Boolean(confirmarRemocaoId)} onOpenChange={(open) => { if (!open) setConfirmarRemocaoId(null); }}>
+        <DialogContent className="rounded-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Confirmar remoção</DialogTitle>
+            <DialogDescription className="text-xs">
+              Tem certeza que deseja remover este registro?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="rounded-sm text-xs" onClick={() => setConfirmarRemocaoId(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-600 hover:bg-red-700 rounded-sm text-xs"
+              onClick={async () => {
+                const id = confirmarRemocaoId;
+                setConfirmarRemocaoId(null);
+                if (id) await handleRemoverItem(id);
+              }}
+            >
+              Remover
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={confirmarLimpeza} onOpenChange={setConfirmarLimpeza}>
+        <DialogContent className="rounded-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">Confirmar limpeza</DialogTitle>
+            <DialogDescription className="text-xs">
+              Tem certeza que deseja limpar todo o histórico? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="rounded-sm text-xs" onClick={() => setConfirmarLimpeza(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-600 hover:bg-red-700 rounded-sm text-xs"
+              onClick={async () => {
+                setConfirmarLimpeza(false);
+                await handleLimparHistorico();
+              }}
+            >
+              Limpar histórico
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Histórico de Balanceamentos</h1>
           <p className="text-gray-500 mt-1 text-sm">Análise e comparação de cálculos anteriores</p>
         </div>
         {historico.length > 0 && (
-          <Button variant="outline" size="sm" onClick={handleLimparHistorico} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+          <Button variant="outline" size="sm" onClick={() => setConfirmarLimpeza(true)} className="text-red-600 hover:text-red-700 hover:bg-red-50">
             <Trash2 className="w-4 h-4 mr-2" />
             Limpar Histórico
           </Button>
@@ -594,7 +737,7 @@ export default function Historico() {
                       <td className="p-3 font-mono text-sm text-gray-700">{((item.resultados.taktTime || 0) * 60).toFixed(1)}s</td>
                       <td className="p-3 font-mono text-sm text-gray-700">{((item.resultados.numeroCiclosPorHora ?? (item.resultados as any).numeroPecasHora ?? 0)).toFixed(0)}</td>
                       <td className="p-3"><Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => void handleVerDetalhes(item.id)} disabled={loadingDetalheId === item.id}><Eye className="w-3 h-3 mr-1" />{loadingDetalheId === item.id ? "..." : "Ver"}</Button></td>
-                      <td className="p-3"><button onClick={() => void handleRemoverItem(item.id)} className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors" title="Remover"><Trash2 className="w-4 h-4" /></button></td>
+                      <td className="p-3"><button onClick={() => setConfirmarRemocaoId(item.id)} className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors" title="Remover"><Trash2 className="w-4 h-4" /></button></td>
                     </tr>
                   ))}
                 </tbody>

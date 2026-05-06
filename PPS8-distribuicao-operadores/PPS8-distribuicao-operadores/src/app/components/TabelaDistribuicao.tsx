@@ -12,7 +12,9 @@ interface TabelaDistribuicaoProps {
   viewMode?: "tempo" | "percentagem";
   onViewModeChange?: (mode: "tempo" | "percentagem") => void;
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
+  onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
+  isGuardandoHistorico?: boolean;
 }
 
 type OperationAllocationRow = OperationAllocation & {
@@ -353,7 +355,9 @@ function TabelaAllocacoes({
   viewMode = "tempo",
   onViewModeChange,
   onConfirmarEdicao,
+  onGuardarHistorico,
   isAjustando = false,
+  isGuardandoHistorico = false,
 }: {
   resultados: ResultadosBalanceamento;
   operadores: any[];
@@ -361,7 +365,9 @@ function TabelaAllocacoes({
   viewMode?: "tempo" | "percentagem";
   onViewModeChange?: (mode: "tempo" | "percentagem") => void;
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
+  onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
+  isGuardandoHistorico?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -442,6 +448,19 @@ function TabelaAllocacoes({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          {onGuardarHistorico ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-6 px-2 text-[10px] bg-emerald-600 hover:bg-emerald-700"
+              onClick={async () => {
+                await onGuardarHistorico();
+              }}
+              disabled={isSaving || isAjustando || isGuardandoHistorico}
+            >
+              {isGuardandoHistorico ? "A guardar..." : "Guardar historico"}
+            </Button>
+          ) : null}
           {onViewModeChange ? (
             <div className="inline-flex items-center rounded-sm border border-gray-200 bg-white p-0.5">
               <Button
@@ -609,6 +628,10 @@ function TabelaAllocacoes({
                                   if (idx !== index) return r;
                                   const nextRow = { ...r, operator_times: { ...(r.operator_times || {}) } };
                                   nextRow.operator_times![column.code] = Math.max(0, next);
+                                  nextRow.total_time_seconds = Object.values(nextRow.operator_times || {}).reduce(
+                                    (sum: number, raw) => sum + Math.max(0, parseNumberLike(raw) ?? 0),
+                                    0
+                                  );
                                   return nextRow;
                                 })
                               );
@@ -664,7 +687,9 @@ export function TabelaDistribuicao({
   viewMode = "tempo",
   onViewModeChange,
   onConfirmarEdicao,
+  onGuardarHistorico,
   isAjustando = false,
+  isGuardandoHistorico = false,
 }: TabelaDistribuicaoProps) {
   return (
     <TabelaAllocacoes
@@ -674,7 +699,9 @@ export function TabelaDistribuicao({
       viewMode={viewMode}
       onViewModeChange={onViewModeChange}
       onConfirmarEdicao={onConfirmarEdicao}
+      onGuardarHistorico={onGuardarHistorico}
       isAjustando={isAjustando}
+      isGuardandoHistorico={isGuardandoHistorico}
     />
   );
 }
