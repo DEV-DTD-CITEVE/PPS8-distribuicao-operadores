@@ -753,9 +753,8 @@ function TabelaAllocacoes({
                       >
                         {editable ? (
                           <input
-                            type="number"
-                            step="0.01"
-                            min="0"
+                            type="text"
+                            inputMode="decimal"
                             value={
                               activeCell?.rowIndex === index && activeCell?.columnKey === column.key
                                 ? activeCellValue
@@ -768,7 +767,7 @@ function TabelaAllocacoes({
                               setActiveCellValue(value == null ? "" : String(value));
                             }}
                             onChange={(e) => {
-                              setActiveCellValue(e.currentTarget.value);
+                              setActiveCellValue(e.currentTarget.value.replace(",", "."));
                             }}
                             onBlur={(e) => {
                               commitCellValue(index, column, e.currentTarget.value);

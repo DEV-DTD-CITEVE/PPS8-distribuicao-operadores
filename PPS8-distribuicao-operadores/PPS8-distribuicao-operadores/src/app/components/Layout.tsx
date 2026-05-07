@@ -269,7 +269,7 @@ export default function Layout() {
             </div>
             <div className="flex items-center gap-6">
               <img src={logoCiteve} alt="CITEVE" className="h-7 w-auto object-contain" />
-              <img src={logoImpetus} alt="Impetus" className="h-7 w-20 object-contain" />
+              <img src={logoImpetus} alt="Impetus" className="h-7 w-auto object-contain" />
             </div>
           </div>
         </div>

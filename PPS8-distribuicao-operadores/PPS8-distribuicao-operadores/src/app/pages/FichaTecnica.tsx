@@ -2087,17 +2087,19 @@ export default function FichaTecnica() {
                             </td>
                             <td className="p-3">
                               <Input
-                                type="number"
-                                step="0.01"
-                                value={operacao.tempo}
-                                onChange={(e) =>
+                                type="text"
+                                inputMode="decimal"
+                                value={String(operacao.tempo)}
+                                onChange={(e) => {
+                                  const raw = e.target.value.replace(",", ".");
+                                  const parsed = Number(raw);
                                   handleEditOperacao(
                                     operacao.id,
                                     "tempo",
-                                    Number(e.target.value),
+                                    Number.isFinite(parsed) ? parsed : 0,
                                     index
-                                  )
-                                }
+                                  );
+                                }}
                                 className="h-8 w-24 text-sm font-mono rounded-sm text-right"
                               />
                             </td>
