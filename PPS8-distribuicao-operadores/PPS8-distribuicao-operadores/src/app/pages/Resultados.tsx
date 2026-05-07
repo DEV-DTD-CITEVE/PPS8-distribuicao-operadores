@@ -149,15 +149,15 @@ export default function Resultados() {
     if (originalRows.length === 0) return clone;
 
     const editedByKey = new Map<string, any>();
-    const editedBySeq = new Map<string, any>();
-    const editedByOp = new Map<string, any>();
+    const editedBySeq = new Map<string, any[]>();
+    const editedByOp = new Map<string, any[]>();
     editedRows.forEach((row) => {
       const seq = String(row?.seq ?? "").trim();
       const op = normalizeToken(row?.operation_code || row?.operation_id || "");
       const key = `${seq}::${op}`;
       editedByKey.set(key, row);
-      if (seq) editedBySeq.set(seq, row);
-      if (op) editedByOp.set(op, row);
+      if (seq) editedBySeq.set(seq, [...(editedBySeq.get(seq) || []), row]);
+      if (op) editedByOp.set(op, [...(editedByOp.get(op) || []), row]);
     });
 
     clone.operation_allocations = originalRows.map((row: any) => {
@@ -166,18 +166,83 @@ export default function Resultados() {
       const key = `${seq}::${op}`;
       const edited =
         editedByKey.get(key) ||
-        (seq ? editedBySeq.get(seq) : undefined) ||
-        (op ? editedByOp.get(op) : undefined);
+        (seq && (editedBySeq.get(seq)?.length || 0) === 1 ? editedBySeq.get(seq)?.[0] : undefined) ||
+        (op && (editedByOp.get(op)?.length || 0) === 1 ? editedByOp.get(op)?.[0] : undefined);
       if (!edited) return row;
 
       const nextRow = { ...row };
+      const editedOperatorTimesRaw =
+        edited?.operator_times && typeof edited.operator_times === "object"
+          ? (edited.operator_times as Record<string, unknown>)
+          : null;
+      if (editedOperatorTimesRaw) {
+        const nextOperatorTimes: Record<string, number> = {};
+        Object.entries(editedOperatorTimesRaw).forEach(([operatorRef, secondsRaw]) => {
+          const seconds = Math.max(0, parseNumberLike(secondsRaw) ?? 0);
+          if (!operatorRef || seconds <= 0) return;
+          nextOperatorTimes[operatorRef] = seconds;
+        });
+        nextRow.operator_times = nextOperatorTimes;
+        const editedOriginalTimesRaw =
+          edited?.original_operator_times && typeof edited.original_operator_times === "object"
+            ? (edited.original_operator_times as Record<string, unknown>)
+            : null;
+        if (editedOriginalTimesRaw) {
+          const nextOriginalTimes: Record<string, number> = {};
+          Object.entries(editedOriginalTimesRaw).forEach(([operatorRef, secondsRaw]) => {
+            const seconds = Math.max(0, parseNumberLike(secondsRaw) ?? 0);
+            if (!operatorRef || seconds <= 0) return;
+            nextOriginalTimes[operatorRef] = seconds;
+          });
+          nextRow.original_operator_times = nextOriginalTimes;
+        }
+      }
+
       const editedTotal = parseNumberLike(edited?.total_time_seconds);
-      const fromOperatorTimes = Object.values(edited?.operator_times || {}).reduce(
+      const fromOperatorTimes = Object.values(nextRow?.operator_times || {}).reduce(
         (sum: number, raw) => sum + Math.max(0, parseNumberLike(raw) ?? 0),
         0
       );
       const nextTotal = editedTotal != null ? Math.max(0, editedTotal) : fromOperatorTimes;
       nextRow.total_time_seconds = nextTotal;
+      nextRow.allocated_time_seconds = Math.max(0, parseNumberLike(edited?.allocated_time_seconds) ?? fromOperatorTimes);
+      nextRow.remaining_time_seconds = Math.max(
+        0,
+        Math.max(0, parseNumberLike(edited?.remaining_time_seconds) ?? nextTotal - nextRow.allocated_time_seconds)
+      );
+
+      if (Array.isArray(edited?.operator_allocations)) {
+        nextRow.operator_allocations = edited.operator_allocations.map((item: any) => ({
+          ...(item || {}),
+          time_seconds: Math.max(0, parseNumberLike(item?.time_seconds) ?? 0),
+        }));
+      } else if (nextRow?.operator_times && typeof nextRow.operator_times === "object") {
+        nextRow.operator_allocations = Object.entries(nextRow.operator_times).map(([operatorCode, seconds]) => ({
+          operator_code: operatorCode,
+          time_seconds: Math.max(0, parseNumberLike(seconds) ?? 0),
+        }));
+      }
+
+      if (edited?.operator_positions && typeof edited.operator_positions === "object") {
+        const nextPositions: Record<string, any> = {};
+        Object.entries(edited.operator_positions).forEach(([operatorCode, positionRaw]) => {
+          const position = positionRaw && typeof positionRaw === "object" ? { ...(positionRaw as any) } : {};
+          position.time_seconds = Math.max(0, parseNumberLike((position as any)?.time_seconds) ?? 0);
+          nextPositions[operatorCode] = position;
+        });
+        nextRow.operator_positions = nextPositions;
+      } else if (nextRow?.operator_times && typeof nextRow.operator_times === "object") {
+        const currentPositions =
+          nextRow?.operator_positions && typeof nextRow.operator_positions === "object" ? nextRow.operator_positions : {};
+        const nextPositions: Record<string, any> = { ...currentPositions };
+        Object.entries(nextRow.operator_times).forEach(([operatorCode, seconds]) => {
+          nextPositions[operatorCode] = {
+            ...(nextPositions[operatorCode] || {}),
+            time_seconds: Math.max(0, parseNumberLike(seconds) ?? 0),
+          };
+        });
+        nextRow.operator_positions = nextPositions;
+      }
 
       return nextRow;
     });
@@ -224,6 +289,11 @@ export default function Resultados() {
       setIsAjustando(true);
       try {
         const body = mergeRowsIntoAdjustBody(ajusteBodyBase, editedRows);
+        console.groupCollapsed("[AJUSTE] Payload enviado para /adjust");
+        console.log("taskCode:", taskCode);
+        console.log("payload:", body);
+        console.log("payload_json:", JSON.stringify(body, null, 2));
+        console.groupEnd();
         const resposta = await axios.post(
           `${API_BASE_URL}/tasks/${encodeURIComponent(taskCode)}/adjust`,
           body
@@ -240,7 +310,16 @@ export default function Resultados() {
         }));
       } catch (error) {
         console.error("Erro ao ajustar alocacao:", error);
-        setErroPopup("Erro ao ajustar alocação. Verifica os valores editados e tenta novamente.");
+        console.group("[AJUSTE] Erro retornado pelo backend");
+        console.log("status:", (error as any)?.response?.status);
+        console.log("data:", (error as any)?.response?.data);
+        console.log("detail:", (error as any)?.response?.data?.detail);
+        console.groupEnd();
+        const apiMessage =
+          (error as any)?.response?.data?.detail?.message ||
+          (error as any)?.response?.data?.message ||
+          (error as any)?.message;
+        setErroPopup(apiMessage || "Erro ao ajustar alocação. Verifica os valores editados e tenta novamente.");
         throw error;
       } finally {
         setIsAjustando(false);

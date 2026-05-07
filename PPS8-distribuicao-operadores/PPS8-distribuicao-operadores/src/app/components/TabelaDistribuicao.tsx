@@ -37,6 +37,17 @@ const normalizeKey = (value: string): string =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+const resolveAllocationOperatorCode = (allocation: Record<string, unknown>): string =>
+  String(
+    allocation.operator_code ??
+      allocation.operator_id ??
+      allocation.operador_id ??
+      allocation.operator ??
+      allocation.operador ??
+      allocation.code ??
+      ""
+  ).trim();
+
 const parseNumberLike = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -371,6 +382,8 @@ function TabelaAllocacoes({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeCell, setActiveCell] = useState<{ rowIndex: number; columnKey: string } | null>(null);
+  const [activeCellValue, setActiveCellValue] = useState<string>("");
   const baseRows = useMemo<OperationAllocationRow[]>(
     () => {
       const apiRows = (resultados.operation_allocations || []) as OperationAllocationRow[];
@@ -430,6 +443,74 @@ function TabelaAllocacoes({
     if (value == null) return "-";
     if (viewMode === "percentagem") return `${formatExact(value)}%`;
     return formatExact(value);
+  };
+
+  const commitCellValue = (rowIndex: number, column: OperatorColumn, rawValue: string) => {
+    const parsed = parseNumberLike(rawValue);
+    const nextSeconds = Math.max(0, parsed ?? 0);
+    setDraftRows((prev) =>
+      prev.map((r, idx) => {
+        if (idx !== rowIndex) return r;
+        const nextRow = { ...r, operator_times: { ...(r.operator_times || {}) } };
+        if (!(nextRow as Record<string, unknown>).original_operator_times) {
+          (nextRow as Record<string, unknown>).original_operator_times = {
+            ...(r.operator_times || {}),
+          };
+        }
+        if (nextSeconds > 0) {
+          nextRow.operator_times![column.code] = nextSeconds;
+        } else {
+          delete nextRow.operator_times![column.code];
+        }
+        const recalculatedTotal = Object.values(nextRow.operator_times || {}).reduce(
+          (sum: number, raw) => sum + Math.max(0, parseNumberLike(raw) ?? 0),
+          0
+        );
+        nextRow.total_time_seconds = recalculatedTotal;
+        nextRow.allocated_time_seconds = recalculatedTotal;
+        nextRow.remaining_time_seconds = Math.max(
+          0,
+          (parseNumberLike(nextRow.total_time_seconds) ?? 0) - (parseNumberLike(nextRow.allocated_time_seconds) ?? 0)
+        );
+        const existingAllocations = Array.isArray(r.operator_allocations) ? r.operator_allocations : [];
+        const existingAllocationByOperator = new Map<string, Record<string, unknown>>();
+        existingAllocations.forEach((item) => {
+          const allocation = item && typeof item === "object" ? (item as Record<string, unknown>) : null;
+          if (!allocation) return;
+          const operatorRef = resolveAllocationOperatorCode(allocation);
+          if (!operatorRef) return;
+          existingAllocationByOperator.set(normalizeKey(operatorRef), allocation);
+        });
+        nextRow.operator_allocations = Object.entries(nextRow.operator_times || {}).map(([operatorCode, seconds]) => {
+          const normalizedOperator = normalizeKey(operatorCode);
+          const existingAllocation = existingAllocationByOperator.get(normalizedOperator);
+          const normalizedSeconds = Math.max(0, parseNumberLike(seconds) ?? 0);
+          if (existingAllocation) {
+            return {
+              ...existingAllocation,
+              time_seconds: normalizedSeconds,
+            };
+          }
+          return {
+            operator_id: operatorCode,
+            time_seconds: normalizedSeconds,
+          };
+        });
+        const existingPositions =
+          nextRow.operator_positions && typeof nextRow.operator_positions === "object"
+            ? nextRow.operator_positions
+            : {};
+        const nextPositions: Record<string, any> = { ...existingPositions };
+        Object.entries(nextRow.operator_times || {}).forEach(([operatorCode, seconds]) => {
+          nextPositions[operatorCode] = {
+            ...(nextPositions[operatorCode] || {}),
+            time_seconds: Math.max(0, parseNumberLike(seconds) ?? 0),
+          };
+        });
+        nextRow.operator_positions = nextPositions;
+        return nextRow;
+      })
+    );
   };
 
   return (
@@ -612,7 +693,7 @@ function TabelaAllocacoes({
                           textAlign: "center",
                           fontFamily: "monospace",
                           fontWeight: 600,
-                          color: value == null ? "#d1d5db" : "#2563eb",
+                          color: editable ? "#2563eb" : value == null ? "#d1d5db" : "#2563eb",
                         })}
                       >
                         {editable ? (
@@ -620,23 +701,31 @@ function TabelaAllocacoes({
                             type="number"
                             step="0.01"
                             min="0"
-                            value={value == null ? "" : value}
-                            onChange={(e) => {
-                              const next = parseNumberLike(e.currentTarget.value) ?? 0;
-                              setDraftRows((prev) =>
-                                prev.map((r, idx) => {
-                                  if (idx !== index) return r;
-                                  const nextRow = { ...r, operator_times: { ...(r.operator_times || {}) } };
-                                  nextRow.operator_times![column.code] = Math.max(0, next);
-                                  nextRow.total_time_seconds = Object.values(nextRow.operator_times || {}).reduce(
-                                    (sum: number, raw) => sum + Math.max(0, parseNumberLike(raw) ?? 0),
-                                    0
-                                  );
-                                  return nextRow;
-                                })
-                              );
+                            value={
+                              activeCell?.rowIndex === index && activeCell?.columnKey === column.key
+                                ? activeCellValue
+                                : value == null
+                                  ? ""
+                                  : String(value)
+                            }
+                            onFocus={() => {
+                              setActiveCell({ rowIndex: index, columnKey: column.key });
+                              setActiveCellValue(value == null ? "" : String(value));
                             }}
-                            className="w-full h-5 text-[11px] px-1 border border-gray-300 rounded-sm text-center font-mono"
+                            onChange={(e) => {
+                              setActiveCellValue(e.currentTarget.value);
+                            }}
+                            onBlur={(e) => {
+                              commitCellValue(index, column, e.currentTarget.value);
+                              setActiveCell(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                commitCellValue(index, column, (e.currentTarget as HTMLInputElement).value);
+                                (e.currentTarget as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="w-full h-5 text-[11px] px-1 border border-gray-300 rounded-sm text-center font-mono text-gray-900 bg-white"
                           />
                         ) : (
                           formatMetric(value)

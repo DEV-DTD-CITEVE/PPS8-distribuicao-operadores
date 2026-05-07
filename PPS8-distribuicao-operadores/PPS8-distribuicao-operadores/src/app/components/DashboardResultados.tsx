@@ -119,19 +119,43 @@ export function DashboardResultados({
   showOccupacaoCard = true,
   showTabela = true,
 }: DashboardResultadosProps) {
+  const totaisSegundosPorOperador = new Map<string, number>();
+  const operationAllocations = Array.isArray((resultados as any)?.operation_allocations)
+    ? ((resultados as any).operation_allocations as any[])
+    : [];
+  operationAllocations.forEach((row: any) => {
+    const operatorTimes = row?.operator_times && typeof row.operator_times === "object" ? row.operator_times : {};
+    Object.entries(operatorTimes).forEach(([operatorRef, rawSeconds]) => {
+      const seconds = Number(rawSeconds);
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      const resolved = resolveOperatorCode(String(operatorRef), operadores);
+      const key = normalizeKey(resolved || String(operatorRef));
+      if (!key) return;
+      totaisSegundosPorOperador.set(key, (totaisSegundosPorOperador.get(key) || 0) + seconds);
+    });
+  });
+
   const displayCodeByOperatorId = buildDisplayCodeMap(resultados.distribuicao || []);
   const dadosCarga = resultados.distribuicao.map((dist, index) => {
+    const resolvedOperatorCode = resolveOperatorCode(dist.operadorId, operadores);
     const codigo =
       displayCodeByOperatorId.get(String(dist?.operadorId || "").trim()) ||
-      resolveOperatorCode(dist.operadorId, operadores);
+      resolvedOperatorCode;
     const colaboradorLabel = getCollaboratorLabel(dist.operadorId, codigo);
+    const totalFromAllocations = totaisSegundosPorOperador.get(normalizeKey(resolvedOperatorCode));
+    const fallbackTotal = Number(dist.cargaHoraria) * 60;
+    const totalTimeSeconds = Number.isFinite(totalFromAllocations as number)
+      ? (totalFromAllocations as number)
+      : Number.isFinite(fallbackTotal)
+        ? fallbackTotal
+        : 0;
 
     return {
       idx: `op_${index}`,
       codigo,
       colaboradorLabel,
       ocupacao: Math.round(dist.ocupacao),
-      cargaHoraria: Math.round(dist.cargaHoraria),
+      totalTimeSeconds,
     };
   });
 
@@ -160,7 +184,6 @@ export function DashboardResultados({
         <div className="relative shrink-0 w-full overflow-x-auto">
           <div className="content-stretch flex gap-[8px] items-start justify-center px-[24px] min-w-full w-max relative">
             {dadosCarga.map((d) => {
-              const totalTimeSeconds = d.cargaHoraria * 60;
               const fillHeight = (Math.min(d.ocupacao, 100) / 100) * BATTERY_TOTAL_HEIGHT;
               const fillMT = BATTERY_START_MT + (BATTERY_TOTAL_HEIGHT - fillHeight);
               const color = getBatteryColor(d.ocupacao);
@@ -220,18 +243,10 @@ export function DashboardResultados({
                         <p title={d.codigo} className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[9.818px] text-center whitespace-nowrap cursor-help">
                           {d.colaboradorLabel}
                         </p>
-                        <div className="content-stretch flex gap-[8px] h-[14px] items-center justify-center relative shrink-0 w-[59px]">
-                          <p className="font-bold leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[9.818px] text-center whitespace-nowrap">{totalTimeSeconds.toFixed(0)}s</p>
-                          <div className="flex flex-[1_0_0] h-[14px] items-center justify-center min-h-px min-w-px relative" style={{ containerType: "size" } as React.CSSProperties}>
-                            <div className="-scale-y-100 flex-none h-[100cqw] rotate-90">
-                              <div className="h-full relative w-[14px]">
-                                <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 14 1">
-                                  <path d="M14 0V1H0V0H14Z" fill="#6B7280" />
-                                </svg>
-                              </div>
-                            </div>
-                          </div>
-                          <p className="font-bold leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[9.818px] text-center whitespace-nowrap">{d.ocupacao}%</p>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[14px] w-[68px]">
+                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[9.818px] text-right whitespace-nowrap pr-[3px]">{d.totalTimeSeconds.toFixed(1)}s</p>
+                          <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[9.818px] text-center whitespace-nowrap">|</p>
+                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[9.818px] text-left whitespace-nowrap pl-[3px]">{d.ocupacao}%</p>
                         </div>
                       </div>
                     </div>

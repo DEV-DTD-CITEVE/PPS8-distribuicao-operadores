@@ -367,14 +367,6 @@ export function VisualizadorFluxo({
   ];
 
   const barrasEmpilhadasPorOperador = useMemo(() => {
-    const raw = (resultados as any)?.machine_times_per_operator ?? (resultados as any)?.machineTimesPerOperator;
-    if (!raw || typeof raw !== "object") {
-      return {
-        operadores: [] as Array<{ operador: string; totalSegundos: number; segmentos: Array<{ maquina: string; segundos: number; color: string }> }>,
-        legenda: [] as Array<{ maquina: string; color: string }>,
-      };
-    }
-
     const machineColorMap = new Map<string, string>();
     let colorIdx = 0;
     const pickColor = (machine: string) => {
@@ -384,6 +376,96 @@ export function VisualizadorFluxo({
       }
       return machineColorMap.get(machine)!;
     };
+
+    const operationAllocations = Array.isArray((resultados as any)?.operation_allocations)
+      ? ((resultados as any).operation_allocations as any[])
+      : [];
+    if (operationAllocations.length > 0) {
+      const perOperatorMachine = new Map<string, Map<string, number>>();
+      operationAllocations.forEach((row: any) => {
+        const machine = String(row?.machine_type || row?.machine_name || "-").trim() || "-";
+        const operatorAllocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
+        operatorAllocations.forEach((alloc: any) => {
+          const operatorKey = String(
+            alloc?.operator_id ?? alloc?.operator_code ?? alloc?.operador_id ?? alloc?.operator ?? alloc?.operador ?? ""
+          ).trim();
+          if (!operatorKey) return;
+          const seconds = Number(alloc?.time_seconds);
+          if (!Number.isFinite(seconds) || seconds <= 0) return;
+          if (!perOperatorMachine.has(operatorKey)) perOperatorMachine.set(operatorKey, new Map<string, number>());
+          const byMachine = perOperatorMachine.get(operatorKey)!;
+          byMachine.set(machine, (byMachine.get(machine) || 0) + seconds);
+        });
+      });
+
+      const operadores = Array.from(perOperatorMachine.entries()).map(([operatorKey, byMachine]) => {
+        const segmentos = Array.from(byMachine.entries()).map(([maquina, segundos]) => ({
+          maquina,
+          segundos,
+          color: pickColor(maquina),
+        }));
+        const totalSegundos = segmentos.reduce((sum, s) => sum + s.segundos, 0);
+        return { operador: operatorKey, totalSegundos, segmentos };
+      }).filter((o) => o.totalSegundos > 0);
+
+      const legenda = Array.from(machineColorMap.entries()).map(([maquina, color]) => ({ maquina, color }));
+      return { operadores, legenda };
+    }
+
+    const distribuicao = Array.isArray((resultados as any)?.distribuicao) ? ((resultados as any).distribuicao as any[]) : [];
+    if (distribuicao.length > 0) {
+      const machineByOperation = new Map<string, string>();
+      operacoes.forEach((op: any) => {
+        const opId = String(op?.id ?? "").trim();
+        if (!opId) return;
+        machineByOperation.set(opId, String(op?.tipoMaquina || op?.machine_type || "Geral"));
+      });
+
+      const operadores = distribuicao
+        .map((dist: any) => {
+          const operador = resolveOperatorCode(String(dist?.operadorId ?? dist?.operator_id ?? dist?.operator ?? ""));
+          if (!operador) return null;
+          const temposOperacoes =
+            dist?.temposOperacoes && typeof dist.temposOperacoes === "object" ? (dist.temposOperacoes as Record<string, unknown>) : {};
+          const byMachine = new Map<string, number>();
+          Object.entries(temposOperacoes).forEach(([opId, tempoMinRaw]) => {
+            const tempoMin = Number(tempoMinRaw);
+            if (!Number.isFinite(tempoMin) || tempoMin <= 0) return;
+            const machine = machineByOperation.get(String(opId).trim()) || "Geral";
+            byMachine.set(machine, (byMachine.get(machine) || 0) + tempoMin * 60);
+          });
+
+          let segmentos = Array.from(byMachine.entries()).map(([maquina, segundos]) => ({
+            maquina,
+            segundos,
+            color: pickColor(maquina),
+          }));
+          let totalSegundos = segmentos.reduce((sum, s) => sum + s.segundos, 0);
+
+          if (totalSegundos <= 0) {
+            const cargaMin = Number(dist?.cargaHoraria);
+            if (Number.isFinite(cargaMin) && cargaMin > 0) {
+              totalSegundos = cargaMin * 60;
+              segmentos = [{ maquina: "Total", segundos: totalSegundos, color: pickColor("Total") }];
+            }
+          }
+
+          if (totalSegundos <= 0) return null;
+          return { operador, totalSegundos, segmentos };
+        })
+        .filter((entry): entry is { operador: string; totalSegundos: number; segmentos: Array<{ maquina: string; segundos: number; color: string }> } => Boolean(entry));
+
+      const legenda = Array.from(machineColorMap.entries()).map(([maquina, color]) => ({ maquina, color }));
+      return { operadores, legenda };
+    }
+
+    const raw = (resultados as any)?.machine_times_per_operator ?? (resultados as any)?.machineTimesPerOperator;
+    if (!raw || typeof raw !== "object") {
+      return {
+        operadores: [] as Array<{ operador: string; totalSegundos: number; segmentos: Array<{ maquina: string; segundos: number; color: string }> }>,
+        legenda: [] as Array<{ maquina: string; color: string }>,
+      };
+    }
 
     const operadores: Array<{ operador: string; totalSegundos: number; segmentos: Array<{ maquina: string; segundos: number; color: string }> }> = [];
     Object.entries(raw as Record<string, any>).forEach(([operatorKey, entries]) => {
@@ -421,7 +503,7 @@ export function VisualizadorFluxo({
 
     const legenda = Array.from(machineColorMap.entries()).map(([maquina, color]) => ({ maquina, color }));
     return { operadores, legenda };
-  }, [resultados, pieColors]);
+  }, [resultados, pieColors, operacoes, operadores]);
 
   return (
     <div className="space-y-6">
@@ -779,6 +861,20 @@ export function VisualizadorFluxo({
                               style={{ display: "flex", flexDirection: "column", alignItems: "center", height: "100%" }}
                             >
                               <div style={{ height: CHART_H, width: 80, position: "relative" }}>
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    left: "50%",
+                                    bottom: getBarH(b.totalSegundos) + 4,
+                                    transform: "translateX(-50%)",
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    color: "#1f2937",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {b.totalSegundos.toFixed(1)}s
+                                </div>
                                 <div
                                   style={{
                                     position: "absolute",
