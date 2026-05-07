@@ -85,7 +85,7 @@ const dadosPadrao: DadosSessao = {
     layoutConfig: {
       tipoLayout: "linha",
       postosPorLado: 8,
-      distanciaMaxima: 3,
+      distanciaMaxima: 4,
       permitirRetrocesso: false,
       permitirCruzamento: true,
       restricoes: [],
@@ -134,6 +134,30 @@ export function useStorage(): StorageContextType {
 
 const LS_KEY = "balanceamento_sessao_v2";
 
+function normalizarDadosSessao(input: Partial<DadosSessao>): DadosSessao {
+  const merged: DadosSessao = {
+    ...dadosPadrao,
+    ...input,
+    operadores: input.operadores?.length ? input.operadores : operadoresMock,
+    maquinas: input.maquinas?.length ? input.maquinas : maquinasMock,
+    configuracao: {
+      ...dadosPadrao.configuracao,
+      ...input.configuracao,
+      layoutConfig: {
+        ...dadosPadrao.configuracao.layoutConfig,
+        ...input.configuracao?.layoutConfig,
+      },
+    },
+  };
+
+  // Migração: versões antigas gravavam 3 como distância por defeito.
+  if (Number(merged.configuracao.layoutConfig.distanciaMaxima) === 3) {
+    merged.configuracao.layoutConfig.distanciaMaxima = 4;
+  }
+
+  return merged;
+}
+
 function lerLocalStorage(): DadosSessao | null {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -144,19 +168,12 @@ function lerLocalStorage(): DadosSessao | null {
       if (estadoAntigo) {
         const parsed = JSON.parse(estadoAntigo);
         const hist = historicoAntigo ? JSON.parse(historicoAntigo) : [];
-        return { ...dadosPadrao, ...parsed, historico: hist };
+        return normalizarDadosSessao({ ...parsed, historico: hist });
       }
       return null;
     }
     const parsed = JSON.parse(raw);
-    // Garantir que operadores existem (pode ser um ficheiro antigo sem este campo)
-    if (!parsed.operadores || parsed.operadores.length === 0) {
-      parsed.operadores = operadoresMock;
-    }
-    if (!parsed.maquinas || parsed.maquinas.length === 0) {
-      parsed.maquinas = maquinasMock;
-    }
-    return parsed;
+    return normalizarDadosSessao(parsed);
   } catch {
     return null;
   }
@@ -191,7 +208,7 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
       // 1. Carregar do localStorage primeiro (resposta imediata)
       const ls = lerLocalStorage();
       if (ls) {
-        const merged = { ...dadosPadrao, ...ls };
+        const merged = normalizarDadosSessao(ls);
         setDados(merged);
         dadosRef.current = merged;
       }
@@ -240,13 +257,7 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
     try {
       const conteudo = await lerFicheiro(handle);
       if (conteudo) {
-        // Garantir retrocompatibilidade
-        const merged: DadosSessao = {
-          ...dadosPadrao,
-          ...conteudo,
-          operadores: conteudo.operadores?.length ? conteudo.operadores : operadoresMock,
-          maquinas: conteudo.maquinas?.length ? conteudo.maquinas : maquinasMock,
-        };
+        const merged = normalizarDadosSessao(conteudo);
         setDados(merged);
         dadosRef.current = merged;
         escreverLocalStorage(merged);

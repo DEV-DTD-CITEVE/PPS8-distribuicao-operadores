@@ -43,10 +43,16 @@ const configPadrao = {
 const layoutPadrao: LayoutConfig = {
   tipoLayout: "linha",
   postosPorLado: 8,
-  distanciaMaxima: 3,
+  distanciaMaxima: 4,
   permitirRetrocesso: false,
   permitirCruzamento: true,
   restricoes: [],
+};
+
+const normalizarLayoutConfig = (layout?: Partial<LayoutConfig> | null): LayoutConfig => {
+  const merged = { ...layoutPadrao, ...(layout || {}) };
+  if (Number(merged.distanciaMaxima) === 3) merged.distanciaMaxima = 4;
+  return merged;
 };
 
 // â”€â”€â”€ Types and Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1063,7 +1069,7 @@ export default function Home() {
   );
 
   const [layoutConfig, setLayoutConfig] = useState<LayoutConfig>(
-    confGuardada.layoutConfig || layoutPadrao
+    normalizarLayoutConfig(confGuardada.layoutConfig)
   );
 
   const [dadosUnidades, setDadosUnidades] = useState(() => {
@@ -1120,7 +1126,7 @@ export default function Home() {
 
     if (conf.grupoArtigoSelecionado) setGrupoArtigoSelecionado(conf.grupoArtigoSelecionado);
     if (conf.operacoesManual?.length) setOperacoesManual(conf.operacoesManual);
-    if (conf.layoutConfig) setLayoutConfig(conf.layoutConfig);
+    if (conf.layoutConfig) setLayoutConfig(normalizarLayoutConfig(conf.layoutConfig));
 
     const g = conf.dadosUnidades;
     // Actualizar operadores master nas unidades quando o contexto carrega
@@ -2184,7 +2190,7 @@ export default function Home() {
             Configure operadores e processos operacionais
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        {/* <div className="flex items-center gap-3">
           <button
             onClick={() => setUnidadeAtiva(1)}
             className={`px-4 py-2 rounded-sm text-xs font-medium transition-colors ${
@@ -2195,7 +2201,7 @@ export default function Home() {
           >
             LINHA 1
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* Cards de mÃ©tricas */}

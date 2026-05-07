@@ -40,11 +40,12 @@ interface LayoutConfiguradorProps {
 }
 
 export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquina = false, value }: LayoutConfiguradorProps) {
+  const mostrarRestricoes = false;
   const [tipoLayout, setTipoLayout] = useState<"linha" | "espinha">(value?.tipoLayout || "linha");
   const [postosPorLado, setPostosPorLado] = useState(value?.postosPorLado ?? 8);
   const [postosPorLadoInput, setPostosPorLadoInput] = useState(String(value?.postosPorLado ?? 8));
-  const [distanciaMaxima, setDistanciaMaxima] = useState(value?.distanciaMaxima ?? 3);
-  const [distanciaMaximaInput, setDistanciaMaximaInput] = useState(String(value?.distanciaMaxima ?? 3));
+  const [distanciaMaxima, setDistanciaMaxima] = useState(value?.distanciaMaxima ?? 4);
+  const [distanciaMaximaInput, setDistanciaMaximaInput] = useState(String(value?.distanciaMaxima ?? 4));
   const [permitirRetrocesso, setPermitirRetrocesso] = useState(value?.permitirRetrocesso ?? false);
   const [permitirCruzamento, setPermitirCruzamento] = useState(value?.permitirCruzamento ?? true);
   const [restricoes, setRestricoes] = useState<any[]>(value?.restricoes ?? []);
@@ -158,7 +159,7 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
             </div>
 
             {/* Mobilidade de Operadores */}
-            <div className="p-2 bg-blue-50 rounded-sm border border-blue-200">
+            <div className="col-span-2 p-2 bg-blue-50 rounded-sm border border-blue-200">
               <div className="flex items-center gap-1 mb-2">
                 <Move className="w-3 h-3 text-blue-700" />
                 <span className="text-[10px] font-semibold text-gray-900">Mobilidade</span>
@@ -229,7 +230,7 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
                   </div>
                 )}
                 </div>
-              {tipoLayout === "espinha" && (
+              {/* {tipoLayout === "espinha" && (
                 <div className="mt-2 pt-2 border-t border-blue-200">
                   <div className="flex items-center justify-between">
                     <Label className="text-[9px] text-gray-700">Permitir Cruzamento (A {"<->"} B)</Label>
@@ -237,10 +238,11 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
                   </div>
                   <p className="text-[8px] text-gray-500 mt-1">Operadores podem mudar de lado do corredor</p>
                 </div>
-              )}
+              )} */}
             </div>
 
             {/* Restricoes de Proximidade */}
+            {mostrarRestricoes && (
             <div className="p-2 bg-amber-50 rounded-sm border border-amber-200">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1">
@@ -374,6 +376,7 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
                 </div>
               )}
             </div>
+            )}
           </div>
         </CardContent>
       </Card>

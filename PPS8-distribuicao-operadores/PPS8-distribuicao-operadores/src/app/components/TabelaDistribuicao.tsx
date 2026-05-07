@@ -48,6 +48,17 @@ const resolveAllocationOperatorCode = (allocation: Record<string, unknown>): str
       ""
   ).trim();
 
+const resolveOperatorNameFromCode = (operatorCode: string, operadores: any[]): string | undefined => {
+  const key = normalizeKey(operatorCode);
+  const match = operadores.find((op: any) => {
+    const id = normalizeKey(String(op?.id || ""));
+    const nome = normalizeKey(String(op?.nome || ""));
+    return key === id || key === nome;
+  });
+  const nome = String(match?.nome || "").trim();
+  return nome || undefined;
+};
+
 const parseNumberLike = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -187,6 +198,36 @@ const getOperatorTime = (row: OperationAllocationRow, column: OperatorColumn): n
   if (positionTime != null) return positionTime;
 
   return null;
+};
+
+const resolveRowOperatorRef = (row: OperationAllocationRow, column: OperatorColumn): string => {
+  const directInTimes = Object.keys(row.operator_times || {}).find(
+    (candidate) => normalizeKey(candidate) === column.key
+  );
+  if (directInTimes) return directInTimes;
+
+  const directInPositions = Object.keys(row.operator_positions || {}).find(
+    (candidate) => normalizeKey(candidate) === column.key
+  );
+  if (directInPositions) return directInPositions;
+
+  const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
+  for (const allocation of allocations) {
+    const record = allocation as Record<string, unknown>;
+    const operatorCode = String(
+      record.operator_code ??
+        record.operator_id ??
+        record.operador_id ??
+        record.operator ??
+        record.operador ??
+        record.code ??
+        ""
+    ).trim();
+    if (!operatorCode) continue;
+    if (normalizeKey(operatorCode) === column.key) return operatorCode;
+  }
+
+  return column.code;
 };
 
 const normalizePercentageValue = (value: number): number =>
@@ -452,15 +493,16 @@ function TabelaAllocacoes({
       prev.map((r, idx) => {
         if (idx !== rowIndex) return r;
         const nextRow = { ...r, operator_times: { ...(r.operator_times || {}) } };
+        const targetOperatorRef = resolveRowOperatorRef(r, column);
         if (!(nextRow as Record<string, unknown>).original_operator_times) {
           (nextRow as Record<string, unknown>).original_operator_times = {
             ...(r.operator_times || {}),
           };
         }
         if (nextSeconds > 0) {
-          nextRow.operator_times![column.code] = nextSeconds;
+          nextRow.operator_times![targetOperatorRef] = nextSeconds;
         } else {
-          delete nextRow.operator_times![column.code];
+          delete nextRow.operator_times![targetOperatorRef];
         }
         const recalculatedTotal = Object.values(nextRow.operator_times || {}).reduce(
           (sum: number, raw) => sum + Math.max(0, parseNumberLike(raw) ?? 0),
@@ -485,6 +527,7 @@ function TabelaAllocacoes({
           const normalizedOperator = normalizeKey(operatorCode);
           const existingAllocation = existingAllocationByOperator.get(normalizedOperator);
           const normalizedSeconds = Math.max(0, parseNumberLike(seconds) ?? 0);
+          const operatorName = resolveOperatorNameFromCode(operatorCode, operadores);
           if (existingAllocation) {
             return {
               ...existingAllocation,
@@ -493,6 +536,10 @@ function TabelaAllocacoes({
           }
           return {
             operator_id: operatorCode,
+            operator_name: operatorName,
+            position_number: column.positionNumber,
+            position_label: column.positionLabel,
+            position_side: column.positionSide,
             time_seconds: normalizedSeconds,
           };
         });
@@ -502,9 +549,17 @@ function TabelaAllocacoes({
             : {};
         const nextPositions: Record<string, any> = { ...existingPositions };
         Object.entries(nextRow.operator_times || {}).forEach(([operatorCode, seconds]) => {
+          const operatorName =
+            nextPositions[operatorCode]?.operator_name ||
+            resolveOperatorNameFromCode(operatorCode, operadores) ||
+            column.label;
           nextPositions[operatorCode] = {
             ...(nextPositions[operatorCode] || {}),
             time_seconds: Math.max(0, parseNumberLike(seconds) ?? 0),
+            operator_name: operatorName,
+            position_number: nextPositions[operatorCode]?.position_number ?? column.positionNumber,
+            position_label: nextPositions[operatorCode]?.position_label ?? column.positionLabel,
+            position_side: nextPositions[operatorCode]?.position_side ?? column.positionSide,
           };
         });
         nextRow.operator_positions = nextPositions;

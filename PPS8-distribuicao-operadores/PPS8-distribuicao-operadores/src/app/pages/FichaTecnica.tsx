@@ -1348,7 +1348,14 @@ export default function FichaTecnica() {
               return key ? String(r[key]).trim() : "";
             };
             const tempoRaw = get(["tempo", "time", "min", "durac"]);
-            const tempo = parseFloat(tempoRaw.replace(",", ".")) || 0;
+            const tempoSanitized = tempoRaw.replace(",", ".").trim();
+            const tempoNumber = Number(tempoSanitized);
+            const isIntegerLike =
+              Number.isFinite(tempoNumber) &&
+              Math.abs(tempoNumber - Math.round(tempoNumber)) < 1e-9;
+            const tempo = isIntegerLike
+              ? tempoNumber / 100
+              : parseFloat(tempoSanitized) || 0;
             const seqRaw = get(["seq", "ordem", "order", "nº", "no", "num"]);
             const seq = parseInt(seqRaw) || (idx + 1);
             const finalRaw = get(["final", "crit"]);
@@ -1503,7 +1510,15 @@ export default function FichaTecnica() {
       void handleCarregarCandidatePools(createdProdutoComOperacoes);
     } catch (error) {
       console.error("Erro ao importar gamas operatórias:", error);
-      setImportError("Não foi possível criar a ficha técnica e importar as operações pela API.");
+      const apiMessage =
+        axios.isAxiosError(error)
+          ? pickString((error.response?.data as ApiRecord) || {}, ["detail", "message", "error"])
+          : "";
+      setImportError(
+        apiMessage
+          ? `Não foi possível criar a ficha técnica e importar as operações pela API: ${apiMessage}`
+          : "Não foi possível criar a ficha técnica e importar as operações pela API."
+      );
     } finally {
       setImportingGamas(false);
     }
