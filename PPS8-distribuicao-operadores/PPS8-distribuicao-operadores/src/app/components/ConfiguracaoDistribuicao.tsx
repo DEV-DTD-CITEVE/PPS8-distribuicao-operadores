@@ -69,7 +69,8 @@ export function ConfiguracaoDistribuicaoComponent({
           </div>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6 p-6">
+      <CardContent className="p-6">
+        <div className={`grid grid-cols-1 gap-6 ${config.possibilidade !== 4 ? "xl:grid-cols-2" : ""}`}>
         <div className="space-y-3">
           <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
             Metodo de Distribuicao
@@ -144,33 +145,33 @@ export function ConfiguracaoDistribuicaoComponent({
         </div>
 
         {config.possibilidade !== 4 && (
-          <div className="space-y-4 pt-4 border-t border-gray-200">
+          <div className="space-y-4">
             <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
               Parametros Adicionais
             </Label>
 
-            <div className="flex items-center justify-between p-4 border border-gray-200 rounded-sm">
-              <div className="flex-1">
-                <Label htmlFor="agrupar" className="font-medium text-gray-900 text-sm cursor-pointer">
-                  Agrupar por Tipo de Maquina
-                </Label>
-                <p className="text-xs text-gray-500 mt-1">
-                  Reduz deslocamentos agrupando operacoes similares
-                </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 border border-gray-200 rounded-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <Label htmlFor="agrupar" className="font-medium text-gray-900 text-sm cursor-pointer">
+                      Agrupar por Tipo de Maquina
+                    </Label>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Reduz deslocamentos agrupando operacoes similares
+                    </p>
+                  </div>
+                  <Switch
+                    id="agrupar"
+                    checked={config.agruparMaquinas}
+                    onCheckedChange={(checked) => onChange({ ...config, agruparMaquinas: checked })}
+                    className="cursor-pointer"
+                  />
+                </div>
               </div>
-              <Switch
-                id="agrupar"
-                checked={config.agruparMaquinas}
-                onCheckedChange={(checked) => onChange({ ...config, agruparMaquinas: checked })}
-                className="cursor-pointer"
-              />
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border border-gray-200 rounded-sm">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-gray-700">
-                  Carga Maxima por Operador
-                </Label>
+              <div className="p-4 border border-gray-200 rounded-sm space-y-2">
+                <Label className="text-xs font-medium text-gray-700">Carga Maxima por Operador</Label>
                 <Input
                   type="number"
                   min={50}
@@ -183,7 +184,9 @@ export function ConfiguracaoDistribuicaoComponent({
                   className="rounded-sm text-sm font-mono"
                 />
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-gray-200 rounded-sm">
               <div className="space-y-2">
                 <Label className="text-xs font-medium text-gray-700">Nao Dividir Operacoes Maiores Que </Label>
                 <Input
@@ -226,6 +229,7 @@ export function ConfiguracaoDistribuicaoComponent({
             </div>
           </div>
         )}
+        </div>
       </CardContent>
     </Card>
   );

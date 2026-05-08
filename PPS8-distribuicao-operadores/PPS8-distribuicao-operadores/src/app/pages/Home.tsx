@@ -1,11 +1,13 @@
-﻿import { useState, useEffect, useCallback } from "react";
-import { Operador, Operacao, ConfiguracaoDistribuicao, Produto } from "../types";
-import { useNavigate } from "react-router";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Operador, Operacao, ConfiguracaoDistribuicao, Produto, ResultadosBalanceamento } from "../types";
 import { Button } from "../components/ui/button";
 import { Calculator, Users, Package, Factory, ChevronDown, Edit3, AlertTriangle } from "lucide-react";
 import { ConfiguracaoDistribuicaoComponent } from "../components/ConfiguracaoDistribuicao";
 import { LayoutConfigurador, LayoutConfig } from "../components/LayoutConfigurador";
 import { TabelaOperacoesManual } from "../components/TabelaOperacoesManual";
+import { DashboardResultados } from "../components/DashboardResultados";
+import { ResumoResultados } from "../components/ResumoResultados";
+import { VisualizadorFluxo } from "../components/VisualizadorFluxo";
 import { calcularBalanceamento } from "../utils/balanceamento";
 import { salvarHistorico, obterHistorico } from "../utils/historico";
 import { useStorage } from "../contexts/StorageContext";
@@ -28,7 +30,7 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 
-// â”€â”€â”€ Valores por defeito â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Valores por defeito ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
 const configPadrao = {
   possibilidade: 1 as 1 | 2 | 3 | 4,
@@ -55,7 +57,7 @@ const normalizarLayoutConfig = (layout?: Partial<LayoutConfig> | null): LayoutCo
   return merged;
 };
 
-// â”€â”€â”€ Types and Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Types and Helpers ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
 interface FamilyOption {
   id: string;
@@ -636,7 +638,7 @@ const extrairDistribuicaoDeTableData = (
     const operadorOriginal = pickString(row, ["operator", "operator_id", "operador", "operador_id"]);
     
     if (operadorOriginal) {
-      // Estrutura por linha: cada linha tem um operador e suas operações
+      // Estrutura por linha: cada linha tem um operador e suas operaÃƒÂ§ÃƒÂµes
       const operadorId = mapOperatorToCode(operadorOriginal, operadoresPool);
       
       const extracted = extrairOperacoesETemposDoRow(row, operacoesBase);
@@ -683,7 +685,7 @@ const extrairDistribuicaoDeTableData = (
       agrupado[operadorId].cargaHoraria += Math.max(0, tempoMinutos || 0);
       if (ocupacao != null) agrupado[operadorId].ocupacao = ocupacao;
     } else {
-      // Estrutura por coluna: cada chave é um operador, dentro tem operações e tempos
+      // Estrutura por coluna: cada chave ÃƒÂ© um operador, dentro tem operaÃƒÂ§ÃƒÂµes e tempos
       Object.entries(row).forEach(([colKey, colValue]) => {
         const colKeyNorm = normalizeKey(colKey);
         if (!colKeyNorm || reservedRowKeys.has(colKeyNorm)) return;
@@ -691,25 +693,25 @@ const extrairDistribuicaoDeTableData = (
         const mappedOperator = mapOperatorToCode(String(colKey), operadoresPool);
         if (!operadorExisteNoPool(mappedOperator)) return;
 
-        // colValue pode ser um objeto com operações como chaves, ou um número direto
+        // colValue pode ser um objeto com operaÃƒÂ§ÃƒÂµes como chaves, ou um nÃƒÂºmero direto
         if (!colValue || typeof colValue !== "object") return;
 
         const operadorData = colValue as ApiRecord;
         let tempoTotalOperador = 0;
         
-        // Iterar pelas operações dentro do operador
+        // Iterar pelas operaÃƒÂ§ÃƒÂµes dentro do operador
         Object.entries(operadorData).forEach(([opKey, opTime]) => {
           const opKeyNorm = normalizeKey(opKey);
           if (!opKeyNorm || reservedRowKeys.has(opKeyNorm)) return;
 
-          // Tentar mapear a chave para uma operação
+          // Tentar mapear a chave para uma operaÃƒÂ§ÃƒÂ£o
           const operacaoId = findOperacaoIdByReferencia(String(opKey), operacoesBase);
           if (!operacaoId) return;
 
           const tempoRaw = parseRawNumber(opTime);
           if (tempoRaw == null || !Number.isFinite(tempoRaw) || tempoRaw <= 0) return;
 
-          // Detectar se está em segundos ou minutos
+          // Detectar se estÃƒÂ¡ em segundos ou minutos
           const tempoOperacaoBase = operacoesBase.find((op) => op.id === operacaoId)?.tempo ?? 0;
           const ehSegundos = tempoRaw > tempoOperacaoBase * 2.5;
           const tempoMin = ehSegundos ? tempoRaw / 60 : tempoRaw;
@@ -1043,20 +1045,19 @@ function criarUnidadePadrao(operadores: Operador[]) {
   };
 }
 
-// â”€â”€â”€ Componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Componente ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
 export default function Home() {
-  const navigate = useNavigate();
   const { dados, salvar } = useStorage();
 
-  // â”€â”€ Operadores vem SEMPRE do contexto (fonte de verdade unica) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Operadores vem SEMPRE do contexto (fonte de verdade unica) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   // Nunca importar operadoresMock directamente aqui
   const operadoresMaster = dados.operadores;
 
   // Ler configuracao guardada
   const confGuardada = dados.configuracao;
 
-  // â”€â”€â”€ Estado local (inicializado a partir do contexto) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Estado local (inicializado a partir do contexto) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   const [unidadeAtiva, setUnidadeAtiva] = useState<1 | 2 | 3>(1);
 
@@ -1097,11 +1098,11 @@ export default function Home() {
     return { 1: u1, 2: u2, 3: u3 };
   });
 
-  // â”€â”€ Sincronizar com o contexto quando os dados carregam do ficheiro â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Sincronizar com o contexto quando os dados carregam do ficheiro ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   const [sincronizado, setSincronizado] = useState(false);
 
-  // â”€â”€ API: Familias e Fichas Tecnicas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ API: Familias e Fichas Tecnicas ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   const [familias, setFamilias] = useState<FamilyOption[]>([]);
   const [loadingFamilias, setLoadingFamilias] = useState(false);
   const [produtosApi, setProdutosApi] = useState<Produto[]>([]);
@@ -1116,6 +1117,14 @@ export default function Home() {
     identificador: string;
   }>({ open: false, identificador: "" });
   const [erroCalculoModal, setErroCalculoModal] = useState<string | null>(null);
+  const [resultadosInlineData, setResultadosInlineData] = useState<{
+    resultados: ResultadosBalanceamento;
+    operadores: Operador[];
+    operacoes: Operacao[];
+    config: ConfiguracaoDistribuicao;
+    layoutConfig: LayoutConfig;
+  } | null>(null);
+  const resultadosRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (sincronizado) return;
@@ -1166,7 +1175,7 @@ export default function Home() {
     }));
   }, [dados.operadores]);
 
-  // â”€â”€â”€ Auto-save em cada mudanca de estado â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Auto-save em cada mudanca de estado ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   const guardarConfiguracaoAtual = useCallback(() => {
     salvar({
@@ -1199,7 +1208,7 @@ export default function Home() {
     guardarConfiguracaoAtual();
   }, [guardarConfiguracaoAtual]);
 
-  // â”€â”€ Load families from API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Load families from API ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   useEffect(() => {
     const carregarFamilias = async () => {
       setLoadingFamilias(true);
@@ -1233,7 +1242,7 @@ export default function Home() {
     carregarFamilias();
   }, []);
 
-  // â”€â”€ Load technical sheets for selected family â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Load technical sheets for selected family ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   useEffect(() => {
     if (!grupoArtigoSelecionado) {
       setProdutosApi([]);
@@ -1325,7 +1334,7 @@ export default function Home() {
     void carregarCandidatePools();
   }, [produtoSelecionado, produtosApi, dados.operadores]);
 
-  // â”€â”€â”€ Atalhos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Atalhos ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   const operadores = dadosUnidades[unidadeAtiva].operadores;
   const operadoresSelecionados = dadosUnidades[unidadeAtiva].operadoresSelecionados;
@@ -1424,7 +1433,7 @@ export default function Home() {
     });
   }, [config.possibilidade, operacoes, operadores, produto, unidadeAtiva]);
 
-  // â”€â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Handlers ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   const handleToggleOperador = (id: string) => {
     setDadosUnidades((prev) => ({
@@ -1481,6 +1490,20 @@ export default function Home() {
     }));
   };
 
+  const mostrarResultadosNaPagina = (data: {
+    resultados: ResultadosBalanceamento;
+    operadores: Operador[];
+    operacoes: Operacao[];
+    config: ConfiguracaoDistribuicao;
+    layoutConfig: LayoutConfig;
+  }) => {
+    setResultadosInlineData(data);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        resultadosRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+    });
+  };
   const handleCalcular = async (confirmado = false) => {
     try {
       const getMaxPostsPayload = () => {
@@ -1661,7 +1684,7 @@ export default function Home() {
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
-        navigate("/resultados", { state: dataToPass });
+        mostrarResultadosNaPagina(dataToPass);
         return;
       }
       // Modo 2: usar endpoint por quantidade objetivo
@@ -1822,7 +1845,7 @@ export default function Home() {
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
-        navigate("/resultados", { state: dataToPass });
+        mostrarResultadosNaPagina(dataToPass);
         return;
       }
       // Modo 3: usar endpoint por numero de operadores
@@ -1984,7 +2007,7 @@ export default function Home() {
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
-        navigate("/resultados", { state: dataToPass });
+        mostrarResultadosNaPagina(dataToPass);
         return;
       }
       if (config.possibilidade === 4) {
@@ -2091,7 +2114,7 @@ export default function Home() {
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
-        navigate("/resultados", { state: dataToPass });
+        mostrarResultadosNaPagina(dataToPass);
         return;
       }
 
@@ -2156,7 +2179,7 @@ export default function Home() {
         historico: obterHistorico(),
       });
 
-      navigate("/resultados", { state: dataToPass });
+      mostrarResultadosNaPagina(dataToPass);
     } catch (error) {
       console.error("Erro ao calcular balanceamento:", error);
       if (axios.isAxiosError(error) && error.response?.status === 422) {
@@ -2175,10 +2198,17 @@ export default function Home() {
     }
   };
 
-  const tempoTotal = operacoes.reduce((sum, op) => sum + op.tempo, 0);
-  const [gamaExpandida, setGamaExpandida] = useState(false);
+  const [seccoesExpandidas, setSeccoesExpandidas] = useState({
+    grupoArtigo: true,
+    configuracaoDistribuicao: true,
+    tabelaManual: true,
+    parametrosBalanceamento: true,
+    configuracaoLayout: true,
+  });
+  const toggleSeccao = (seccao: keyof typeof seccoesExpandidas) =>
+    setSeccoesExpandidas((prev) => ({ ...prev, [seccao]: !prev[seccao] }));
 
-  // â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Render ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   return (
     <main className="w-full px-6 py-8 space-y-8">
@@ -2204,47 +2234,6 @@ export default function Home() {
         </div> */}
       </div>
 
-      {/* Cards de mÃ©tricas */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white p-6 rounded-sm border border-gray-200">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-teal-100 rounded-sm flex items-center justify-center">
-              <Users className="w-5 h-5 text-teal-600" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 uppercase">Operadores</div>
-              <div className="text-2xl font-bold text-gray-900">{operadoresSelecionados.length}</div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-sm border border-gray-200">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-blue-100 rounded-sm flex items-center justify-center">
-              <Package className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 uppercase">Operacoes</div>
-              <div className="text-2xl font-bold text-gray-900">{operacoes.length}</div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-sm border border-gray-200">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-purple-100 rounded-sm flex items-center justify-center">
-              <Factory className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 uppercase">Maquinas</div>
-              <div className="text-2xl font-bold text-gray-900">
-                {operacoes.length > 0
-                  ? new Set(operacoes.map((op) => op.tipoMaquina)).size
-                  : 0}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Selecao de Grupo de Artigo */}
       {config.possibilidade !== 4 && erroApi && (
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-sm flex items-center gap-2 text-amber-700 text-sm">
@@ -2254,132 +2243,214 @@ export default function Home() {
       )}
 
       {config.possibilidade !== 4 && (
-        <div className="bg-white p-5 rounded-sm border border-gray-200 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase text-gray-600">
-                Grupo de Artigo
-              </Label>
-              <Select
-                value={grupoArtigoSelecionado || undefined}
-                onValueChange={setGrupoArtigoSelecionado}
-                disabled={loadingFamilias || familias.length === 0}
-              >
-                <SelectTrigger className="rounded-sm text-sm cursor-pointer">
-                  <SelectValue placeholder={loadingFamilias ? "A carregar grupos..." : "Selecione um grupo"} />
-                </SelectTrigger>
-                <SelectContent className="rounded-sm">
-                  {familias.map((familia) => (
-                    <SelectItem key={familia.id} value={familia.id} className="text-sm cursor-pointer">
-                      {familia.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase text-gray-600">
-                Ficha Tecnica
-              </Label>
-              <Select
-                value={produtoSelecionado || undefined}
-                onValueChange={handleSelecionarFicha}
-                disabled={loadingFichas || produtosApi.length === 0}
-              >
-                <SelectTrigger className="rounded-sm text-sm cursor-pointer">
-                  <SelectValue
-                    placeholder={
-                      loadingFichas ? "A carregar fichas..." :
-                      "Selecione uma ficha tecnica"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent className="rounded-sm">
-                  {produtosApi.map((prod) => (
-                    <SelectItem key={prod.id} value={prod.id} className="text-sm cursor-pointer">
-                      <span className="font-mono text-xs text-gray-500 mr-2">{prod.referencia}</span>
-                      {prod.nome}
-                      <span className="text-gray-400 ml-2">({prod.operacoes.length} ops)</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <div className="bg-white rounded-sm border border-gray-200 shadow-sm">
+          <div
+            className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+            onClick={() => toggleSeccao("grupoArtigo")}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-gray-700" />
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Selecao de Grupo de Artigo</h3>
+                </div>
+              </div>
+              <ChevronDown
+                className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${seccoesExpandidas.grupoArtigo ? "rotate-180" : ""}`}
+              />
             </div>
           </div>
-          {produto && (
-            <div className="text-xs text-gray-500 mt-3">
-              Tempo total: <span className="font-mono">{operacoes.reduce((s, op) => s + op.tempo, 0).toFixed(2)} min</span>
-              <span className="mx-2"> - </span>
-              <span>{operacoes.length} operacoes</span>
+          {seccoesExpandidas.grupoArtigo && (
+            <div className="p-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase text-gray-600">
+                    Grupo de Artigo
+                  </Label>
+                  <Select
+                    value={grupoArtigoSelecionado || undefined}
+                    onValueChange={setGrupoArtigoSelecionado}
+                    disabled={loadingFamilias || familias.length === 0}
+                  >
+                    <SelectTrigger className="rounded-sm text-sm cursor-pointer">
+                      <SelectValue placeholder={loadingFamilias ? "A carregar grupos..." : "Selecione um grupo"} />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-sm">
+                      {familias.map((familia) => (
+                        <SelectItem key={familia.id} value={familia.id} className="text-sm cursor-pointer">
+                          {familia.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase text-gray-600">
+                    Ficha Tecnica
+                  </Label>
+                  <Select
+                    value={produtoSelecionado || undefined}
+                    onValueChange={handleSelecionarFicha}
+                    disabled={loadingFichas || produtosApi.length === 0}
+                  >
+                    <SelectTrigger className="rounded-sm text-sm cursor-pointer">
+                      <SelectValue
+                        placeholder={
+                          loadingFichas ? "A carregar fichas..." :
+                          "Selecione uma ficha tecnica"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-sm">
+                      {produtosApi.map((prod) => (
+                        <SelectItem key={prod.id} value={prod.id} className="text-sm cursor-pointer">
+                          <span className="font-mono text-xs text-gray-500 mr-2">{prod.referencia}</span>
+                          {prod.nome}
+                          <span className="text-gray-400 ml-2">({prod.operacoes.length} ops)</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {produto && (
+                <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="text-xs text-gray-500">
+                    Tempo total: <span className="font-mono">{operacoes.reduce((s, op) => s + op.tempo, 0).toFixed(2)} min</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="inline-flex items-center gap-2 rounded-sm border border-gray-200 bg-gray-50 px-2.5 py-1.5">
+                      <Users className="w-3.5 h-3.5 text-teal-600" />
+                      <span className="text-[11px] uppercase tracking-wide text-gray-500">Operadores</span>
+                      <span className="font-mono text-xs font-semibold text-gray-900">{operadoresSelecionados.length}</span>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-sm border border-gray-200 bg-gray-50 px-2.5 py-1.5">
+                      <Package className="w-3.5 h-3.5 text-blue-600" />
+                      <span className="text-[11px] uppercase tracking-wide text-gray-500">Operacoes</span>
+                      <span className="font-mono text-xs font-semibold text-gray-900">{operacoes.length}</span>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-sm border border-gray-200 bg-gray-50 px-2.5 py-1.5">
+                      <Factory className="w-3.5 h-3.5 text-purple-600" />
+                      <span className="text-[11px] uppercase tracking-wide text-gray-500">Maquinas</span>
+                      <span className="font-mono text-xs font-semibold text-gray-900">
+                        {operacoes.length > 0 ? new Set(operacoes.map((op) => op.tipoMaquina)).size : 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
 
       {/* Configuracao de Distribuicao */}
-      <ConfiguracaoDistribuicaoComponent
-        config={config}
-        onChange={handleConfigChange}
-        numeroOperadoresDisponiveis={operadoresSelecionados.length}
-        operacoes={operacoes}
-        onCalcularOperadoresNecessarios={handleCalcularOperadoresNecessarios}
-      />
+      <div className="bg-white rounded-sm border border-gray-200 shadow-sm">
+        <div
+          className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+          onClick={() => toggleSeccao("configuracaoDistribuicao")}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-gray-700" />
+              <h3 className="text-base font-semibold text-gray-900">Configuracao de Distribuicao</h3>
+            </div>
+            <ChevronDown
+              className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${seccoesExpandidas.configuracaoDistribuicao ? "rotate-180" : ""}`}
+            />
+          </div>
+        </div>
+        {seccoesExpandidas.configuracaoDistribuicao && (
+          <div className="p-5">
+            <ConfiguracaoDistribuicaoComponent
+              config={config}
+              onChange={handleConfigChange}
+              numeroOperadoresDisponiveis={operadoresSelecionados.length}
+              operacoes={operacoes}
+              onCalcularOperadoresNecessarios={handleCalcularOperadoresNecessarios}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Tabela de Operacoes Manual */}
       {config.possibilidade === 4 && (
-        <div className="bg-white p-5 rounded-sm border border-gray-200 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 bg-blue-100 rounded-sm flex items-center justify-center">
-              <Edit3 className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-gray-900">Entrada Manual de Operacoes</h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Preencha os dados das operacoes directamente na tabela
-              </p>
+        <div className="bg-white rounded-sm border border-gray-200 shadow-sm">
+          <div
+            className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+            onClick={() => toggleSeccao("tabelaManual")}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-sm flex items-center justify-center">
+                  <Edit3 className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Entrada Manual de Operacoes</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Preencha os dados das operacoes directamente na tabela
+                  </p>
+                </div>
+              </div>
+              <ChevronDown
+                className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${seccoesExpandidas.tabelaManual ? "rotate-180" : ""}`}
+              />
             </div>
           </div>
-          <TabelaOperacoesManual
-            operacoes={operacoesManual}
-            onOperacoesChange={(ops) => {
-              const lista = ops.length === 0
-                ? [{
-                    id: "OP001",
-                    nome: "",
-                    tempo: 0,
-                    tipoMaquina: "",
-                    largura: 190,
-                    ponto: "",
-                    setup: "Standard",
-                    permitirAgrupamento: true,
-                    sequencia: 1,
-                  }]
-                : ops;
-              setOperacoesManual(lista);
-            }}
-            operadores={operadores.filter((op) => operadoresSelecionados.includes(op.id))}
-            atribuicoes={atribuicoesManual}
-            onAtribuicaoChange={handleAtribuirManualmente}
-          />
+          {seccoesExpandidas.tabelaManual && (
+            <div className="p-5">
+              <TabelaOperacoesManual
+                operacoes={operacoesManual}
+                onOperacoesChange={(ops) => {
+                  const lista = ops.length === 0
+                    ? [{
+                        id: "OP001",
+                        nome: "",
+                        tempo: 0,
+                        tipoMaquina: "",
+                        largura: 190,
+                        ponto: "",
+                        setup: "Standard",
+                        permitirAgrupamento: true,
+                        sequencia: 1,
+                      }]
+                    : ops;
+                  setOperacoesManual(lista);
+                }}
+                operadores={operadores.filter((op) => operadoresSelecionados.includes(op.id))}
+                atribuicoes={atribuicoesManual}
+                onAtribuicaoChange={handleAtribuirManualmente}
+              />
+            </div>
+          )}
         </div>
       )}
 
       {/* Parametros de Balanceamento */}
       {config.possibilidade !== 4 && (
         <div className="shadow-sm border border-gray-200 rounded-sm bg-white">
-          <div className="p-5 border-b border-gray-200">
-            <div className="flex items-center gap-2">
-              <Calculator className="w-5 h-5 text-gray-700" />
-              <div>
-                <h3 className="text-base font-semibold text-gray-900">Parametros de Balanceamento</h3>
-                <p className="text-xs text-gray-500 font-normal mt-0.5">
-                  Parametros de entrada conforme o metodo selecionado
-                </p>
+          <div
+            className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+            onClick={() => toggleSeccao("parametrosBalanceamento")}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-gray-700" />
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">Parametros de Balanceamento</h3>
+                  <p className="text-xs text-gray-500 font-normal mt-0.5">
+                    Parametros de entrada conforme o metodo selecionado
+                  </p>
+                </div>
               </div>
+              <ChevronDown
+                className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${seccoesExpandidas.parametrosBalanceamento ? "rotate-180" : ""}`}
+              />
             </div>
           </div>
-          <div className="p-6">
+          {seccoesExpandidas.parametrosBalanceamento && (
+            <div className="p-6">
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Entradas</div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2529,124 +2600,39 @@ export default function Home() {
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Gama Operatoria */}
-      {config.possibilidade !== 4 && (
-        <div className="bg-white rounded-sm border border-gray-200 shadow-sm">
-          <div
-            className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
-            onClick={() => setGamaExpandida(!gamaExpandida)}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-sm flex items-center justify-center">
-                  <Package className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">
-                    Gama Operatoria - {produto?.nome || "Sem produto"}
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Operacoes carregadas da ficha tecnica do produto selecionado
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-500 font-mono">
-                  {operacoes.length} ops  -  {tempoTotal.toFixed(2)} min
-                </span>
-                <ChevronDown
-                  className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${gamaExpandida ? "rotate-180" : ""}`}
-                />
-              </div>
-            </div>
-          </div>
-
-          {gamaExpandida && (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase w-16">Seq.</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase w-20">ID</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase">Descricao</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase w-28">Tempo (min)</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase">Maquina</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase min-w-[200px]">Operadores Disponiveis</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {operacoes.map((operacao) => {
-                    const candidatePoolOperacao = candidatePoolsByOperation[operacao.id] || [];
-                    const usarCandidatePool = candidatePoolOperacao.length > 0;
-                    const operadoresAtribuidos = usarCandidatePool
-                      ? candidatePoolOperacao
-                      : (atribuicoesManual[operacao.nome] || []);
-                    return (
-                      <tr
-                        key={operacao.id}
-                        className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${operacao.critica ? "bg-orange-50" : ""}`}
-                      >
-                        <td className="p-3 font-mono text-sm text-gray-700">{operacao.sequencia}</td>
-                        <td className="p-3">
-                          <span className="font-mono font-semibold text-sm text-blue-700 bg-blue-50 px-2 py-1 rounded-sm border border-blue-200">
-                            {operacao.id}
-                          </span>
-                        </td>
-                        <td className="p-3 text-sm text-gray-700">
-                          {operacao.nome}
-                          {operacao.critica && (
-                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-orange-200 text-orange-800 border border-orange-300">
-                              CRITICA
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 font-mono text-sm text-gray-700">{operacao.tempo.toFixed(2)}</td>
-                        <td className="p-3 text-sm text-gray-600">{operacao.tipoMaquina || "-"}</td>
-                        <td className="p-3">
-                          {operadoresAtribuidos.length > 0 ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {operadoresAtribuidos.map((operadorId) => (
-                                <span
-                                  key={`${operacao.id}-${operadorId}`}
-                                  className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
-                                >
-                                  {operadorId}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-400 italic">Sem operadores disponíveis</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-gray-50 border-t-2 border-gray-300">
-                    <td colSpan={3} className="p-3 text-xs font-semibold text-gray-700 uppercase">Total</td>
-                    <td className="p-3 font-mono font-bold text-sm text-gray-900">{tempoTotal.toFixed(2)} min</td>
-                    <td colSpan={2}></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
           )}
         </div>
       )}
 
       {/* Configuracao de Layout */}
-      <LayoutConfigurador
-        operacoes={operacoes}
-        value={layoutConfig}
-        onLayoutChange={setLayoutConfig}
-        agruparPorMaquina={config.agruparMaquinas}
-      />
+      <div className="bg-white rounded-sm border border-gray-200 shadow-sm">
+        <div
+          className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+          onClick={() => toggleSeccao("configuracaoLayout")}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Factory className="w-5 h-5 text-gray-700" />
+              <h3 className="text-base font-semibold text-gray-900">Configuracao de Layout</h3>
+            </div>
+            <ChevronDown
+              className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${seccoesExpandidas.configuracaoLayout ? "rotate-180" : ""}`}
+            />
+          </div>
+        </div>
+        {seccoesExpandidas.configuracaoLayout && (
+          <div className="p-5">
+            <LayoutConfigurador
+              operacoes={operacoes}
+              value={layoutConfig}
+              onLayoutChange={setLayoutConfig}
+              agruparPorMaquina={config.agruparMaquinas}
+            />
+          </div>
+        )}
+      </div>
 
-      {/* BotÃ£o Calcular */}
+      {/* BotÃƒÆ’Ã‚Â£o Calcular */}
       <div className="flex justify-center pt-4">
         <Button
           type="button"
@@ -2660,6 +2646,41 @@ export default function Home() {
         </Button>
       </div>
 
+      {resultadosInlineData && (
+        <section ref={resultadosRef} className="pt-4 space-y-6">
+          <div className="bg-white border border-gray-200 rounded-sm shadow-sm p-5">
+            <h2 className="text-base font-semibold text-gray-900">Resultados do Balanceamento</h2>
+            <p className="text-xs text-gray-500 mt-1">Análise gerada após o cálculo</p>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-6 items-start xl:items-stretch">
+            <div className="xl:sticky xl:top-[95px] z-10 bg-transparent pb-3 xl:h-full">
+              <ResumoResultados
+                resultados={resultadosInlineData.resultados}
+                config={resultadosInlineData.config}
+                mostrarTaktTime={Number(resultadosInlineData.config?.possibilidade) === 2}
+                layout="column"
+              />
+            </div>
+            <div className="space-y-6 min-w-0">
+              <DashboardResultados
+                resultados={resultadosInlineData.resultados}
+                operadores={resultadosInlineData.operadores}
+                operacoes={resultadosInlineData.operacoes}
+                config={resultadosInlineData.config}
+                onRecalcular={() => undefined}
+              />
+            </div>
+          </div>
+
+          <VisualizadorFluxo
+            resultados={resultadosInlineData.resultados}
+            operadores={resultadosInlineData.operadores}
+            operacoes={resultadosInlineData.operacoes}
+            layoutConfig={resultadosInlineData.layoutConfig}
+          />
+        </section>
+      )}
       <Dialog
         open={confirmarCalculoModal.open}
         onOpenChange={(open) => {
@@ -2726,3 +2747,6 @@ export default function Home() {
     </main>
   );
 }
+
+
+
