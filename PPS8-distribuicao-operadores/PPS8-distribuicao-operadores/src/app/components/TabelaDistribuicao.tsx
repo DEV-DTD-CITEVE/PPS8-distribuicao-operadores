@@ -568,6 +568,19 @@ function TabelaAllocacoes({
     return nextRows;
   };
 
+  const confirmarEdicao = async (rowsToConfirm: OperationAllocationRow[]) => {
+    if (!onConfirmarEdicao || isSaving) return;
+    setIsSaving(true);
+    try {
+      await onConfirmarEdicao(rowsToConfirm);
+      setIsEditing(false);
+    } catch {
+      // Keep edit mode active if confirmation fails.
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -655,7 +668,7 @@ function TabelaAllocacoes({
             )
           ) : null}
           {isEditing && !isSaving && !isAjustando ? (
-            <span className="text-[10px] text-gray-400 shrink-0">Enter para confirmar</span>
+            <span className="text-[10px] text-gray-400 shrink-0">Enter ou clicar fora para confirmar</span>
           ) : null}
         </div>
       </div>
@@ -758,21 +771,13 @@ function TabelaAllocacoes({
                               setActiveCellValue(e.currentTarget.value.replace(",", "."));
                             }}
                             onBlur={(e) => {
-                              commitCellValue(index, column, e.currentTarget.value);
+                              const newRows = commitCellValue(index, column, e.currentTarget.value);
                               setActiveCell(null);
+                              void confirmarEdicao(newRows);
                             }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") {
-                                const newRows = commitCellValue(index, column, (e.currentTarget as HTMLInputElement).value);
-                                setActiveCell(null);
                                 (e.currentTarget as HTMLInputElement).blur();
-                                if (onConfirmarEdicao) {
-                                  setIsSaving(true);
-                                  onConfirmarEdicao(newRows)
-                                    .then(() => { setIsEditing(false); })
-                                    .catch(() => {})
-                                    .finally(() => { setIsSaving(false); });
-                                }
                               }
                             }}
                             className="w-full h-5 text-[11px] px-1 border border-gray-300 rounded-sm text-center font-mono text-gray-900 bg-white"

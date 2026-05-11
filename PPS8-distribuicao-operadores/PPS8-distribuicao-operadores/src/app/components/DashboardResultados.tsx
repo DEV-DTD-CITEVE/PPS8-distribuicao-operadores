@@ -109,6 +109,7 @@ export function DashboardResultados({
   resultados,
   operadores,
   operacoes,
+  config,
   onDistribuicaoChange,
   viewMode = "tempo",
   onViewModeChange,
@@ -158,6 +159,7 @@ export function DashboardResultados({
       totalTimeSeconds,
     };
   });
+  const showTaktTimeLine = Number(config?.possibilidade) === 2;
 
   return (
     <div className="flex flex-col gap-4 items-start w-full">
@@ -255,20 +257,22 @@ export function DashboardResultados({
               );
             })}
 
-            <div className="absolute content-stretch flex items-center justify-end left-0 right-0 z-10" style={{ top: 0 }}>
-              <div className="flex-[1_0_0] h-0 min-h-px min-w-px relative">
-                <div className="absolute inset-[-0.82px_0]">
-                  <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 534.896 1.63636">
-                    <path d="M0 0.818182H534.896" stroke="#1E3A5F" strokeDasharray="6.55 3.27" strokeWidth="1.63636" />
-                  </svg>
+            {showTaktTimeLine && (
+              <div className="absolute content-stretch flex items-center justify-end left-0 right-0 z-10" style={{ top: 0 }}>
+                <div className="flex-[1_0_0] h-0 min-h-px min-w-px relative">
+                  <div className="absolute inset-[-0.82px_0]">
+                    <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 534.896 1.63636">
+                      <path d="M0 0.818182H534.896" stroke="#1E3A5F" strokeDasharray="6.55 3.27" strokeWidth="1.63636" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="bg-[#1e3a5f] content-stretch flex h-[17.455px] items-center justify-center p-[6px] relative rounded-[4px] shrink-0 w-[73.104px]">
+                  <p className="font-bold leading-[normal] not-italic relative shrink-0 text-[8.727px] text-center text-white whitespace-nowrap">
+                    TT {(resultados.taktTime * 60).toFixed(1)}s
+                  </p>
                 </div>
               </div>
-              <div className="bg-[#1e3a5f] content-stretch flex h-[17.455px] items-center justify-center p-[6px] relative rounded-[4px] shrink-0 w-[73.104px]">
-                <p className="font-bold leading-[normal] not-italic relative shrink-0 text-[8.727px] text-center text-white whitespace-nowrap">
-                  TT {(resultados.taktTime * 60).toFixed(1)}s
-                </p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
