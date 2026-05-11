@@ -170,8 +170,8 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
                   <Input
                     id="lc-postos"
                     type="number"
-                    min={4}
-                    max={16}
+                    min={2}
+                    max={100}
                     value={postosPorLadoInput}
                     onChange={(e) => {
                       const raw = e.currentTarget.value;
@@ -184,7 +184,7 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
                     onBlur={() => {
                       const parsed = Number(postosPorLadoInput.replace(",", "."));
                       const next = Number.isFinite(parsed)
-                        ? Math.max(4, Math.min(16, Math.round(parsed)))
+                        ? Math.max(2, Math.round(parsed))
                         : postosPorLado;
                       setPostosPorLado(next);
                       setPostosPorLadoInput(String(next));

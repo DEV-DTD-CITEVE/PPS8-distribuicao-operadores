@@ -130,7 +130,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
   ];
 
   return (
-    <div className={isColumn ? "flex flex-col h-full justify-between" : "flex flex-1 gap-2"}>
+    <div className={isColumn ? "flex flex-col h-full justify-evenly" : "flex flex-1 gap-2"}>
       {kpis.map((kpi, index) => (
         <div
           key={index}

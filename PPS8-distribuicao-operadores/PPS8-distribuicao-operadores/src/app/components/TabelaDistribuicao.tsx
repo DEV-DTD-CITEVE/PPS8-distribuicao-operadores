@@ -486,11 +486,10 @@ function TabelaAllocacoes({
     return formatExact(value);
   };
 
-  const commitCellValue = (rowIndex: number, column: OperatorColumn, rawValue: string) => {
+  const commitCellValue = (rowIndex: number, column: OperatorColumn, rawValue: string): OperationAllocationRow[] => {
     const parsed = parseNumberLike(rawValue);
     const nextSeconds = Math.max(0, parsed ?? 0);
-    setDraftRows((prev) =>
-      prev.map((r, idx) => {
+    const nextRows = draftRows.map((r, idx) => {
         if (idx !== rowIndex) return r;
         const nextRow = { ...r, operator_times: { ...(r.operator_times || {}) } };
         const targetOperatorRef = resolveRowOperatorRef(r, column);
@@ -564,8 +563,9 @@ function TabelaAllocacoes({
         });
         nextRow.operator_positions = nextPositions;
         return nextRow;
-      })
-    );
+      });
+    setDraftRows(nextRows);
+    return nextRows;
   };
 
   return (
@@ -635,23 +635,9 @@ function TabelaAllocacoes({
                 >
                   Cancelar
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-6 px-2 text-[10px]"
-                  disabled={isSaving || isAjustando}
-                  onClick={async () => {
-                    try {
-                      setIsSaving(true);
-                      await onConfirmarEdicao(draftRows);
-                      setIsEditing(false);
-                    } finally {
-                      setIsSaving(false);
-                    }
-                  }}
-                >
-                  {isSaving || isAjustando ? "A ajustar..." : "Confirmar alteracoes"}
-                </Button>
+                {(isSaving || isAjustando) && (
+                  <span className="text-[10px] text-gray-400 shrink-0">A ajustar...</span>
+                )}
               </>
             ) : (
               <Button
@@ -668,7 +654,9 @@ function TabelaAllocacoes({
               </Button>
             )
           ) : null}
-          {isEditing ? <span className="text-[10px] text-gray-400 shrink-0">Modo edicao (s)</span> : null}
+          {isEditing && !isSaving && !isAjustando ? (
+            <span className="text-[10px] text-gray-400 shrink-0">Enter para confirmar</span>
+          ) : null}
         </div>
       </div>
 
@@ -775,8 +763,16 @@ function TabelaAllocacoes({
                             }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") {
-                                commitCellValue(index, column, (e.currentTarget as HTMLInputElement).value);
+                                const newRows = commitCellValue(index, column, (e.currentTarget as HTMLInputElement).value);
+                                setActiveCell(null);
                                 (e.currentTarget as HTMLInputElement).blur();
+                                if (onConfirmarEdicao) {
+                                  setIsSaving(true);
+                                  onConfirmarEdicao(newRows)
+                                    .then(() => { setIsEditing(false); })
+                                    .catch(() => {})
+                                    .finally(() => { setIsSaving(false); });
+                                }
                               }
                             }}
                             className="w-full h-5 text-[11px] px-1 border border-gray-300 rounded-sm text-center font-mono text-gray-900 bg-white"

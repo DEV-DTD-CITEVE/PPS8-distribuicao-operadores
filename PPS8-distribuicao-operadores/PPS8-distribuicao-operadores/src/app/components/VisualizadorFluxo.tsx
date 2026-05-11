@@ -134,8 +134,8 @@ export function VisualizadorFluxo({
     if (tipoLayout === "linha") {
       return Math.max(postosPorLado, maxPositionsFromApi.maxLine, maxPositionsFromApi.maxA);
     }
-    // Espinha: maximo de 16 postos totais => 8 por lado.
-    return Math.min(8, Math.max(postosPorLado, maxPositionsFromApi.maxA, maxPositionsFromApi.maxB));
+    // postosPorLado = total configurado pelo utilizador → por lado = ceil(total / 2)
+    return Math.ceil(postosPorLado / 2);
   }, [tipoLayout, postosPorLado, maxPositionsFromApi]);
 
   const estacoesBase = useMemo(
@@ -365,6 +365,31 @@ export function VisualizadorFluxo({
     "#d97706", "#6366f1", "#ec4899", "#14b8a6",
     "#f59e0b", "#8b5cf6", "#06b6d4", "#10b981",
   ];
+
+  // Paleta de cores por operador (bg, border, text)
+  const operatorPalette = [
+    { bg: "#dbeafe", border: "#93c5fd", text: "#1d4ed8" },
+    { bg: "#dcfce7", border: "#86efac", text: "#15803d" },
+    { bg: "#fce7f3", border: "#f9a8d4", text: "#be185d" },
+    { bg: "#ffedd5", border: "#fdba74", text: "#c2410c" },
+    { bg: "#f3e8ff", border: "#d8b4fe", text: "#7c3aed" },
+    { bg: "#fef9c3", border: "#fde047", text: "#854d0e" },
+    { bg: "#e0f2fe", border: "#7dd3fc", text: "#0369a1" },
+    { bg: "#d1fae5", border: "#6ee7b7", text: "#065f46" },
+    { bg: "#fee2e2", border: "#fca5a5", text: "#b91c1c" },
+    { bg: "#e0e7ff", border: "#a5b4fc", text: "#3730a3" },
+    { bg: "#fdf4ff", border: "#e879f9", text: "#86198f" },
+    { bg: "#fff7ed", border: "#fb923c", text: "#9a3412" },
+  ];
+
+  const operatorColorMap = useMemo(() => {
+    const uniqueOps = [...new Set(
+      Object.values(estacoesMapeadas).map((e) => e?.operador || "").filter(Boolean)
+    )];
+    const map: Record<string, { bg: string; border: string; text: string }> = {};
+    uniqueOps.forEach((op, i) => { map[op] = operatorPalette[i % operatorPalette.length]; });
+    return map;
+  }, [estacoesMapeadas]);
 
   const barrasEmpilhadasPorOperador = useMemo(() => {
     const machineColorMap = new Map<string, string>();
@@ -786,7 +811,7 @@ export function VisualizadorFluxo({
           <CardContent className="p-4">
             {(() => {
               const CHART_H = 170;
-              const BAR_W = 26;
+              const BAR_W = 44;
               const Y_AXIS_W = 36;
               const LABEL_H = 40;
               const NUM_TICKS = 5;
@@ -998,17 +1023,22 @@ export function VisualizadorFluxo({
                         const hasMaq = maq && maq !== "";
                         return (
                           <div key={`est-linha-${est}`} className="flex items-center gap-2">
-                            <div className="rounded border border-gray-300 bg-white p-3 w-[120px] min-h-[124px] flex flex-col items-center gap-2 justify-between">
-                              <div className={`w-10 h-10 ${hasMaq ? "bg-purple-500" : "bg-gray-300"} rounded flex items-center justify-center`}>
-                                <Factory className="w-5 h-5 text-white" />
-                              </div>
+                            <div className="rounded border border-gray-300 bg-white p-3 w-[120px] min-h-[90px] flex flex-col items-center gap-2 justify-between">
                               <div className="text-xs font-bold text-gray-900">{est}</div>
                               <div className="w-full text-[9px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
                                 {maq || "--"}
                               </div>
-                              <div className="w-full text-[9px] text-center rounded-sm border border-blue-200 bg-blue-50 text-blue-700 px-1 py-0.5 truncate">
-                                {operador || "--"}
-                              </div>
+                              {(() => {
+                                const c = operatorColorMap[operador];
+                                return (
+                                  <div
+                                    className="w-full text-[9px] text-center rounded-sm px-1 py-0.5 truncate"
+                                    style={c && operador ? { background: c.bg, border: `1px solid ${c.border}`, color: c.text } : { background: "#f9fafb", border: "1px solid #e5e7eb", color: "#6b7280" }}
+                                  >
+                                    {operador || "--"}
+                                  </div>
+                                );
+                              })()}
                             </div>
                             {idx < estacoes.length - 1 && <ArrowRight className="w-4 h-4 text-blue-400 flex-shrink-0" />}
                           </div>
@@ -1056,69 +1086,83 @@ export function VisualizadorFluxo({
                 const ordem = ordemFluxo[est];
                 const isA = est.startsWith("A");
                 return (
-                  <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[132px] flex flex-col items-center justify-between relative">
+                  <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[90px] flex flex-col items-center justify-between relative">
                     <div className={`absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white z-10 ${
                       permitirCruzamento ? "bg-blue-700" : isA ? "bg-blue-600" : "bg-green-600"
                     }`}>{ordem}</div>
-                    <div className={`w-8 h-8 ${hasMaq ? "bg-purple-500" : "bg-gray-300"} rounded flex items-center justify-center`}>
-                      <Factory className="w-4 h-4 text-white" />
-                    </div>
                     <div className="text-[11px] font-bold text-gray-900">{est}</div>
                     <div className="w-full text-[8px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
                       {maq || "--"}
                     </div>
-                    <div className="w-full text-[8px] text-center rounded-sm border border-blue-200 bg-blue-50 text-blue-700 px-1 py-0.5 truncate">
-                      {operador || "--"}
-                    </div>
+                    {(() => {
+                      const c = operatorColorMap[operador];
+                      return (
+                        <div
+                          className="w-full text-[8px] text-center rounded-sm px-1 py-0.5 truncate"
+                          style={c && operador ? { background: c.bg, border: `1px solid ${c.border}`, color: c.text } : { background: "#f9fafb", border: "1px solid #e5e7eb", color: "#6b7280" }}
+                        >
+                          {operador || "--"}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               };
 
+              const MIN_COL_W = 150;
+              const colStyle = { flex: 1, minWidth: MIN_COL_W, flexShrink: 0 };
+              const rowStyle = { minHeight: "100px" };
+
               return (
-                <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm relative">
-                  <div className="absolute top-2 right-2 text-gray-500 text-[9px] font-medium">ESPINHA - {estacoes.length} EST.</div>
-                  <div className="relative z-10 mt-2">
-                    <div className="text-blue-600 text-[9px] font-bold mb-3 text-center">LADO A</div>
-                    <div className="flex justify-around px-4" style={{ minHeight: "100px" }}>
-                      {Array.from({ length: maxCols }).map((_, i) => (
-                        <div key={`col-a-${i}`} className="flex justify-center" style={{ width: `${100 / maxCols}%` }}>
-                          {ladoA[i] ? renderCard(ladoA[i]) : <div className="w-[90px]" />}
-                        </div>
-                      ))}
+                <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm relative overflow-x-auto">
+                  {/* All content in one wrapper so labels + cards + fluxo scroll together */}
+                  <div>
+                    <div className="flex justify-between items-start mb-2">
+                      <div />
+                      <span className="text-gray-500 text-[9px] font-medium">ESPINHA - {estacoes.length} EST.</span>
                     </div>
-                    <div className="h-14 relative">
-                      <div className="absolute inset-x-4 top-1/2 border-t-2 border-dashed border-gray-300" />
-                      <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 bg-gray-50 px-3 py-0.5 text-gray-400 text-[8px] font-semibold">
-                        CORREDOR {permitirCruzamento ? "- CRUZAMENTO" : ""}
+                    <div className="relative z-10">
+                      <div className="text-blue-600 text-[9px] font-bold mb-3 text-center">LADO A</div>
+                      <div className="flex px-4" style={rowStyle}>
+                        {Array.from({ length: maxCols }).map((_, i) => (
+                          <div key={`col-a-${i}`} className="flex justify-center" style={colStyle}>
+                            {ladoA[i] ? renderCard(ladoA[i]) : <div className="w-[90px]" />}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="h-14 relative">
+                        <div className="absolute inset-x-4 top-1/2 border-t-2 border-dashed border-gray-300" />
+                        <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 bg-gray-50 px-3 py-0.5 text-gray-400 text-[8px] font-semibold whitespace-nowrap">
+                          CORREDOR {permitirCruzamento ? "- CRUZAMENTO" : ""}
+                        </div>
+                      </div>
+                      <div className="text-green-600 text-[9px] font-bold mb-3 text-center">LADO B</div>
+                      <div className="flex px-4" style={rowStyle}>
+                        {Array.from({ length: maxCols }).map((_, i) => (
+                          <div key={`col-b-${i}`} className="flex justify-center" style={colStyle}>
+                            {ladoB[i] ? renderCard(ladoB[i]) : <div className="w-[90px]" />}
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    <div className="text-green-600 text-[9px] font-bold mb-3 text-center">LADO B</div>
-                    <div className="flex justify-around px-4" style={{ minHeight: "100px" }}>
-                      {Array.from({ length: maxCols }).map((_, i) => (
-                        <div key={`col-b-${i}`} className="flex justify-center" style={{ width: `${100 / maxCols}%` }}>
-                          {ladoB[i] ? renderCard(ladoB[i]) : <div className="w-[90px]" />}
+                    <div className="mt-3 pt-2 border-t border-gray-200 relative z-10">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="text-[8px] font-semibold text-gray-500 uppercase">Fluxo:</span>
+                        <div className="ml-auto flex items-center gap-1 flex-wrap">
+                          {fluxoSeq.map((est, i) => {
+                            const isA = est.startsWith("A");
+                            const next = fluxoSeq[i + 1];
+                            const isCross = next && next.charAt(0) !== est.charAt(0);
+                            return (
+                              <span key={`flow-${i}-${est}`} className="flex items-center gap-0.5">
+                                <span className={`text-[7px] font-mono font-bold px-0.5 rounded-sm ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
+                                {i < fluxoSeq.length - 1 && (
+                                  <span className={`text-[7px] ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
+                                )}
+                              </span>
+                            );
+                          })}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="mt-3 pt-2 border-t border-gray-200 relative z-10">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-[8px] font-semibold text-gray-500 uppercase">Fluxo:</span>
-                      <div className="ml-auto flex items-center gap-1 flex-wrap">
-                        {fluxoSeq.map((est, i) => {
-                          const isA = est.startsWith("A");
-                          const next = fluxoSeq[i + 1];
-                          const isCross = next && next.charAt(0) !== est.charAt(0);
-                          return (
-                            <span key={`flow-${i}-${est}`} className="flex items-center gap-0.5">
-                              <span className={`text-[7px] font-mono font-bold px-0.5 rounded-sm ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
-                              {i < fluxoSeq.length - 1 && (
-                                <span className={`text-[7px] ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
-                              )}
-                            </span>
-                          );
-                        })}
                       </div>
                     </div>
                   </div>

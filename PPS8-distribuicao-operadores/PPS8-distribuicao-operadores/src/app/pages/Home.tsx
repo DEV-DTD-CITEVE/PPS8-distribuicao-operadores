@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Operador, Operacao, ConfiguracaoDistribuicao, Produto, ResultadosBalanceamento } from "../types";
 import { Button } from "../components/ui/button";
-import { Calculator, Users, Package, Factory, ChevronDown, Edit3, AlertTriangle } from "lucide-react";
+import { Calculator, Users, Package, Factory, ChevronDown, Edit3, AlertTriangle, Download, Printer } from "lucide-react";
 import { ConfiguracaoDistribuicaoComponent } from "../components/ConfiguracaoDistribuicao";
 import { LayoutConfigurador, LayoutConfig } from "../components/LayoutConfigurador";
 import { TabelaOperacoesManual } from "../components/TabelaOperacoesManual";
@@ -32,8 +32,8 @@ import {
 
 // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Valores por defeito ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
-const configPadrao = {
-  possibilidade: 1 as 1 | 2 | 3 | 4,
+const configPadrao: ConfiguracaoDistribuicao = {
+  possibilidade: 1,
   agruparMaquinas: false,
   cargaMaximaOperador: 95,
   naoDividirMaiorQue: 1.1,
@@ -718,9 +718,9 @@ const extrairDistribuicaoDeTableData = (
 
           ensureOperador(mappedOperator);
           agrupado[mappedOperator].operacoes.add(operacaoId);
-          agrupado[mappedOperador].temposOperacoes[operacaoId] = 
-            (agrupado[mappedOperador].temposOperacoes[operacaoId] || 0) + tempoMin;
-          agrupado[mappedOperador].cargaHoraria += tempoMin;
+          agrupado[mappedOperator].temposOperacoes[operacaoId] = 
+            (agrupado[mappedOperator].temposOperacoes[operacaoId] || 0) + tempoMin;
+          agrupado[mappedOperator].cargaHoraria += tempoMin;
           tempoTotalOperador += tempoMin;
         });
       });
@@ -1123,8 +1123,19 @@ export default function Home() {
     operacoes: Operacao[];
     config: ConfiguracaoDistribuicao;
     layoutConfig: LayoutConfig;
+    taskCode?: string;
+    ajusteBodyBase?: any;
   } | null>(null);
   const resultadosRef = useRef<HTMLDivElement | null>(null);
+  const [resultadosAtuaisInline, setResultadosAtuaisInline] = useState<ResultadosBalanceamento | null>(null);
+  const [configAtualInline, setConfigAtualInline] = useState<ConfiguracaoDistribuicao | null>(null);
+  const [viewModeInline, setViewModeInline] = useState<"tempo" | "percentagem">("tempo");
+  const [ajusteBodyBaseInline, setAjusteBodyBaseInline] = useState<any>(null);
+  const [taskCodeInline, setTaskCodeInline] = useState<string>("");
+  const [isAjustando, setIsAjustando] = useState(false);
+  const [isGuardandoHistorico, setIsGuardandoHistorico] = useState(false);
+  const [erroPopupInline, setErroPopupInline] = useState<string | null>(null);
+  const [sucessoPopupInline, setSucessoPopupInline] = useState<string | null>(null);
 
   useEffect(() => {
     if (sincronizado) return;
@@ -1490,19 +1501,224 @@ export default function Home() {
     }));
   };
 
+  // ─── Helpers para resultados inline (espelham Resultados.tsx) ──────────────
+
+  const resolveMachineLayoutInline = (raw: any): any[] => {
+    const arr = raw?.machine_layout ?? raw?.machineLayout ?? raw?.layout_machines ?? raw?.machine_positions ?? raw?.machines_layout;
+    if (Array.isArray(arr)) return arr;
+    if (arr && typeof arr === "object") {
+      const nested = Object.values(arr as Record<string, unknown>).find((v) => Array.isArray(v));
+      if (Array.isArray(nested)) return nested as any[];
+    }
+    return [];
+  };
+
+  const parseNumberLikeInline = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const n = Number(value.trim().replace(",", "."));
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
+  };
+
+  const buildDistribuicaoFromAllocationsInline = useCallback((operationAllocations: any[], tempoCicloMin: number): any[] => {
+    const byOperator: Record<string, { operacoes: Set<string>; segundos: number; temposOperacoes: Record<string, number> }> = {};
+    operationAllocations.forEach((row: any) => {
+      const opCode = String(row?.operation_code || row?.operation_id || "").trim();
+      const operatorTimes = row?.operator_times && typeof row.operator_times === "object" ? row.operator_times : {};
+      Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
+        const seconds = parseNumberLikeInline(secondsRaw) ?? 0;
+        if (!operatorRef || seconds <= 0) return;
+        if (!byOperator[operatorRef]) byOperator[operatorRef] = { operacoes: new Set<string>(), segundos: 0, temposOperacoes: {} };
+        if (opCode) byOperator[operatorRef].operacoes.add(opCode);
+        byOperator[operatorRef].segundos += seconds;
+        if (opCode) byOperator[operatorRef].temposOperacoes[opCode] = (byOperator[operatorRef].temposOperacoes[opCode] || 0) + seconds / 60;
+      });
+    });
+    return Object.entries(byOperator).map(([operadorId, dados]) => {
+      const cargaHoraria = dados.segundos / 60;
+      return {
+        operadorId,
+        operacoes: Array.from(dados.operacoes),
+        cargaHoraria,
+        ocupacao: tempoCicloMin > 0 ? (cargaHoraria / tempoCicloMin) * 100 : 0,
+        ciclosPorHora: cargaHoraria > 0 ? 60 / cargaHoraria : 0,
+        temposOperacoes: dados.temposOperacoes,
+      };
+    });
+  }, []);
+
+  const buildResultadosFromApiInline = useCallback((raw: any, currentResultados: ResultadosBalanceamento): ResultadosBalanceamento => {
+    const operationAllocations = ensureArray(raw?.operation_allocations ?? raw?.operationAllocations);
+    const taktSeconds = parseNumberLikeInline(raw?.takt_time_seconds ?? raw?.takt_time ?? raw?.taktTime) ?? 0;
+    const cicloApi = parseNumberLikeInline(raw?.real_cycle_time_seconds ?? raw?.cycle_time_seconds ?? raw?.cycle_time ?? raw?.tempo_ciclo_segundos) ?? 0;
+    const tempoCiclo = cicloApi > 10 ? cicloApi / 60 : cicloApi;
+    const produtividadeRaw = parseNumberLikeInline(raw?.estimated_productivity ?? raw?.productivity ?? raw?.produtividade_estimada) ?? (currentResultados.produtividade ?? 0);
+    const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
+    const distribuicaoFromApi = ensureArray(raw?.distribuicao ?? raw?.distribution);
+    const distribuicao = distribuicaoFromApi.length > 0 ? distribuicaoFromApi : buildDistribuicaoFromAllocationsInline(operationAllocations, tempoCiclo);
+    return {
+      distribuicao: distribuicao as any,
+      operation_allocations: operationAllocations as any,
+      machine_layout: resolveMachineLayoutInline(raw),
+      machine_times_per_operator: (raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator ?? null) as any,
+      taktTime: taktSeconds / 60,
+      tempoCiclo,
+      numeroCiclosPorHora: (parseNumberLikeInline(raw?.production_per_hour ?? raw?.numero_ciclos_por_hora) ?? (tempoCiclo > 0 ? 60 / tempoCiclo : currentResultados.numeroCiclosPorHora)) || 0,
+      produtividade,
+      perdas: Math.max(0, 100 - produtividade),
+      numeroOperadores: (parseNumberLikeInline(raw?.num_operators ?? raw?.numero_operadores ?? raw?.numeroOperadores) ?? distribuicao.length) || 0,
+      ocupacaoTotal: (parseNumberLikeInline(raw?.occupancy_total ?? raw?.ocupacao_total ?? raw?.total_occupancy ?? raw?.total_load) ?? distribuicao.reduce((sum: number, d: any) => sum + ((parseNumberLikeInline(d?.cargaHoraria) ?? 0) * 60), 0)) || 0,
+    };
+  }, [buildDistribuicaoFromAllocationsInline]);
+
+  const mergeRowsIntoAdjustBodyInline = (baseBody: any, editedRows: any[]): any => {
+    const clone = structuredClone(baseBody);
+    const originalRows = ensureArray(clone?.operation_allocations);
+    if (originalRows.length === 0) return clone;
+    const normalizeToken = (value: unknown): string => String(value ?? "").trim().toLowerCase().replace(/^0+(\d)/, "$1");
+    const editedByKey = new Map<string, any>();
+    const editedBySeq = new Map<string, any[]>();
+    const editedByOp = new Map<string, any[]>();
+    editedRows.forEach((row) => {
+      const seq = String(row?.seq ?? "").trim();
+      const op = normalizeToken(row?.operation_code || row?.operation_id || "");
+      const key = `${seq}::${op}`;
+      editedByKey.set(key, row);
+      if (seq) editedBySeq.set(seq, [...(editedBySeq.get(seq) || []), row]);
+      if (op) editedByOp.set(op, [...(editedByOp.get(op) || []), row]);
+    });
+    clone.operation_allocations = originalRows.map((row: any) => {
+      const seq = String(row?.seq ?? "").trim();
+      const op = normalizeToken(row?.operation_code || row?.operation_id || "");
+      const key = `${seq}::${op}`;
+      const edited = editedByKey.get(key) || (seq && (editedBySeq.get(seq)?.length || 0) === 1 ? editedBySeq.get(seq)?.[0] : undefined) || (op && (editedByOp.get(op)?.length || 0) === 1 ? editedByOp.get(op)?.[0] : undefined);
+      if (!edited) return row;
+      const nextRow = { ...row };
+      const editedOperatorTimesRaw = edited?.operator_times && typeof edited.operator_times === "object" ? (edited.operator_times as Record<string, unknown>) : null;
+      if (editedOperatorTimesRaw) {
+        const nextOperatorTimes: Record<string, number> = {};
+        Object.entries(editedOperatorTimesRaw).forEach(([operatorRef, secondsRaw]) => {
+          const s = Math.max(0, parseNumberLikeInline(secondsRaw) ?? 0);
+          if (!operatorRef || s <= 0) return;
+          nextOperatorTimes[operatorRef] = s;
+        });
+        nextRow.operator_times = nextOperatorTimes;
+      }
+      const fromOperatorTimes = Object.values(nextRow?.operator_times || {}).reduce((sum: number, raw) => sum + Math.max(0, parseNumberLikeInline(raw) ?? 0), 0);
+      nextRow.total_time_seconds = Math.max(0, (parseNumberLikeInline(edited?.total_time_seconds) ?? fromOperatorTimes) as number);
+      nextRow.allocated_time_seconds = Math.max(0, (parseNumberLikeInline(edited?.allocated_time_seconds) ?? fromOperatorTimes) as number);
+      nextRow.remaining_time_seconds = Math.max(0, parseNumberLikeInline(edited?.remaining_time_seconds) ?? 0);
+      if (Array.isArray(edited?.operator_allocations)) {
+        nextRow.operator_allocations = edited.operator_allocations.map((item: any) => ({ ...(item || {}), time_seconds: Math.max(0, parseNumberLikeInline(item?.time_seconds) ?? 0) }));
+      } else if (nextRow?.operator_times) {
+        nextRow.operator_allocations = Object.entries(nextRow.operator_times).map(([code, seconds]) => ({ operator_code: code, time_seconds: Math.max(0, parseNumberLikeInline(seconds) ?? 0) }));
+      }
+      return nextRow;
+    });
+    return clone;
+  };
+
+  // ─── mostrarResultadosNaPagina (atualizado) ─────────────────────────────────
+
   const mostrarResultadosNaPagina = (data: {
     resultados: ResultadosBalanceamento;
     operadores: Operador[];
     operacoes: Operacao[];
     config: ConfiguracaoDistribuicao;
     layoutConfig: LayoutConfig;
+    taskCode?: string;
+    ajusteBodyBase?: any;
   }) => {
+    const machineLayout = resolveMachineLayoutInline(data.resultados).length > 0
+      ? resolveMachineLayoutInline(data.resultados)
+      : resolveMachineLayoutInline(data.ajusteBodyBase);
+    const resultadosComLayout = { ...(data.resultados as any), machine_layout: machineLayout };
     setResultadosInlineData(data);
+    setResultadosAtuaisInline(resultadosComLayout);
+    setConfigAtualInline(data.config);
+    setViewModeInline("tempo");
+    setTaskCodeInline(data.taskCode || "");
+    setAjusteBodyBaseInline(data.ajusteBodyBase ?? null);
     requestAnimationFrame(() => {
       setTimeout(() => {
         resultadosRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 80);
     });
+  };
+
+  // ─── Handlers inline ─────────────────────────────────────────────────────────
+
+  const handleRecalcularInline = useCallback((novosResultados: ResultadosBalanceamento, novaConfig: ConfiguracaoDistribuicao) => {
+    setResultadosAtuaisInline(novosResultados);
+    setConfigAtualInline(novaConfig);
+  }, []);
+
+  const handleConfirmarEdicaoInline = useCallback(async (editedRows: any[]) => {
+    if (!taskCodeInline || !ajusteBodyBaseInline) {
+      setErroPopupInline("Não foi possível ajustar: faltam dados base da chamada inicial.");
+      return;
+    }
+    setIsAjustando(true);
+    try {
+      const body = mergeRowsIntoAdjustBodyInline(ajusteBodyBaseInline, editedRows);
+      const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
+      const novoRaw = resposta.data ?? {};
+      const novosResultados = buildResultadosFromApiInline(novoRaw, resultadosAtuaisInline!);
+      setResultadosAtuaisInline(novosResultados);
+      setAjusteBodyBaseInline((prev: any) => ({
+        ...(prev || {}),
+        ...(novoRaw || {}),
+        operation_allocations: ensureArray(novoRaw?.operation_allocations ?? novoRaw?.operationAllocations ?? prev?.operation_allocations),
+      }));
+    } catch (error) {
+      const apiMessage = (error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.message || (error as any)?.message;
+      setErroPopupInline(apiMessage || "Erro ao ajustar alocação. Verifica os valores editados e tenta novamente.");
+      throw error;
+    } finally {
+      setIsAjustando(false);
+    }
+  }, [taskCodeInline, ajusteBodyBaseInline, resultadosAtuaisInline, buildResultadosFromApiInline]);
+
+  const handleGuardarHistoricoInline = useCallback(async () => {
+    if (isGuardandoHistorico) return;
+    setIsGuardandoHistorico(true);
+    try {
+      const payload = {
+        task_code: taskCodeInline || undefined,
+        content: {
+          ...(ajusteBodyBaseInline && typeof ajusteBodyBaseInline === "object" ? ajusteBodyBaseInline : {}),
+          ...resultadosAtuaisInline,
+          distribuicao: (resultadosAtuaisInline as any)?.distribuicao ?? [],
+          operation_allocations: ensureArray((resultadosAtuaisInline as any)?.operation_allocations),
+          takt_time_seconds: (parseNumberLikeInline((resultadosAtuaisInline as any)?.taktTime) ?? 0) * 60,
+          real_cycle_time_seconds: (parseNumberLikeInline((resultadosAtuaisInline as any)?.tempoCiclo) ?? 0) * 60,
+          num_operators: parseNumberLikeInline((resultadosAtuaisInline as any)?.numeroOperadores) ?? 0,
+        },
+      };
+      await axios.post(`${API_BASE_URL}/history/`, payload);
+      setSucessoPopupInline("Histórico guardado com sucesso.");
+    } catch (error) {
+      console.error("Erro ao guardar historico:", error);
+      setErroPopupInline("Erro ao guardar no histórico. Tenta novamente.");
+    } finally {
+      setIsGuardandoHistorico(false);
+    }
+  }, [ajusteBodyBaseInline, taskCodeInline, resultadosAtuaisInline, isGuardandoHistorico]);
+
+  const handleExportInline = () => {
+    if (!resultadosAtuaisInline || !resultadosInlineData) return;
+    const data = { resultados: resultadosAtuaisInline, operadores: resultadosInlineData.operadores, operacoes: resultadosInlineData.operacoes, config: configAtualInline, dataGeracao: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `balanceamento_${new Date().toISOString().split("T")[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
   const handleCalcular = async (confirmado = false) => {
     try {
@@ -2110,7 +2326,7 @@ export default function Home() {
           config,
           layoutConfig,
           taskCode,
-          ajusteBodyBase: respostaCustom.data,
+          ajusteBodyBase: resposta.data,
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
@@ -2637,7 +2853,7 @@ export default function Home() {
         <Button
           type="button"
           size="lg"
-          onClick={handleCalcular}
+               onClick={() => handleCalcular(true)}
           disabled={(!usarAllocateModo1Api && operadoresSelecionados.length === 0) || operacoes.length === 0}
           className="px-12 py-6 text-sm font-semibold bg-blue-500 hover:bg-blue-600 rounded-sm uppercase tracking-wide"
         >
@@ -2646,35 +2862,100 @@ export default function Home() {
         </Button>
       </div>
 
-      {resultadosInlineData && (
+      {resultadosInlineData && resultadosAtuaisInline && configAtualInline && (
         <section ref={resultadosRef} className="pt-4 space-y-6">
-          <div className="bg-white border border-gray-200 rounded-sm shadow-sm p-5">
-            <h2 className="text-base font-semibold text-gray-900">Resultados do Balanceamento</h2>
-            <p className="text-xs text-gray-500 mt-1">Análise gerada após o cálculo</p>
+          {/* Dialogs de erro/sucesso do inline */}
+          <Dialog open={Boolean(erroPopupInline)} onOpenChange={(open) => { if (!open) setErroPopupInline(null); }}>
+            <DialogContent className="max-w-md rounded-sm">
+              <DialogHeader>
+                <DialogTitle>Erro</DialogTitle>
+                <DialogDescription>{erroPopupInline || ""}</DialogDescription>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={Boolean(sucessoPopupInline)} onOpenChange={(open) => { if (!open) setSucessoPopupInline(null); }}>
+            <DialogContent className="max-w-md rounded-sm">
+              <DialogHeader>
+                <DialogTitle>Sucesso</DialogTitle>
+                <DialogDescription>{sucessoPopupInline || ""}</DialogDescription>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
+
+          {/* Header inline */}
+          <div className="sticky top-[53px] z-40 bg-white border-b border-gray-200 print:hidden shadow-sm">
+            <div className="w-full px-6 py-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-5 w-px bg-gray-200"></div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 bg-blue-100 rounded-sm flex items-center justify-center">
+                      <Calculator className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-semibold text-gray-900">Análise de Resultados</h2>
+                      <p className="text-gray-500 text-[10px]">Relatório do balanceamento calculado</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleExportInline} className="text-gray-600 border-gray-200 hover:bg-gray-50 rounded-sm text-[10px] h-7 px-2.5">
+                    <Download className="w-3 h-3 mr-1.5" />
+                    Exportar
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => window.print()} className="text-gray-600 border-gray-200 hover:bg-gray-50 rounded-sm text-[10px] h-7 px-2.5">
+                    <Printer className="w-3 h-3 mr-1.5" />
+                    Imprimir
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-6 items-start xl:items-stretch">
-            <div className="xl:sticky xl:top-[95px] z-10 bg-transparent pb-3 xl:h-full">
+            <div className="sticky top-[95px] z-30 bg-gray-50 xl:h-full">
               <ResumoResultados
-                resultados={resultadosInlineData.resultados}
-                config={resultadosInlineData.config}
-                mostrarTaktTime={Number(resultadosInlineData.config?.possibilidade) === 2}
+                resultados={resultadosAtuaisInline}
+                config={configAtualInline}
+                mostrarTaktTime={Number(configAtualInline?.possibilidade) === 2}
                 layout="column"
               />
             </div>
             <div className="space-y-6 min-w-0">
               <DashboardResultados
-                resultados={resultadosInlineData.resultados}
+                resultados={resultadosAtuaisInline}
                 operadores={resultadosInlineData.operadores}
                 operacoes={resultadosInlineData.operacoes}
-                config={resultadosInlineData.config}
-                onRecalcular={() => undefined}
+                config={configAtualInline}
+                onRecalcular={handleRecalcularInline}
+                viewMode={viewModeInline}
+                onViewModeChange={setViewModeInline}
+                onConfirmarEdicao={handleConfirmarEdicaoInline}
+                onGuardarHistorico={handleGuardarHistoricoInline}
+                isAjustando={isAjustando}
+                isGuardandoHistorico={isGuardandoHistorico}
+                showTabela={false}
               />
             </div>
           </div>
 
+          <DashboardResultados
+            resultados={resultadosAtuaisInline}
+            operadores={resultadosInlineData.operadores}
+            operacoes={resultadosInlineData.operacoes}
+            config={configAtualInline}
+            onRecalcular={handleRecalcularInline}
+            viewMode={viewModeInline}
+            onViewModeChange={setViewModeInline}
+            onConfirmarEdicao={handleConfirmarEdicaoInline}
+            onGuardarHistorico={handleGuardarHistoricoInline}
+            isAjustando={isAjustando}
+            isGuardandoHistorico={isGuardandoHistorico}
+            showOccupacaoCard={false}
+          />
+
           <VisualizadorFluxo
-            resultados={resultadosInlineData.resultados}
+            resultados={resultadosAtuaisInline}
             operadores={resultadosInlineData.operadores}
             operacoes={resultadosInlineData.operacoes}
             layoutConfig={resultadosInlineData.layoutConfig}
