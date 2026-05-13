@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import React from "react";
 
 interface VisualizadorFluxoProps {
@@ -17,6 +17,224 @@ interface VisualizadorFluxoProps {
   operadores: any[];
   operacoes: any[];
   layoutConfig?: LayoutConfig;
+}
+
+interface ArrowDef {
+  key: string;
+  type: "line" | "curve";
+  x1: number; y1: number;
+  x2: number; y2: number;
+  cp1x?: number; cp1y?: number;
+  cp2x?: number; cp2y?: number;
+}
+
+interface EspinhaLayoutProps {
+  estacoes: string[];
+  ladoA: string[];
+  ladoB: string[];
+  maxCols: number;
+  fluxoSeq: string[];
+  ordemFluxo: Record<string, number>;
+  estacoesMapeadas: Record<string, { maquina: string; operador: string }>;
+  operatorColorMap: Record<string, { bg: string; border: string; text: string }>;
+  permitirCruzamento: boolean;
+}
+
+function EspinhaLayout({
+  estacoes, ladoA, ladoB, maxCols, fluxoSeq,
+  ordemFluxo, estacoesMapeadas, operatorColorMap, permitirCruzamento,
+}: EspinhaLayoutProps) {
+  const MIN_COL_W = 150;
+  const colStyle = { flex: 1, minWidth: MIN_COL_W, flexShrink: 0 } as const;
+  const totalW = maxCols > 8 ? maxCols * MIN_COL_W : undefined;
+
+  const [arrows, setArrows] = useState<ArrowDef[]>([]);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const measureArrows = useCallback(() => {
+    if (!layoutRef.current) return;
+    const cr = layoutRef.current.getBoundingClientRect();
+    const newArrows: ArrowDef[] = [];
+
+    fluxoSeq.slice(0, -1).forEach((est) => {
+      const idx = fluxoSeq.indexOf(est);
+      const next = fluxoSeq[idx + 1];
+      if (!next) return;
+
+      const fromData = estacoesMapeadas[est];
+      if (!fromData || (fromData.maquina === "" && fromData.operador === "")) return;
+
+      const fromEl = cardRefs.current.get(est);
+      const toEl = cardRefs.current.get(next);
+      if (!fromEl || !toEl) return;
+
+      const fr = fromEl.getBoundingClientRect();
+      const to = toEl.getBoundingClientRect();
+      const fromSide = est[0];
+
+      // arrowhead length in px (markerWidth * strokeWidth * tip_fraction = 5 * 1.5 * 0.9 ≈ 7)
+      const AL = 7;
+
+      if (fromSide === "A") {
+        // A→B: line from A bottom-centre → stops AL px above B top (arrowhead tip touches B top)
+        newArrows.push({
+          key: `${est}-${next}`,
+          type: "line",
+          x1: fr.left + fr.width / 2 - cr.left,
+          y1: fr.bottom - cr.top,
+          x2: to.left + to.width / 2 - cr.left,
+          y2: to.top - cr.top - AL,   // endpoint = back of arrowhead; tip lands on B.top
+        });
+      } else {
+        // B→A: quarter-turn from B top-centre to A left-centre
+        const toData = estacoesMapeadas[next];
+        if (!toData || (toData.maquina === "" && toData.operador === "")) return;
+
+        const x1 = fr.left + fr.width / 2 - cr.left;
+        const y1 = fr.top - cr.top;
+        const x2 = to.left - cr.left - AL;              // endpoint = back of arrowhead; tip lands on A.left
+        const y2 = to.top + to.height / 2 - cr.top;     // vertical centre of A card
+        newArrows.push({
+          key: `${est}-${next}`,
+          type: "curve",
+          x1, y1, x2, y2,
+          cp1x: x2, cp1y: y1,      // same x as endpoint, same y as start → initial direction RIGHT
+          cp2x: x2 - 8, cp2y: y2,  // slightly left of endpoint → final direction RIGHT (→)
+        });
+      }
+    });
+
+    setArrows(newArrows);
+  }, [fluxoSeq, estacoesMapeadas]);
+
+  useEffect(() => {
+    measureArrows();
+    const el = layoutRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measureArrows);
+    ro.observe(el);
+    window.addEventListener("resize", measureArrows);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measureArrows); };
+  }, [measureArrows]);
+
+  // renderCard inline (copy from the outer function — same logic)
+  const renderCard = (est: string) => {
+    const maq = estacoesMapeadas[est]?.maquina || "";
+    const operador = estacoesMapeadas[est]?.operador || "";
+    const hasMaq = maq !== "";
+    const ordem = ordemFluxo[est];
+    const isA = est.startsWith("A");
+    const c = operatorColorMap[operador];
+    return (
+      <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[90px] flex flex-col items-center justify-between relative">
+        <div className={`absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white z-10 ${
+          permitirCruzamento ? "bg-blue-700" : isA ? "bg-blue-600" : "bg-green-600"
+        }`}>{ordem}</div>
+        <div className="text-[11px] font-bold text-gray-900">{est}</div>
+        <div className="w-full text-[8px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
+          {maq || "--"}
+        </div>
+        <div
+          className="w-full text-[8px] text-center rounded-sm px-1 py-0.5 truncate"
+          style={c && operador ? { background: c.bg, border: `1px solid ${c.border}`, color: c.text } : { background: "#f9fafb", border: "1px solid #e5e7eb", color: "#6b7280" }}
+        >
+          {operador || "--"}
+        </div>
+      </div>
+    );
+  };
+
+  const rowStyle = { minHeight: "100px" };
+
+  return (
+    <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm relative overflow-x-auto">
+      <div ref={layoutRef} style={{ ...(totalW ? { minWidth: totalW } : {}), position: "relative" }}>
+        {/* Arrow overlay — pixel coords, no viewBox */}
+        <svg
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 5, overflow: "visible" }}
+        >
+          <defs>
+            <marker id="ov-arrow" viewBox="0 0 10 10" refX="0" refY="5"
+              markerUnits="strokeWidth" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#3b82f6" />
+            </marker>
+          </defs>
+          {arrows.map((a) =>
+            a.type === "line" ? (
+              <line key={a.key} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+                stroke="#3b82f6" strokeWidth={1.5} markerEnd="url(#ov-arrow)" />
+            ) : (
+              <path key={a.key} fill="none" stroke="#3b82f6" strokeWidth={1.5}
+                markerEnd="url(#ov-arrow)"
+                d={`M ${a.x1} ${a.y1} C ${a.cp1x} ${a.cp1y} ${a.cp2x} ${a.cp2y} ${a.x2} ${a.y2}`} />
+            )
+          )}
+        </svg>
+
+        <div className="flex justify-between items-start mb-2">
+          <div />
+          <span className="text-gray-500 text-[9px] font-medium">ESPINHA - {estacoes.length} EST.</span>
+        </div>
+
+        <div className="relative z-10">
+          <div className="text-blue-600 text-[9px] font-bold mb-3 text-center">LADO A</div>
+          <div className="flex px-4" style={rowStyle}>
+            {Array.from({ length: maxCols }).map((_, i) => (
+              <div key={`col-a-${i}`} className="flex justify-center" style={colStyle}>
+                 {ladoA[i] ? (
+                  <div ref={(el) => { if (el) cardRefs.current.set(ladoA[i], el); else cardRefs.current.delete(ladoA[i]); }} style={{ alignSelf: "flex-start" }}>
+                    {renderCard(ladoA[i])}
+                  </div>
+                ) : <div className="w-[90px]" />}
+              </div>
+            ))}
+          </div>
+
+          <div className="h-14 relative">
+            <div className="absolute inset-x-4 top-1/2 border-t-2 border-dashed border-gray-300" />
+            <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 bg-gray-50 px-3 py-0.5 text-gray-400 text-[8px] font-semibold whitespace-nowrap">
+              CORREDOR {permitirCruzamento ? "- CRUZAMENTO" : ""}
+            </div>
+          </div>
+
+          <div className="text-green-600 text-[9px] font-bold mb-3 text-center">LADO B</div>
+          <div className="flex px-4" style={rowStyle}>
+            {Array.from({ length: maxCols }).map((_, i) => (
+              <div key={`col-b-${i}`} className="flex justify-center" style={colStyle}>
+                 {ladoB[i] ? (
+                  <div ref={(el) => { if (el) cardRefs.current.set(ladoB[i], el); else cardRefs.current.delete(ladoB[i]); }} style={{ alignSelf: "flex-start" }}>
+                    {renderCard(ladoB[i])}
+                  </div>
+                ) : <div className="w-[90px]" />}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 pt-2 border-t border-gray-200 relative z-10">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-[8px] font-semibold text-gray-500 uppercase">Fluxo:</span>
+            <div className="ml-auto flex items-center gap-1 flex-wrap">
+              {fluxoSeq.map((est, i) => {
+                const isA = est.startsWith("A");
+                const nextEst = fluxoSeq[i + 1];
+                const isCross = nextEst && nextEst.charAt(0) !== est.charAt(0);
+                return (
+                  <span key={`flow-${i}-${est}`} className="flex items-center gap-0.5">
+                    <span className={`text-[7px] font-mono font-bold px-0.5 rounded-sm ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
+                    {i < fluxoSeq.length - 1 && (
+                      <span className={`text-[7px] ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function VisualizadorFluxo({
@@ -1049,125 +1267,49 @@ export function VisualizadorFluxo({
                 );
               }
 
-              // Espinha layout
-              const ladoA = estacoes.filter((e) => e.startsWith("A"));
-              const ladoB = estacoes.filter((e) => e.startsWith("B"));
-              const maxCols = Math.max(ladoA.length, ladoB.length);
+               // Espinha layout
+               const ladoA = estacoes.filter((e) => e.startsWith("A"));
+               const ladoB = estacoes.filter((e) => e.startsWith("B"));
+               const maxCols = Math.max(ladoA.length, ladoB.length);
 
-              const fluxoSeq: string[] = [];
-              if (permitirCruzamento) {
-                let iA = 0, iB = 0, onA = true;
-                while (iA < ladoA.length || iB < ladoB.length) {
-                  if (onA && iA < ladoA.length) {
-                    fluxoSeq.push(ladoA[iA]);
-                    if (iB < ladoB.length) onA = false;
-                    else iA++;
-                  } else if (!onA && iB < ladoB.length) {
-                    fluxoSeq.push(ladoB[iB]);
-                    iB++;
-                    iA++;
-                    onA = true;
-                  } else {
-                    if (iA < ladoA.length) { fluxoSeq.push(ladoA[iA]); iA++; }
-                    if (iB < ladoB.length) { fluxoSeq.push(ladoB[iB]); iB++; }
-                  }
-                }
-              } else {
-                ladoA.forEach((e) => fluxoSeq.push(e));
-                ladoB.forEach((e) => fluxoSeq.push(e));
-              }
-              const ordemFluxo: { [k: string]: number } = {};
-              fluxoSeq.forEach((e, i) => { ordemFluxo[e] = i + 1; });
+               const fluxoSeq: string[] = [];
+               if (permitirCruzamento) {
+                 let iA = 0, iB = 0, onA = true;
+                 while (iA < ladoA.length || iB < ladoB.length) {
+                   if (onA && iA < ladoA.length) {
+                     fluxoSeq.push(ladoA[iA]);
+                     if (iB < ladoB.length) onA = false;
+                     else iA++;
+                   } else if (!onA && iB < ladoB.length) {
+                     fluxoSeq.push(ladoB[iB]);
+                     iB++;
+                     iA++;
+                     onA = true;
+                   } else {
+                     if (iA < ladoA.length) { fluxoSeq.push(ladoA[iA]); iA++; }
+                     if (iB < ladoB.length) { fluxoSeq.push(ladoB[iB]); iB++; }
+                   }
+                 }
+               } else {
+                 ladoA.forEach((e) => fluxoSeq.push(e));
+                 ladoB.forEach((e) => fluxoSeq.push(e));
+               }
+               const ordemFluxo: { [k: string]: number } = {};
+               fluxoSeq.forEach((e, i) => { ordemFluxo[e] = i + 1; });
 
-              const renderCard = (est: string) => {
-                const maq = estacoesMapeadas[est]?.maquina || "";
-                const operador = estacoesMapeadas[est]?.operador || "";
-                const hasMaq = maq && maq !== "";
-                const ordem = ordemFluxo[est];
-                const isA = est.startsWith("A");
-                return (
-                  <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[90px] flex flex-col items-center justify-between relative">
-                    <div className={`absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white z-10 ${
-                      permitirCruzamento ? "bg-blue-700" : isA ? "bg-blue-600" : "bg-green-600"
-                    }`}>{ordem}</div>
-                    <div className="text-[11px] font-bold text-gray-900">{est}</div>
-                    <div className="w-full text-[8px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
-                      {maq || "--"}
-                    </div>
-                    {(() => {
-                      const c = operatorColorMap[operador];
-                      return (
-                        <div
-                          className="w-full text-[8px] text-center rounded-sm px-1 py-0.5 truncate"
-                          style={c && operador ? { background: c.bg, border: `1px solid ${c.border}`, color: c.text } : { background: "#f9fafb", border: "1px solid #e5e7eb", color: "#6b7280" }}
-                        >
-                          {operador || "--"}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                );
-              };
-
-              const MIN_COL_W = 150;
-              const colStyle = { flex: 1, minWidth: MIN_COL_W, flexShrink: 0 };
-              const rowStyle = { minHeight: "100px" };
-
-              return (
-                <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm relative overflow-x-auto">
-                  {/* All content in one wrapper so labels + cards + fluxo scroll together */}
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      <div />
-                      <span className="text-gray-500 text-[9px] font-medium">ESPINHA - {estacoes.length} EST.</span>
-                    </div>
-                    <div className="relative z-10">
-                      <div className="text-blue-600 text-[9px] font-bold mb-3 text-center">LADO A</div>
-                      <div className="flex px-4" style={rowStyle}>
-                        {Array.from({ length: maxCols }).map((_, i) => (
-                          <div key={`col-a-${i}`} className="flex justify-center" style={colStyle}>
-                            {ladoA[i] ? renderCard(ladoA[i]) : <div className="w-[90px]" />}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="h-14 relative">
-                        <div className="absolute inset-x-4 top-1/2 border-t-2 border-dashed border-gray-300" />
-                        <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 bg-gray-50 px-3 py-0.5 text-gray-400 text-[8px] font-semibold whitespace-nowrap">
-                          CORREDOR {permitirCruzamento ? "- CRUZAMENTO" : ""}
-                        </div>
-                      </div>
-                      <div className="text-green-600 text-[9px] font-bold mb-3 text-center">LADO B</div>
-                      <div className="flex px-4" style={rowStyle}>
-                        {Array.from({ length: maxCols }).map((_, i) => (
-                          <div key={`col-b-${i}`} className="flex justify-center" style={colStyle}>
-                            {ladoB[i] ? renderCard(ladoB[i]) : <div className="w-[90px]" />}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="mt-3 pt-2 border-t border-gray-200 relative z-10">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span className="text-[8px] font-semibold text-gray-500 uppercase">Fluxo:</span>
-                        <div className="ml-auto flex items-center gap-1 flex-wrap">
-                          {fluxoSeq.map((est, i) => {
-                            const isA = est.startsWith("A");
-                            const next = fluxoSeq[i + 1];
-                            const isCross = next && next.charAt(0) !== est.charAt(0);
-                            return (
-                              <span key={`flow-${i}-${est}`} className="flex items-center gap-0.5">
-                                <span className={`text-[7px] font-mono font-bold px-0.5 rounded-sm ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
-                                {i < fluxoSeq.length - 1 && (
-                                  <span className={`text-[7px] ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
-                                )}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
+               return (
+                 <EspinhaLayout
+                   estacoes={estacoes}
+                   ladoA={ladoA}
+                   ladoB={ladoB}
+                   maxCols={maxCols}
+                   fluxoSeq={fluxoSeq}
+                   ordemFluxo={ordemFluxo}
+                   estacoesMapeadas={estacoesMapeadas}
+                   operatorColorMap={operatorColorMap}
+                   permitirCruzamento={permitirCruzamento}
+                 />
+               );
             })()}
           </CardContent>
         </Card>
