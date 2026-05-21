@@ -22,9 +22,9 @@ interface VisualizadorFluxoProps {
 interface ArrowDef {
   key: string;
   operator?: string;
-  type: "line";
-  x1: number; y1: number;
-  x2: number; y2: number;
+  stroke: string;
+  type: "path";
+  d: string;
 }
 
 interface EspinhaLayoutProps {
@@ -47,6 +47,7 @@ function EspinhaLayout({
   const totalW = maxCols > 8 ? maxCols * MIN_COL_W : undefined;
 
   const [arrows, setArrows] = useState<ArrowDef[]>([]);
+  const [activeOperator, setActiveOperator] = useState<string>("ALL");
   const layoutRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -54,65 +55,128 @@ function EspinhaLayout({
     if (!layoutRef.current) return;
     const cr = layoutRef.current.getBoundingClientRect();
     const newArrows: ArrowDef[] = [];
-    const OUT_MARGIN = 3;
+    const PORT_MARGIN = 8;
+    const PORT_SPLIT = 10;
+    const OPERATOR_PORT_STEP = 12;
 
-    const edgePoint = (
-      rect: { left: number; top: number; width: number; height: number },
-      targetX: number,
-      targetY: number,
-      extraOut = 0
-    ) => {
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const dx = targetX - cx;
-      const dy = targetY - cy;
-      const adx = Math.abs(dx) || 1e-6;
-      const ady = Math.abs(dy) || 1e-6;
-      const tx = (rect.width / 2) / adx;
-      const ty = (rect.height / 2) / ady;
-      const t = Math.min(tx, ty);
-      const ex = cx + dx * t;
-      const ey = cy + dy * t;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len;
-      const uy = dy / len;
-      return { x: ex + ux * extraOut, y: ey + uy * extraOut };
+    type SegmentInfo = {
+      operatorId: string;
+      est: string;
+      next: string;
+      idx: number;
+      fromEl: HTMLDivElement;
+      toEl: HTMLDivElement;
+      startIsA: boolean;
+      endIsA: boolean;
     };
 
+    const segments: SegmentInfo[] = [];
     Object.entries(flowByOperator).forEach(([operatorId, fluxoSeq]) => {
       fluxoSeq.slice(0, -1).forEach((est, idx) => {
         const next = fluxoSeq[idx + 1];
         if (!next) return;
+        const fromData = estacoesMapeadas[est];
+        if (!fromData || (fromData.maquina === "" && fromData.operador === "")) return;
 
-      const fromData = estacoesMapeadas[est];
-      if (!fromData || (fromData.maquina === "" && fromData.operador === "")) return;
+        const fromEl = cardRefs.current.get(est);
+        const toEl = cardRefs.current.get(next);
+        if (!fromEl || !toEl) return;
 
-      const fromEl = cardRefs.current.get(est);
-      const toEl = cardRefs.current.get(next);
-      if (!fromEl || !toEl) return;
+        const fr = fromEl.getBoundingClientRect();
+        const startIsA = est.startsWith("A");
+        const endIsA = next.startsWith("A");
+        segments.push({
+          operatorId,
+          est,
+          next,
+          idx,
+          fromEl,
+          toEl,
+          startIsA,
+          endIsA,
+        });
+      });
+    });
 
+    const stationOperators = new Map<string, string[]>();
+    segments.forEach(({ operatorId, est, next }) => {
+      if (!stationOperators.has(est)) stationOperators.set(est, []);
+      if (!stationOperators.get(est)!.includes(operatorId)) stationOperators.get(est)!.push(operatorId);
+      if (!stationOperators.has(next)) stationOperators.set(next, []);
+      if (!stationOperators.get(next)!.includes(operatorId)) stationOperators.get(next)!.push(operatorId);
+    });
+
+    const operatorPortOffset = (station: string, operatorId: string) => {
+      const ops = stationOperators.get(station) || [];
+      const index = ops.indexOf(operatorId);
+      if (index < 0 || ops.length <= 1) return 0;
+      const center = (ops.length - 1) / 2;
+      return (index - center) * OPERATOR_PORT_STEP;
+    };
+
+    const aRects = ladoA
+      .map((est) => cardRefs.current.get(est)?.getBoundingClientRect())
+      .filter((rect): rect is DOMRect => Boolean(rect));
+    const bRects = ladoB
+      .map((est) => cardRefs.current.get(est)?.getBoundingClientRect())
+      .filter((rect): rect is DOMRect => Boolean(rect));
+    const corridorTop = aRects.length > 0
+      ? Math.max(...aRects.map((rect) => rect.bottom - cr.top)) + PORT_MARGIN + 8
+      : cr.height / 2 - 28;
+    const corridorBottom = bRects.length > 0
+      ? Math.min(...bRects.map((rect) => rect.top - cr.top)) - PORT_MARGIN - 8
+      : cr.height / 2 + 28;
+    const operatorIds = Object.keys(flowByOperator).filter((op) => flowByOperator[op]?.length > 1);
+    const laneStartY = corridorTop + 6;
+    const laneEndY = corridorBottom - 6;
+    const laneSpan = Math.max(0, laneEndY - laneStartY);
+    const operatorLaneY = new Map<string, number>();
+    operatorIds.forEach((operatorId, index) => {
+      const laneY =
+        operatorIds.length <= 1
+          ? (laneStartY + laneEndY) / 2
+          : laneStartY + (laneSpan * index) / (operatorIds.length - 1);
+      operatorLaneY.set(operatorId, laneY);
+    });
+
+    segments.forEach((segment) => {
+      const { operatorId, est, next, idx, fromEl, toEl, startIsA, endIsA } = segment;
       const fr = fromEl.getBoundingClientRect();
-      const to = toEl.getBoundingClientRect();
-      const toCenterX = to.left + to.width / 2;
-      const toCenterY = to.top + to.height / 2;
-      const fromCenterX = fr.left + fr.width / 2;
-      const fromCenterY = fr.top + fr.height / 2;
-      const start = edgePoint(fr, toCenterX, toCenterY, OUT_MARGIN);
-      const end = edgePoint(to, fromCenterX, fromCenterY, OUT_MARGIN);
+      const tr = toEl.getBoundingClientRect();
+      const startX = fr.left + fr.width / 2 + operatorPortOffset(est, operatorId) + PORT_SPLIT - cr.left;
+      const endX = tr.left + tr.width / 2 + operatorPortOffset(next, operatorId) - PORT_SPLIT - cr.left;
+      const startY = (startIsA ? fr.bottom + PORT_MARGIN : fr.top - PORT_MARGIN) - cr.top;
+      const endY = (endIsA ? tr.bottom + PORT_MARGIN : tr.top - PORT_MARGIN) - cr.top;
+      const laneY = operatorLaneY.get(operatorId) ?? (corridorTop + corridorBottom) / 2;
+      const isDirectVertical = Math.abs(endX - startX) < 2;
+      const d = isDirectVertical
+        ? `M ${startX} ${startY} L ${endX} ${endY}`
+        : `M ${startX} ${startY} ` +
+          `L ${startX} ${laneY} ` +
+          `L ${endX} ${laneY} ` +
+          `L ${endX} ${endY}`;
+      const stroke = operatorColorMap[operatorId]?.text || "#3b82f6";
       newArrows.push({
         key: `${operatorId}-${est}-${next}-${idx}`,
         operator: operatorId,
-        type: "line",
-        x1: start.x - cr.left,
-        y1: start.y - cr.top,
-        x2: end.x - cr.left,
-        y2: end.y - cr.top,
-      });
+        stroke,
+        type: "path",
+        d,
       });
     });
 
     setArrows(newArrows);
-  }, [flowByOperator, estacoesMapeadas]);
+  }, [flowByOperator, estacoesMapeadas, ladoA, ladoB, operatorColorMap]);
+
+  const operatorList = useMemo(
+    () => Object.keys(flowByOperator).filter((op) => flowByOperator[op]?.length > 1),
+    [flowByOperator]
+  );
+
+  const visibleArrows = useMemo(() => {
+    if (activeOperator === "ALL") return arrows;
+    return arrows.filter((a) => a.operator === activeOperator);
+  }, [arrows, activeOperator]);
 
   useEffect(() => {
     measureArrows();
@@ -158,31 +222,38 @@ function EspinhaLayout({
       <div ref={layoutRef} style={{ ...(totalW ? { minWidth: totalW } : {}), position: "relative" }}>
         {/* Arrow overlay — pixel coords, no viewBox */}
         <svg
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 5, overflow: "visible" }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 40, overflow: "visible" }}
         >
-          {arrows.map((a) => {
-            const color = operatorColorMap[a.operator || ""]?.text || "#3b82f6";
-            const dx = a.x2 - a.x1;
-            const dy = a.y2 - a.y1;
-            const len = Math.hypot(dx, dy) || 1;
-            const ux = dx / len;
-            const uy = dy / len;
-            const headLen = 7;
-            const headSpread = 4;
-            const bx = a.x2 - ux * headLen;
-            const by = a.y2 - uy * headLen;
-            const px = -uy;
-            const py = ux;
-            const l1x = bx + px * headSpread;
-            const l1y = by + py * headSpread;
-            const l2x = bx - px * headSpread;
-            const l2y = by - py * headSpread;
+          <defs>
+            <marker
+              id="flow-arrowhead"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              markerUnits="userSpaceOnUse"
+              orient="auto"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+            </marker>
+          </defs>
+          {visibleArrows.map((a) => {
+            const color = a.stroke;
+            const isFocused = activeOperator !== "ALL";
             return (
-              <g key={a.key}>
-                <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke={color} strokeWidth={1.5} />
-                <line x1={a.x2} y1={a.y2} x2={l1x} y2={l1y} stroke={color} strokeWidth={1.7} strokeLinecap="round" />
-                <line x1={a.x2} y1={a.y2} x2={l2x} y2={l2y} stroke={color} strokeWidth={1.7} strokeLinecap="round" />
-              </g>
+              <path
+                key={`path-${a.key}`}
+                d={a.d}
+                fill="none"
+                stroke={color}
+                strokeWidth={isFocused ? 2.1 : 1.45}
+                strokeDasharray="4 3"
+                strokeLinecap="butt"
+                strokeLinejoin="round"
+                markerEnd="url(#flow-arrowhead)"
+                opacity={isFocused ? 0.95 : 0.7}
+              />
             );
           })}
         </svg>
@@ -232,10 +303,46 @@ function EspinhaLayout({
         </div>
 
         <div className="mt-3 pt-2 border-t border-gray-200 relative z-10">
+          {operatorList.length > 0 && (
+            <div className="mb-2 flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setActiveOperator("ALL")}
+                className={`text-[9px] px-2 py-0.5 rounded border ${activeOperator === "ALL" ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300"}`}
+              >
+                Todos
+              </button>
+              {operatorList.map((opId) => (
+                <button
+                  key={`op-filter-${opId}`}
+                  type="button"
+                  onClick={() => setActiveOperator(opId)}
+                  className="text-[9px] px-2 py-0.5 rounded border"
+                  style={
+                    activeOperator === opId
+                      ? {
+                          background: operatorColorMap[opId]?.text || "#2563eb",
+                          color: "#fff",
+                          borderColor: operatorColorMap[opId]?.text || "#2563eb",
+                        }
+                      : {
+                          background: operatorColorMap[opId]?.bg || "#fff",
+                          color: operatorColorMap[opId]?.text || "#374151",
+                          borderColor: operatorColorMap[opId]?.border || "#d1d5db",
+                        }
+                  }
+                >
+                  {opId}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-[8px] font-semibold text-gray-500 uppercase">Fluxo:</span>
             <div className="ml-auto flex items-center gap-1 flex-wrap">
-              {Object.entries(flowByOperator).map(([opId, seq]) => (
+              {Object.entries(flowByOperator)
+                .filter(([opId]) => activeOperator === "ALL" || activeOperator === opId)
+                .map(([opId, seq]) => (
                 <span key={`flow-${opId}`} className="flex items-center gap-0.5">
                   <span
                     className="text-[7px] font-semibold px-1 rounded-sm"
