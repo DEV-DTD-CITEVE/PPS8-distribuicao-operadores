@@ -21,11 +21,10 @@ interface VisualizadorFluxoProps {
 
 interface ArrowDef {
   key: string;
-  type: "line" | "curve";
+  operator?: string;
+  type: "line";
   x1: number; y1: number;
   x2: number; y2: number;
-  cp1x?: number; cp1y?: number;
-  cp2x?: number; cp2y?: number;
 }
 
 interface EspinhaLayoutProps {
@@ -33,16 +32,15 @@ interface EspinhaLayoutProps {
   ladoA: string[];
   ladoB: string[];
   maxCols: number;
-  fluxoSeq: string[];
-  ordemFluxo: Record<string, number>;
+  flowByOperator: Record<string, string[]>;
   estacoesMapeadas: Record<string, { maquina: string; operador: string }>;
   operatorColorMap: Record<string, { bg: string; border: string; text: string }>;
   permitirCruzamento: boolean;
 }
 
 function EspinhaLayout({
-  estacoes, ladoA, ladoB, maxCols, fluxoSeq,
-  ordemFluxo, estacoesMapeadas, operatorColorMap, permitirCruzamento,
+  estacoes, ladoA, ladoB, maxCols, flowByOperator,
+  estacoesMapeadas, operatorColorMap, permitirCruzamento,
 }: EspinhaLayoutProps) {
   const MIN_COL_W = 150;
   const colStyle = { flex: 1, minWidth: MIN_COL_W, flexShrink: 0 } as const;
@@ -56,11 +54,35 @@ function EspinhaLayout({
     if (!layoutRef.current) return;
     const cr = layoutRef.current.getBoundingClientRect();
     const newArrows: ArrowDef[] = [];
+    const OUT_MARGIN = 3;
 
-    fluxoSeq.slice(0, -1).forEach((est) => {
-      const idx = fluxoSeq.indexOf(est);
-      const next = fluxoSeq[idx + 1];
-      if (!next) return;
+    const edgePoint = (
+      rect: { left: number; top: number; width: number; height: number },
+      targetX: number,
+      targetY: number,
+      extraOut = 0
+    ) => {
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = targetX - cx;
+      const dy = targetY - cy;
+      const adx = Math.abs(dx) || 1e-6;
+      const ady = Math.abs(dy) || 1e-6;
+      const tx = (rect.width / 2) / adx;
+      const ty = (rect.height / 2) / ady;
+      const t = Math.min(tx, ty);
+      const ex = cx + dx * t;
+      const ey = cy + dy * t;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      return { x: ex + ux * extraOut, y: ey + uy * extraOut };
+    };
+
+    Object.entries(flowByOperator).forEach(([operatorId, fluxoSeq]) => {
+      fluxoSeq.slice(0, -1).forEach((est, idx) => {
+        const next = fluxoSeq[idx + 1];
+        if (!next) return;
 
       const fromData = estacoesMapeadas[est];
       if (!fromData || (fromData.maquina === "" && fromData.operador === "")) return;
@@ -71,42 +93,26 @@ function EspinhaLayout({
 
       const fr = fromEl.getBoundingClientRect();
       const to = toEl.getBoundingClientRect();
-      const fromSide = est[0];
-
-      // arrowhead length in px (markerWidth * strokeWidth * tip_fraction = 5 * 1.5 * 0.9 ≈ 7)
-      const AL = 7;
-
-      if (fromSide === "A") {
-        // A→B: line from A bottom-centre → stops AL px above B top (arrowhead tip touches B top)
-        newArrows.push({
-          key: `${est}-${next}`,
-          type: "line",
-          x1: fr.left + fr.width / 2 - cr.left,
-          y1: fr.bottom - cr.top,
-          x2: to.left + to.width / 2 - cr.left,
-          y2: to.top - cr.top - AL,   // endpoint = back of arrowhead; tip lands on B.top
-        });
-      } else {
-        // B→A: quarter-turn from B top-centre to A left-centre
-        const toData = estacoesMapeadas[next];
-        if (!toData || (toData.maquina === "" && toData.operador === "")) return;
-
-        const x1 = fr.left + fr.width / 2 - cr.left;
-        const y1 = fr.top - cr.top;
-        const x2 = to.left - cr.left - AL;              // endpoint = back of arrowhead; tip lands on A.left
-        const y2 = to.top + to.height / 2 - cr.top;     // vertical centre of A card
-        newArrows.push({
-          key: `${est}-${next}`,
-          type: "curve",
-          x1, y1, x2, y2,
-          cp1x: x2, cp1y: y1,      // same x as endpoint, same y as start → initial direction RIGHT
-          cp2x: x2 - 8, cp2y: y2,  // slightly left of endpoint → final direction RIGHT (→)
-        });
-      }
+      const toCenterX = to.left + to.width / 2;
+      const toCenterY = to.top + to.height / 2;
+      const fromCenterX = fr.left + fr.width / 2;
+      const fromCenterY = fr.top + fr.height / 2;
+      const start = edgePoint(fr, toCenterX, toCenterY, OUT_MARGIN);
+      const end = edgePoint(to, fromCenterX, fromCenterY, OUT_MARGIN);
+      newArrows.push({
+        key: `${operatorId}-${est}-${next}-${idx}`,
+        operator: operatorId,
+        type: "line",
+        x1: start.x - cr.left,
+        y1: start.y - cr.top,
+        x2: end.x - cr.left,
+        y2: end.y - cr.top,
+      });
+      });
     });
 
     setArrows(newArrows);
-  }, [fluxoSeq, estacoesMapeadas]);
+  }, [flowByOperator, estacoesMapeadas]);
 
   useEffect(() => {
     measureArrows();
@@ -123,14 +129,14 @@ function EspinhaLayout({
     const maq = estacoesMapeadas[est]?.maquina || "";
     const operador = estacoesMapeadas[est]?.operador || "";
     const hasMaq = maq !== "";
-    const ordem = ordemFluxo[est];
+    const postoNumero = Number(String(est).replace(/^[A-Z]/i, ""));
     const isA = est.startsWith("A");
     const c = operatorColorMap[operador];
     return (
       <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[90px] flex flex-col items-center justify-between relative">
         <div className={`absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white z-10 ${
           permitirCruzamento ? "bg-blue-700" : isA ? "bg-blue-600" : "bg-green-600"
-        }`}>{ordem}</div>
+        }`}>{Number.isFinite(postoNumero) ? postoNumero : ""}</div>
         <div className="text-[11px] font-bold text-gray-900">{est}</div>
         <div className="w-full text-[8px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
           {maq || "--"}
@@ -154,22 +160,31 @@ function EspinhaLayout({
         <svg
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 5, overflow: "visible" }}
         >
-          <defs>
-            <marker id="ov-arrow" viewBox="0 0 10 10" refX="0" refY="5"
-              markerUnits="strokeWidth" markerWidth="5" markerHeight="5" orient="auto">
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#3b82f6" />
-            </marker>
-          </defs>
-          {arrows.map((a) =>
-            a.type === "line" ? (
-              <line key={a.key} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                stroke="#3b82f6" strokeWidth={1.5} markerEnd="url(#ov-arrow)" />
-            ) : (
-              <path key={a.key} fill="none" stroke="#3b82f6" strokeWidth={1.5}
-                markerEnd="url(#ov-arrow)"
-                d={`M ${a.x1} ${a.y1} C ${a.cp1x} ${a.cp1y} ${a.cp2x} ${a.cp2y} ${a.x2} ${a.y2}`} />
-            )
-          )}
+          {arrows.map((a) => {
+            const color = operatorColorMap[a.operator || ""]?.text || "#3b82f6";
+            const dx = a.x2 - a.x1;
+            const dy = a.y2 - a.y1;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const headLen = 7;
+            const headSpread = 4;
+            const bx = a.x2 - ux * headLen;
+            const by = a.y2 - uy * headLen;
+            const px = -uy;
+            const py = ux;
+            const l1x = bx + px * headSpread;
+            const l1y = by + py * headSpread;
+            const l2x = bx - px * headSpread;
+            const l2y = by - py * headSpread;
+            return (
+              <g key={a.key}>
+                <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke={color} strokeWidth={1.5} />
+                <line x1={a.x2} y1={a.y2} x2={l1x} y2={l1y} stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+                <line x1={a.x2} y1={a.y2} x2={l2x} y2={l2y} stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+              </g>
+            );
+          })}
         </svg>
 
         <div className="flex justify-between items-start mb-2">
@@ -198,7 +213,11 @@ function EspinhaLayout({
             </div>
           </div>
 
-          <div className="text-green-600 text-[9px] font-bold mb-3 text-center">LADO B</div>
+          <div className="text-center mb-3 mt-4">
+            <span className="relative z-20 inline-block bg-gray-50 px-2 text-green-600 text-[9px] font-bold">
+              LADO B
+            </span>
+          </div>
           <div className="flex px-4" style={rowStyle}>
             {Array.from({ length: maxCols }).map((_, i) => (
               <div key={`col-b-${i}`} className="flex justify-center" style={colStyle}>
@@ -216,19 +235,29 @@ function EspinhaLayout({
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-[8px] font-semibold text-gray-500 uppercase">Fluxo:</span>
             <div className="ml-auto flex items-center gap-1 flex-wrap">
-              {fluxoSeq.map((est, i) => {
-                const isA = est.startsWith("A");
-                const nextEst = fluxoSeq[i + 1];
-                const isCross = nextEst && nextEst.charAt(0) !== est.charAt(0);
-                return (
-                  <span key={`flow-${i}-${est}`} className="flex items-center gap-0.5">
-                    <span className={`text-[7px] font-mono font-bold px-0.5 rounded-sm ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
-                    {i < fluxoSeq.length - 1 && (
-                      <span className={`text-[7px] ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
-                    )}
+              {Object.entries(flowByOperator).map(([opId, seq]) => (
+                <span key={`flow-${opId}`} className="flex items-center gap-0.5">
+                  <span
+                    className="text-[7px] font-semibold px-1 rounded-sm"
+                    style={{ background: operatorColorMap[opId]?.bg || "#e5e7eb", color: operatorColorMap[opId]?.text || "#374151" }}
+                  >
+                    {opId}
                   </span>
-                );
-              })}
+                  {seq.map((est, i) => {
+                    const isA = est.startsWith("A");
+                    const nextEst = seq[i + 1];
+                    const isCross = nextEst && nextEst.charAt(0) !== est.charAt(0);
+                    return (
+                      <span key={`flow-${opId}-${i}-${est}`} className="flex items-center gap-0.5">
+                        <span className={`text-[7px] font-mono font-bold px-0.5 rounded-sm ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
+                        {i < seq.length - 1 && (
+                          <span className={`text-[7px] ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </span>
+              ))}
             </div>
           </div>
         </div>
@@ -345,6 +374,16 @@ export function VisualizadorFluxo({
       });
     });
 
+    const operatorFlow = (resultados as any)?.operator_flow ?? (resultados as any)?.operatorFlow;
+    if (operatorFlow && typeof operatorFlow === "object") {
+      Object.values(operatorFlow as Record<string, unknown>).forEach((stepsRaw) => {
+        if (!Array.isArray(stepsRaw)) return;
+        stepsRaw.forEach((step: any) => {
+          bump(step?.position_label ?? step?.position, step?.position_side, step?.position_number);
+        });
+      });
+    }
+
     return { maxLine, maxA, maxB };
   }, [resultados]);
 
@@ -352,8 +391,9 @@ export function VisualizadorFluxo({
     if (tipoLayout === "linha") {
       return Math.max(postosPorLado, maxPositionsFromApi.maxLine, maxPositionsFromApi.maxA);
     }
-    // postosPorLado = total configurado pelo utilizador → por lado = ceil(total / 2)
-    return Math.ceil(postosPorLado / 2);
+    // Em espinha, usa o maior entre configuração e dados reais da API por lado.
+    const configuradoPorLado = Math.ceil(postosPorLado / 2);
+    return Math.max(configuradoPorLado, maxPositionsFromApi.maxA, maxPositionsFromApi.maxB);
   }, [tipoLayout, postosPorLado, maxPositionsFromApi]);
 
   const estacoesBase = useMemo(
@@ -552,6 +592,44 @@ export function VisualizadorFluxo({
 
     return mapped;
   }, [machineLayoutAssignments, resultados.operation_allocations, estacoesBase, estacoesSet]);
+
+  const flowByOperatorFromApi = useMemo(() => {
+    const rawFlow = (resultados as any)?.operator_flow ?? (resultados as any)?.operatorFlow;
+    if (!rawFlow || typeof rawFlow !== "object") return {} as Record<string, string[]>;
+
+    const flowEntries = Object.entries(rawFlow as Record<string, unknown>);
+    const out: Record<string, string[]> = {};
+
+    flowEntries.forEach(([operatorKeyRaw, rawSteps]) => {
+      if (!Array.isArray(rawSteps) || rawSteps.length === 0) return;
+      const operatorKey = resolveOperatorCode(String(operatorKeyRaw || "").trim()) || String(operatorKeyRaw || "").trim();
+      const ordered = [...rawSteps]
+        .map((entry: any, idx) => ({
+          step: Number(entry?.step ?? idx + 1),
+          station: extrairCodigoEstacao(entry?.position_label ?? entry?.position ?? entry),
+        }))
+        .filter((entry) => entry.station)
+        .sort((a, b) => a.step - b.step);
+
+      const seq: string[] = [];
+      ordered.forEach((entry) => {
+        if (seq.length === 0 || seq[seq.length - 1] !== entry.station) {
+          seq.push(entry.station);
+        }
+      });
+      if (operatorKey && seq.length > 0) out[operatorKey] = seq;
+    });
+
+    return out;
+  }, [resultados, extrairCodigoEstacao, resolveOperatorCode]);
+
+  const estacoesAtivas = useMemo(() => {
+    const fromMap = Object.entries(estacoesMapeadas)
+      .filter(([, data]) => Boolean(String(data?.operador || "").trim()))
+      .map(([est]) => est);
+    const fromFlow = Object.values(flowByOperatorFromApi).flat();
+    return [...new Set([...fromMap, ...fromFlow])];
+  }, [estacoesMapeadas, flowByOperatorFromApi]);
 
   // Agrupar operaÃ§Ãµes por tipo de mÃ¡quina
   const maquinasPorTipo = useMemo(() => operacoes.reduce((acc: any, op: any) => {
@@ -1219,7 +1297,7 @@ export function VisualizadorFluxo({
                 <div>
                   <div className="text-sm font-semibold">Layout - Planta de chão</div>
                   <p className="text-[10px] text-gray-500 font-normal mt-0.5">
-                    {tipoLayout === "linha" ? "Linha" : "Espinha"} - {tipoLayout === "linha" ? postosPorLadoEfetivo : postosPorLadoEfetivo * 2} estações
+                    {tipoLayout === "linha" ? "Linha" : "Espinha"} - {estacoesAtivas.length} estações ativas
                     {permitirCruzamento && tipoLayout === "espinha" ? " - Cruzamento ativo" : ""}
                   </p>
                 </div>
@@ -1229,7 +1307,7 @@ export function VisualizadorFluxo({
           </CardHeader>
           <CardContent className="p-4">
             {(() => {
-              const estacoes = estacoesBase;
+              const estacoes = estacoesAtivas.length > 0 ? estacoesAtivas : estacoesBase;
 
               if (tipoLayout === "linha") {
                 return (
@@ -1272,44 +1350,18 @@ export function VisualizadorFluxo({
                const ladoB = estacoes.filter((e) => e.startsWith("B"));
                const maxCols = Math.max(ladoA.length, ladoB.length);
 
-               const fluxoSeq: string[] = [];
-               if (permitirCruzamento) {
-                 let iA = 0, iB = 0, onA = true;
-                 while (iA < ladoA.length || iB < ladoB.length) {
-                   if (onA && iA < ladoA.length) {
-                     fluxoSeq.push(ladoA[iA]);
-                     if (iB < ladoB.length) onA = false;
-                     else iA++;
-                   } else if (!onA && iB < ladoB.length) {
-                     fluxoSeq.push(ladoB[iB]);
-                     iB++;
-                     iA++;
-                     onA = true;
-                   } else {
-                     if (iA < ladoA.length) { fluxoSeq.push(ladoA[iA]); iA++; }
-                     if (iB < ladoB.length) { fluxoSeq.push(ladoB[iB]); iB++; }
-                   }
-                 }
-               } else {
-                 ladoA.forEach((e) => fluxoSeq.push(e));
-                 ladoB.forEach((e) => fluxoSeq.push(e));
-               }
-               const ordemFluxo: { [k: string]: number } = {};
-               fluxoSeq.forEach((e, i) => { ordemFluxo[e] = i + 1; });
-
-               return (
-                 <EspinhaLayout
-                   estacoes={estacoes}
-                   ladoA={ladoA}
-                   ladoB={ladoB}
-                   maxCols={maxCols}
-                   fluxoSeq={fluxoSeq}
-                   ordemFluxo={ordemFluxo}
-                   estacoesMapeadas={estacoesMapeadas}
-                   operatorColorMap={operatorColorMap}
-                   permitirCruzamento={permitirCruzamento}
-                 />
-               );
+                return (
+                  <EspinhaLayout
+                    estacoes={estacoes}
+                    ladoA={ladoA}
+                    ladoB={ladoB}
+                    maxCols={maxCols}
+                   flowByOperator={flowByOperatorFromApi}
+                    estacoesMapeadas={estacoesMapeadas}
+                    operatorColorMap={operatorColorMap}
+                    permitirCruzamento={permitirCruzamento}
+                  />
+                );
             })()}
           </CardContent>
         </Card>
