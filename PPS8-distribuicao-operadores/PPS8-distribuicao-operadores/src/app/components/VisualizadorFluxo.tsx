@@ -143,8 +143,11 @@ function EspinhaLayout({
       const { operatorId, est, next, idx, fromEl, toEl, startIsA, endIsA } = segment;
       const fr = fromEl.getBoundingClientRect();
       const tr = toEl.getBoundingClientRect();
-      const startX = fr.left + fr.width / 2 + operatorPortOffset(est, operatorId) + PORT_SPLIT - cr.left;
-      const endX = tr.left + tr.width / 2 + operatorPortOffset(next, operatorId) - PORT_SPLIT - cr.left;
+      const fromCenterX = fr.left + fr.width / 2 + operatorPortOffset(est, operatorId) - cr.left;
+      const toCenterX = tr.left + tr.width / 2 + operatorPortOffset(next, operatorId) - cr.left;
+      const isNearSameColumn = Math.abs(toCenterX - fromCenterX) < PORT_SPLIT * 2.5;
+      const startX = isNearSameColumn ? fromCenterX : fromCenterX + PORT_SPLIT;
+      const endX = isNearSameColumn ? toCenterX : toCenterX - PORT_SPLIT;
       const startY = (startIsA ? fr.bottom + PORT_MARGIN : fr.top - PORT_MARGIN) - cr.top;
       const endY = (endIsA ? tr.bottom + PORT_MARGIN : tr.top - PORT_MARGIN) - cr.top;
       const laneY = operatorLaneY.get(operatorId) ?? (corridorTop + corridorBottom) / 2;
