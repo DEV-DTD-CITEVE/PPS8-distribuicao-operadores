@@ -1365,10 +1365,10 @@ export function VisualizadorFluxo({
           </CardHeader>
           <CardContent className="p-4">
             {(() => {
-              const CHART_H = 184;
+              const CHART_H = 270;
               const BAR_W = 58;
               const Y_AXIS_W = 46;
-              const LABEL_H = 52;
+              const LABEL_H = 56;
               const NUM_TICKS = 5;
               const cycleTimeSeconds = Number((resultados as any)?.cycle_time_seconds ?? 0);
               const formatMetric = (value: number) =>
@@ -1387,8 +1387,8 @@ export function VisualizadorFluxo({
               const getBarH = (t: number) => Math.max(0, Math.round((t / topTick) * CHART_H));
 
               return (
-                <div className="w-full">
-                  <div style={{ display: "flex", alignItems: "flex-start" }}>
+                <div className="w-full flex justify-center pt-4">
+                  <div style={{ display: "flex", alignItems: "flex-start", width: "100%", maxWidth: 1120 }}>
 
                     {/* Y Axis */}
                     <div style={{ width: Y_AXIS_W, flexShrink: 0, position: "relative", height: CHART_H + LABEL_H }}>
@@ -1439,13 +1439,13 @@ export function VisualizadorFluxo({
                         <div style={{ position: "absolute", top: CHART_H, left: 0, right: 0, borderTop: "1px solid #d1d5db" }} />
 
                         {/* Columns: bar + label, spread evenly */}
-                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-around" }}>
+                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                           {operadoresBarras.map((b) => (
                             <div
                               key={b.operador}
-                              style={{ display: "flex", flexDirection: "column", alignItems: "center", height: "100%" }}
+                              style={{ display: "flex", flexDirection: "column", alignItems: "center", height: "100%", flex: "1 1 0", minWidth: 0 }}
                             >
-                              <div style={{ height: CHART_H, width: 80, position: "relative" }}>
+                              <div style={{ height: CHART_H, width: "100%", maxWidth: 136, position: "relative" }}>
                                 <div
                                   style={{
                                     position: "absolute",
@@ -1508,7 +1508,7 @@ export function VisualizadorFluxo({
                                   ))}
                                 </div>
                               </div>
-                              <div style={{ height: LABEL_H, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 6, minWidth: 92 }}>
+                              <div style={{ height: LABEL_H, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 6, width: "100%", minWidth: 0 }}>
                                   <div
                                   style={{
                                     fontSize: 11,
@@ -1517,7 +1517,8 @@ export function VisualizadorFluxo({
                                     textAlign: "center",
                                     overflow: "hidden",
                                     textOverflow: "ellipsis",
-                                    maxWidth: 112,
+                                    width: "100%",
+                                    maxWidth: 136,
                                   }}
                                 >
                                   {b.operador}

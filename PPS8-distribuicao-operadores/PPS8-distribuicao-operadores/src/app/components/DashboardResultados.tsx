@@ -82,9 +82,8 @@ function buildDisplayCodeMap(distribuicao: DistribuicaoCarga[]): Map<string, str
 function getBatteryColor(ocupacao: number): string {
   if (ocupacao > 100) return "#DC2626";
   if (ocupacao >= 90) return "#10B981";
-  if (ocupacao >= 80) return "#FBBF24";
-  if (ocupacao >= 70) return "#F59E0B";
-  return "#F97316";
+  if (ocupacao >= 70) return "#FBBF24";
+  return "#DC2626";
 }
 
 const operatorPalette = [
@@ -180,10 +179,6 @@ export function DashboardResultados({
 
     return resultados.distribuicao.map((dist) => resolveOperatorCode(dist.operadorId, operadores)).filter(Boolean);
   })();
-  const operatorFillMap = new Map<string, string>();
-  orderedOperatorCodes.forEach((code, index) => {
-    operatorFillMap.set(normalizeKey(code), operatorPalette[index % operatorPalette.length]);
-  });
   const displayCodeByOperatorId = buildDisplayCodeMap(resultados.distribuicao || []);
   const distribuicaoByOperator = new Map(
     (resultados.distribuicao || []).map((dist) => [normalizeKey(resolveOperatorCode(dist.operadorId, operadores)), dist])
@@ -252,7 +247,7 @@ export function DashboardResultados({
             {dadosCarga.map((d) => {
               const fillHeight = (Math.min(d.ocupacao, 100) / 100) * BATTERY_TOTAL_HEIGHT;
               const fillMT = BATTERY_START_MT + (BATTERY_TOTAL_HEIGHT - fillHeight);
-              const color = operatorFillMap.get(d.operatorSortKey) || getBatteryColor(d.ocupacao);
+              const color = getBatteryColor(d.ocupacao);
               const fillPath = generateFillPath(fillHeight);
 
               return (
