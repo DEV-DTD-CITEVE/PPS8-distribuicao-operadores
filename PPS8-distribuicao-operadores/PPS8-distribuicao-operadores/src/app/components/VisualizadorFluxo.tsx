@@ -17,6 +17,7 @@ interface VisualizadorFluxoProps {
   operadores: any[];
   operacoes: any[];
   layoutConfig?: LayoutConfig;
+  viewMode?: "tempo" | "percentagem";
 }
 
 interface ArrowDef {
@@ -218,7 +219,7 @@ function EspinhaLayout({
     );
   };
 
-  const rowStyle = { minHeight: "100px" };
+  const rowStyle = { minHeight: "132px" };
 
   return (
     <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm relative overflow-x-auto">
@@ -381,6 +382,7 @@ export function VisualizadorFluxo({
   operadores,
   operacoes,
   layoutConfig,
+  viewMode = "tempo",
 }: VisualizadorFluxoProps) {
   const tipoLayout = layoutConfig?.tipoLayout || "linha";
   const postosPorLado = layoutConfig?.postosPorLado || 8;
@@ -392,6 +394,11 @@ export function VisualizadorFluxo({
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "");
+
+  const normalizeMachineTypeKey = (value: unknown): string =>
+    normalizeKey(value)
+      .replace(/[^a-z0-9]+/g, "")
+      .trim();
 
   const extractStationToken = (value: unknown): string => {
     const text = String(value ?? "").trim().toUpperCase();
@@ -741,6 +748,61 @@ export function VisualizadorFluxo({
     return [...new Set([...fromMap, ...fromFlow])];
   }, [estacoesMapeadas, flowByOperatorFromApi]);
 
+  const requiredMachineMetrics = useMemo(() => {
+    const raw = (resultados as any)?.machines_used?.required ?? (resultados as any)?.required;
+    const entries = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object"
+        ? Object.entries(raw).map(([label, value]) => ({ label, ...(value as Record<string, unknown>) }))
+        : [];
+
+    return entries
+      .map((entry: any) => {
+        const label = String(entry?.label || "").trim();
+        const machinesNeeded = Number(entry?.machines_needed);
+        const avgTimeSeconds = Number(entry?.avg_time_seconds);
+        if (!label) return null;
+        return {
+          label,
+          machines_needed: Number.isFinite(machinesNeeded) ? machinesNeeded : 0,
+          avg_time_seconds: Number.isFinite(avgTimeSeconds) ? avgTimeSeconds : 0,
+        };
+      })
+      .filter(Boolean) as Array<{ label: string; machines_needed: number; avg_time_seconds: number }>;
+  }, [resultados]);
+
+  const machineCountsByType = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number }>();
+
+    if (requiredMachineMetrics.length > 0) {
+      requiredMachineMetrics.forEach((entry) => {
+        const key = normalizeMachineTypeKey(entry.label);
+        counts.set(key, {
+          label: entry.label,
+          count: Math.max(0, entry.machines_needed),
+        });
+      });
+      return counts;
+    }
+
+    Object.values(estacoesMapeadas).forEach((entry) => {
+      const machine = String(entry?.maquina || "").trim();
+      if (!machine) return;
+      const key = normalizeMachineTypeKey(machine);
+      const current = counts.get(key);
+      counts.set(key, {
+        label: current?.label || machine,
+        count: (current?.count || 0) + 1,
+      });
+    });
+    return counts;
+  }, [estacoesMapeadas, requiredMachineMetrics]);
+
+  const totalMachineCount = useMemo(
+    () => Array.from(machineCountsByType.values()).reduce((sum, entry) => sum + entry.count, 0),
+    [machineCountsByType]
+  );
+
   // Agrupar operaÃ§Ãµes por tipo de mÃ¡quina
   const maquinasPorTipo = useMemo(() => operacoes.reduce((acc: any, op: any) => {
     const tipo = op.tipoMaquina || "Geral";
@@ -755,6 +817,18 @@ export function VisualizadorFluxo({
   const maquinas = useMemo(() => Object.values(maquinasPorTipo), [maquinasPorTipo]);
 
   const dadosGrafico = useMemo(() => {
+    if (requiredMachineMetrics.length > 0) {
+      const totalMaquinas = requiredMachineMetrics.reduce((sum, item) => sum + Math.max(0, item.machines_needed), 0);
+      return requiredMachineMetrics.map((item, idx) => ({
+        uid: `donut-required-${idx}`,
+        label: item.label,
+        ocupacao: totalMaquinas > 0 ? Math.round((item.machines_needed / totalMaquinas) * 100) : 0,
+        tempo: item.avg_time_seconds,
+        avg_time_seconds: item.avg_time_seconds,
+        machines_needed: item.machines_needed,
+        nOps: item.machines_needed,
+      }));
+    }
     const maquinasArray = Object.values(maquinasPorTipo) as any[];
     const tempoTotal = maquinasArray.reduce((sum: number, maq: any) => sum + maq.tempoTotal, 0);
     return maquinasArray.map((maq: any, idx: number) => ({
@@ -762,9 +836,16 @@ export function VisualizadorFluxo({
       label: maq.tipo,
       ocupacao: tempoTotal > 0 ? Math.round((maq.tempoTotal / tempoTotal) * 100) : 0,
       tempo: parseFloat(maq.tempoTotal.toFixed(2)),
+      avg_time_seconds: undefined,
+      machines_needed: undefined,
       nOps: maq.operacoes.length,
     }));
-  }, [maquinasPorTipo]);
+  }, [maquinasPorTipo, requiredMachineMetrics]);
+
+  const overallAvgTimeSeconds = useMemo(() => {
+    const value = Number((resultados as any)?.machines_used?.overall_avg_time_seconds ?? (resultados as any)?.overall_avg_time_seconds);
+    return Number.isFinite(value) ? value : null;
+  }, [resultados]);
 
   const pieColors = [
     "#1d4ed8", "#7c3aed", "#0891b2", "#059669",
@@ -788,14 +869,30 @@ export function VisualizadorFluxo({
     { bg: "#fff7ed", border: "#fb923c", text: "#9a3412" },
   ];
 
+  const orderedOperatorKeys = useMemo(() => {
+    const slots = Array.isArray((resultados as any)?.operator_slots) ? [...((resultados as any).operator_slots as any[])] : [];
+    if (slots.length > 0) {
+      return slots
+        .sort((a, b) => {
+          const aPos = Number(a?.position_number);
+          const bPos = Number(b?.position_number);
+          const safeAPos = Number.isFinite(aPos) ? aPos : Number.MAX_SAFE_INTEGER;
+          const safeBPos = Number.isFinite(bPos) ? bPos : Number.MAX_SAFE_INTEGER;
+          if (safeAPos !== safeBPos) return safeAPos - safeBPos;
+          return String(a?.operator_id || "").localeCompare(String(b?.operator_id || ""));
+        })
+        .map((slot) => resolveOperatorCode(String(slot?.operator_id || slot?.operator_name || "").trim()))
+        .filter(Boolean);
+    }
+
+    return [...new Set(Object.values(estacoesMapeadas).map((e) => e?.operador || "").filter(Boolean))];
+  }, [resultados, estacoesMapeadas, operadores]);
+
   const operatorColorMap = useMemo(() => {
-    const uniqueOps = [...new Set(
-      Object.values(estacoesMapeadas).map((e) => e?.operador || "").filter(Boolean)
-    )];
     const map: Record<string, { bg: string; border: string; text: string }> = {};
-    uniqueOps.forEach((op, i) => { map[op] = operatorPalette[i % operatorPalette.length]; });
+    orderedOperatorKeys.forEach((op, i) => { map[op] = operatorPalette[i % operatorPalette.length]; });
     return map;
-  }, [estacoesMapeadas]);
+  }, [orderedOperatorKeys]);
 
   const barrasEmpilhadasPorOperador = useMemo(() => {
     const machineColorMap = new Map<string, string>();
@@ -838,6 +935,15 @@ export function VisualizadorFluxo({
         const totalSegundos = segmentos.reduce((sum, s) => sum + s.segundos, 0);
         return { operador: operatorKey, totalSegundos, segmentos };
       }).filter((o) => o.totalSegundos > 0);
+
+      operadores.sort((a, b) => {
+        const aIdx = orderedOperatorKeys.indexOf(a.operador);
+        const bIdx = orderedOperatorKeys.indexOf(b.operador);
+        const safeA = aIdx >= 0 ? aIdx : Number.MAX_SAFE_INTEGER;
+        const safeB = bIdx >= 0 ? bIdx : Number.MAX_SAFE_INTEGER;
+        if (safeA !== safeB) return safeA - safeB;
+        return a.operador.localeCompare(b.operador);
+      });
 
       const legenda = Array.from(machineColorMap.entries()).map(([maquina, color]) => ({ maquina, color }));
       return { operadores, legenda };
@@ -884,7 +990,15 @@ export function VisualizadorFluxo({
           if (totalSegundos <= 0) return null;
           return { operador, totalSegundos, segmentos };
         })
-        .filter((entry): entry is { operador: string; totalSegundos: number; segmentos: Array<{ maquina: string; segundos: number; color: string }> } => Boolean(entry));
+        .filter((entry): entry is { operador: string; totalSegundos: number; segmentos: Array<{ maquina: string; segundos: number; color: string }> } => Boolean(entry))
+        .sort((a, b) => {
+          const aIdx = orderedOperatorKeys.indexOf(a.operador);
+          const bIdx = orderedOperatorKeys.indexOf(b.operador);
+          const safeA = aIdx >= 0 ? aIdx : Number.MAX_SAFE_INTEGER;
+          const safeB = bIdx >= 0 ? bIdx : Number.MAX_SAFE_INTEGER;
+          if (safeA !== safeB) return safeA - safeB;
+          return a.operador.localeCompare(b.operador);
+        });
 
       const legenda = Array.from(machineColorMap.entries()).map(([maquina, color]) => ({ maquina, color }));
       return { operadores, legenda };
@@ -932,9 +1046,20 @@ export function VisualizadorFluxo({
       });
     });
 
+    operadores.sort((a, b) => {
+      const aResolved = resolveOperatorCode(a.operador);
+      const bResolved = resolveOperatorCode(b.operador);
+      const aIdx = orderedOperatorKeys.indexOf(aResolved);
+      const bIdx = orderedOperatorKeys.indexOf(bResolved);
+      const safeA = aIdx >= 0 ? aIdx : Number.MAX_SAFE_INTEGER;
+      const safeB = bIdx >= 0 ? bIdx : Number.MAX_SAFE_INTEGER;
+      if (safeA !== safeB) return safeA - safeB;
+      return aResolved.localeCompare(bResolved);
+    });
+
     const legenda = Array.from(machineColorMap.entries()).map(([maquina, color]) => ({ maquina, color }));
     return { operadores, legenda };
-  }, [resultados, pieColors, operacoes, operadores]);
+  }, [resultados, pieColors, operacoes, operadores, orderedOperatorKeys]);
 
   return (
     <div className="space-y-6">
@@ -986,7 +1111,7 @@ export function VisualizadorFluxo({
                             <div className="font-bold text-sm mb-1">PLANTA DE PRODUÇÃO</div>
                           <div className="text-[10px] space-y-0.5">
                             <div>FABRICA PRINCIPAL</div>
-                            <div>ESTAÇÕES: {maquinas.length}</div>
+                            <div>ESTAÇÕES: {totalMachineCount}</div>
                             <div>ESCALA: 1:100</div>
                           </div>
                         </div>
@@ -1113,11 +1238,11 @@ export function VisualizadorFluxo({
                               <div className="w-2 h-2 bg-yellow-400 animate-pulse" />
                               <span>FLUXO DE PRODUÇÃO ATIVO</span>
                             </div>
-                            <div className="text-yellow-400/60">Sentido: Estação 01 {"->"} Estação {maquinas.length}</div>
+                            <div className="text-yellow-400/60">Sentido: Estação 01 {"->"} Estação {totalMachineCount}</div>
                           </div>
                           <div className="text-right text-[10px]">
                             <div className="text-yellow-400/60">TOTAL ESTAÇÕES</div>
-                            <div className="text-xl font-bold">{maquinas.length}</div>
+                            <div className="text-xl font-bold">{totalMachineCount}</div>
                           </div>
                         </div>
                       </div>
@@ -1185,15 +1310,34 @@ export function VisualizadorFluxo({
                       <div className="flex flex-col gap-1.5 pt-1">
                         {dadosGrafico.map((d: any, i: number) => (
                           <div key={d.uid} className="flex items-center gap-1.5">
-                            <div style={{ width: 8, height: 8, borderRadius: 1, background: pieColors[i % pieColors.length], flexShrink: 0 }} />
-                            <span className="text-[10px] text-gray-700 whitespace-nowrap">{d.label}</span>
-                            <span className="text-[10px] font-semibold text-gray-900">{d.ocupacao}%</span>
+                            <div style={{ width: 10, height: 10, borderRadius: 2, background: pieColors[i % pieColors.length], flexShrink: 0 }} />
+                            <span className="text-[12px] text-gray-700 whitespace-nowrap">{d.label}</span>
+                            <span className="text-[12px] font-semibold text-gray-900">{d.ocupacao}%</span>
                           </div>
                         ))}
                       </div>
                     </div>
                   );
                 })()}
+                {(overallAvgTimeSeconds != null || requiredMachineMetrics.length > 0) && (
+                  <div className="mt-3 border-t border-gray-100 pt-2 text-[12px] text-gray-600 space-y-1">
+                    {overallAvgTimeSeconds != null && (
+                      <div>
+                        Tempo médio global: <span className="font-semibold text-gray-900">{overallAvgTimeSeconds.toFixed(1)}s</span>
+                      </div>
+                    )}
+                    {requiredMachineMetrics.map((item) => (
+                      <div key={`avg-${item.label}`}>
+                        {item.label}: <span className="font-semibold text-gray-900">{item.avg_time_seconds.toFixed(1)}s</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 border-t border-gray-100 pt-2 text-[12px] text-gray-600">
+                  <div>
+                    Máquinas existentes: <span className="font-semibold text-gray-900">{totalMachineCount}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -1209,22 +1353,29 @@ export function VisualizadorFluxo({
                 <div>
                 <div className="text-sm font-semibold">Tempo por Operador x Máquina</div>
                 <p className="text-[10px] text-gray-500 font-normal mt-0.5">
-                  Eixo X: Operador | Eixo Y: Tempo (s) empilhado por máquina
+                  {viewMode === "percentagem"
+                    ? "Eixo X: Operador | Eixo Y: Ocupação (%) empilhada por máquina"
+                    : "Eixo X: Operador | Eixo Y: Tempo (s) empilhado por máquina"}
                 </p>
               </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
             {(() => {
-              const CHART_H = 170;
-              const BAR_W = 44;
-              const Y_AXIS_W = 36;
-              const LABEL_H = 40;
+              const CHART_H = 184;
+              const BAR_W = 58;
+              const Y_AXIS_W = 46;
+              const LABEL_H = 52;
               const NUM_TICKS = 5;
+              const cycleTimeSeconds = Number((resultados as any)?.cycle_time_seconds ?? 0);
+              const formatMetric = (value: number) =>
+                viewMode === "percentagem" ? `${value.toFixed(1)}%` : `${value.toFixed(1)}s`;
+              const toDisplayValue = (seconds: number) =>
+                viewMode === "percentagem" && cycleTimeSeconds > 0 ? (seconds / cycleTimeSeconds) * 100 : seconds;
 
               const operadoresBarras = barrasEmpilhadasPorOperador.operadores;
               const legenda = barrasEmpilhadasPorOperador.legenda;
-              const maxTempo = Math.max(...operadoresBarras.map((b) => b.totalSegundos), 0.01);
+              const maxTempo = Math.max(...operadoresBarras.map((b) => toDisplayValue(b.totalSegundos)), 0.01);
               const tickStep = maxTempo / (NUM_TICKS - 1);
               const ticks = Array.from({ length: NUM_TICKS }, (_, i) =>
                 parseFloat((i * tickStep).toFixed(2))
@@ -1247,14 +1398,14 @@ export function VisualizadorFluxo({
                               position: "absolute",
                               top,
                               right: 4,
-                              fontSize: 9,
+                              fontSize: 11,
                               color: "#6b7280",
                               lineHeight: 1,
                               transform: "translateY(-50%)",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {tick}s
+                            {viewMode === "percentagem" ? `${tick}%` : `${tick}s`}
                           </span>
                         );
                       })}
@@ -1296,15 +1447,15 @@ export function VisualizadorFluxo({
                                   style={{
                                     position: "absolute",
                                     left: "50%",
-                                    bottom: getBarH(b.totalSegundos) + 4,
+                                    bottom: getBarH(toDisplayValue(b.totalSegundos)) + 4,
                                     transform: "translateX(-50%)",
-                                    fontSize: 9,
+                                    fontSize: 11,
                                     fontWeight: 700,
                                     color: "#1f2937",
                                     whiteSpace: "nowrap",
                                   }}
                                 >
-                                  {b.totalSegundos.toFixed(1)}s
+                                  {formatMetric(toDisplayValue(b.totalSegundos))}
                                 </div>
                                 <div
                                   style={{
@@ -1313,7 +1464,7 @@ export function VisualizadorFluxo({
                                     bottom: 0,
                                     transform: "translateX(-50%)",
                                     width: BAR_W,
-                                    height: getBarH(b.totalSegundos),
+                                    height: getBarH(toDisplayValue(b.totalSegundos)),
                                     borderRadius: "2px 2px 0 0",
                                     overflow: "hidden",
                                     display: "flex",
@@ -1323,12 +1474,12 @@ export function VisualizadorFluxo({
                                   {b.segmentos.map((seg) => (
                                     <div
                                       key={`${b.operador}-${seg.maquina}`}
-                                      title={`${b.operador} · ${seg.maquina} · ${seg.segundos.toFixed(1)}s`}
+                                      title={`${b.operador} · ${seg.maquina} · ${formatMetric(toDisplayValue(seg.segundos))}`}
                                       style={{
                                         width: "100%",
-                                        height: getBarH(seg.segundos),
+                                        height: getBarH(toDisplayValue(seg.segundos)),
                                         background: seg.color,
-                                        minHeight: seg.segundos > 0 ? 14 : 0,
+                                        minHeight: seg.segundos > 0 ? 18 : 0,
                                         position: "relative",
                                         display: "flex",
                                         alignItems: "center",
@@ -1339,7 +1490,7 @@ export function VisualizadorFluxo({
                                     >
                                       <span
                                         style={{
-                                          fontSize: 8,
+                                          fontSize: 10,
                                           color: "#ffffff",
                                           fontWeight: 700,
                                           lineHeight: 1,
@@ -1348,22 +1499,22 @@ export function VisualizadorFluxo({
                                           whiteSpace: "nowrap",
                                         }}
                                       >
-                                        {seg.segundos.toFixed(1)}
+                                        {viewMode === "percentagem" ? toDisplayValue(seg.segundos).toFixed(1) : seg.segundos.toFixed(1)}
                                       </span>
                                     </div>
                                   ))}
                                 </div>
                               </div>
-                              <div style={{ height: LABEL_H, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4, minWidth: 72 }}>
-                                <div
+                              <div style={{ height: LABEL_H, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 6, minWidth: 92 }}>
+                                  <div
                                   style={{
-                                    fontSize: 8,
-                                    color: "#374151",
+                                    fontSize: 11,
+                                    color: operatorColorMap[resolveOperatorCode(b.operador)]?.text || "#374151",
                                     whiteSpace: "nowrap",
                                     textAlign: "center",
                                     overflow: "hidden",
                                     textOverflow: "ellipsis",
-                                    maxWidth: 96,
+                                    maxWidth: 112,
                                   }}
                                 >
                                   {b.operador}
@@ -1375,11 +1526,11 @@ export function VisualizadorFluxo({
                       </div>
 
                       {legenda.length > 0 && (
-                        <div className="mt-3 flex items-center gap-3 flex-wrap">
+                        <div className="mt-3 flex items-center gap-4 flex-wrap">
                           {legenda.map((item) => (
-                            <div key={`legend-${item.maquina}`} className="flex items-center gap-1.5">
-                              <span style={{ width: 10, height: 10, borderRadius: 2, background: item.color, display: "inline-block" }} />
-                              <span className="text-[10px] text-gray-600">{item.maquina}</span>
+                            <div key={`legend-${item.maquina}`} className="flex items-center gap-2">
+                              <span style={{ width: 12, height: 12, borderRadius: 3, background: item.color, display: "inline-block" }} />
+                              <span className="text-[12px] text-gray-600">{item.maquina}</span>
                             </div>
                           ))}
                         </div>

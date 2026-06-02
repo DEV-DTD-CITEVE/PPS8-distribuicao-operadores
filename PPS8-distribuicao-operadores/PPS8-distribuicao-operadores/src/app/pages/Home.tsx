@@ -1549,30 +1549,107 @@ export default function Home() {
     });
   }, []);
 
+  const normalizeOperatorSlotsInline = useCallback((rawSlots: unknown): any[] => {
+    return ensureArray(rawSlots)
+      .map((slot) => ({
+        ...(slot || {}),
+        operator_id: pickString(slot, ["operator_id", "operator_code", "operador_id", "operator"]) || "",
+        operator_name: pickString(slot, ["operator_name", "name", "nome"]) || "",
+        position_number: parseNumberLikeInline((slot as any)?.position_number),
+        position_label: pickString(slot, ["position_label", "label", "posto"]) || "",
+        position_side: pickString(slot, ["position_side", "side", "lado"]) || "",
+      }))
+      .filter((slot) => slot.operator_id)
+      .sort((a, b) => {
+        const aPos = Number.isFinite(a.position_number) ? a.position_number : Number.MAX_SAFE_INTEGER;
+        const bPos = Number.isFinite(b.position_number) ? b.position_number : Number.MAX_SAFE_INTEGER;
+        if (aPos !== bPos) return aPos - bPos;
+        return String(a.operator_id).localeCompare(String(b.operator_id));
+      });
+  }, []);
+
+  const pickKpiInline = useCallback((
+    raw: any,
+    topLevelKeys: string[],
+    nestedKpiKeys: string[] = topLevelKeys,
+    options?: { preferNested?: boolean }
+  ): number | null => {
+    const kpis = raw?.kpis && typeof raw.kpis === "object" ? raw.kpis : null;
+    const nested = kpis
+      ? parseNumberLikeInline(nestedKpiKeys.map((key) => kpis?.[key]).find((value) => value != null))
+      : null;
+    const direct = parseNumberLikeInline(topLevelKeys.map((key) => raw?.[key]).find((value) => value != null));
+    if (options?.preferNested) return nested ?? direct;
+    return direct ?? nested;
+  }, []);
+
   const buildResultadosFromApiInline = useCallback((raw: any, currentResultados: ResultadosBalanceamento): ResultadosBalanceamento => {
     const operationAllocations = ensureArray(raw?.operation_allocations ?? raw?.operationAllocations);
+    const machinesUsed = raw?.machines_used && typeof raw.machines_used === "object" ? raw.machines_used : null;
     const taktSeconds = parseNumberLikeInline(raw?.takt_time_seconds ?? raw?.takt_time ?? raw?.taktTime) ?? 0;
-    const cicloApi = parseNumberLikeInline(raw?.real_cycle_time_seconds ?? raw?.cycle_time_seconds ?? raw?.cycle_time ?? raw?.tempo_ciclo_segundos) ?? 0;
+    const cycleTimeSeconds =
+      pickKpiInline(
+        raw,
+        ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"],
+        ["cycle_time_seconds"],
+        { preferNested: true }
+      ) ?? 0;
+    const cicloApi = cycleTimeSeconds;
     const tempoCiclo = cicloApi > 10 ? cicloApi / 60 : cicloApi;
-    const produtividadeRaw = parseNumberLikeInline(raw?.estimated_productivity ?? raw?.productivity ?? raw?.produtividade_estimada) ?? (currentResultados.produtividade ?? 0);
+    const produtividadeRaw =
+      pickKpiInline(
+        raw,
+        ["estimated_productivity", "productivity", "produtividade_estimada"],
+        ["productivity_pct", "estimated_productivity"],
+        { preferNested: true }
+      ) ?? (currentResultados.produtividade ?? 0);
     const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
     const distribuicaoFromApi = ensureArray(raw?.distribuicao ?? raw?.distribution);
-    const distribuicao = distribuicaoFromApi.length > 0 ? distribuicaoFromApi : buildDistribuicaoFromAllocationsInline(operationAllocations, tempoCiclo);
+    const distribuicao =
+      operationAllocations.length > 0
+        ? buildDistribuicaoFromAllocationsInline(operationAllocations, tempoCiclo)
+        : distribuicaoFromApi;
+    const numeroCiclosPorHora =
+      pickKpiInline(
+        raw,
+        ["production_per_hour", "numero_ciclos_por_hora"],
+        ["cycles_per_hour", "production_per_hour"],
+        { preferNested: true }
+      ) ?? (tempoCiclo > 0 ? 60 / tempoCiclo : currentResultados.numeroCiclosPorHora);
+    const numeroOperadores =
+      pickKpiInline(
+        raw,
+        ["num_operators", "numero_operadores", "numeroOperadores"],
+        ["num_operators"],
+        { preferNested: true }
+      ) ?? distribuicao.length;
+    const balanceLoss =
+      pickKpiInline(raw, ["balance_loss"], ["balance_loss_pct"], { preferNested: true }) ?? Math.max(0, 100 - produtividade);
+    const operatorSlots = normalizeOperatorSlotsInline(raw?.operator_slots ?? raw?.operatorSlots);
     return {
       distribuicao: distribuicao as any,
       operation_allocations: operationAllocations as any,
       machine_layout: resolveMachineLayoutInline(raw),
       operator_flow: (raw?.operator_flow ?? raw?.operatorFlow ?? null) as any,
       machine_times_per_operator: (raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator ?? null) as any,
+      operator_slots: operatorSlots as any,
+      kpis: (raw?.kpis ?? null) as any,
+      machines_used: (machinesUsed ?? null) as any,
+      required: ((machinesUsed?.required ?? raw?.required) ?? null) as any,
+      overall_avg_time_seconds: parseNumberLikeInline(machinesUsed?.overall_avg_time_seconds ?? raw?.overall_avg_time_seconds) ?? undefined,
       taktTime: taktSeconds / 60,
       tempoCiclo,
-      numeroCiclosPorHora: (parseNumberLikeInline(raw?.production_per_hour ?? raw?.numero_ciclos_por_hora) ?? (tempoCiclo > 0 ? 60 / tempoCiclo : currentResultados.numeroCiclosPorHora)) || 0,
+      cycle_time_seconds: cycleTimeSeconds || undefined,
+      balance_loss: balanceLoss,
+      production_per_hour: numeroCiclosPorHora || 0,
+      estimated_productivity: produtividade,
+      numeroCiclosPorHora: numeroCiclosPorHora || 0,
       produtividade,
-      perdas: Math.max(0, 100 - produtividade),
-      numeroOperadores: (parseNumberLikeInline(raw?.num_operators ?? raw?.numero_operadores ?? raw?.numeroOperadores) ?? distribuicao.length) || 0,
+      perdas: balanceLoss,
+      numeroOperadores: numeroOperadores || 0,
       ocupacaoTotal: (parseNumberLikeInline(raw?.occupancy_total ?? raw?.ocupacao_total ?? raw?.total_occupancy ?? raw?.total_load) ?? distribuicao.reduce((sum: number, d: any) => sum + ((parseNumberLikeInline(d?.cargaHoraria) ?? 0) * 60), 0)) || 0,
     };
-  }, [buildDistribuicaoFromAllocationsInline]);
+  }, [buildDistribuicaoFromAllocationsInline, normalizeOperatorSlotsInline, pickKpiInline]);
 
   const mergeRowsIntoAdjustBodyInline = (baseBody: any, editedRows: any[]): any => {
     const clone = structuredClone(baseBody);
@@ -1608,9 +1685,13 @@ export default function Home() {
         nextRow.operator_times = nextOperatorTimes;
       }
       const fromOperatorTimes = Object.values(nextRow?.operator_times || {}).reduce((sum: number, raw) => sum + Math.max(0, parseNumberLikeInline(raw) ?? 0), 0);
-      nextRow.total_time_seconds = Math.max(0, (parseNumberLikeInline(edited?.total_time_seconds) ?? fromOperatorTimes) as number);
+      const totalTimeSeconds = Math.max(
+        0,
+        (parseNumberLikeInline(edited?.total_time_seconds) ?? parseNumberLikeInline(row?.total_time_seconds) ?? fromOperatorTimes) as number
+      );
+      nextRow.total_time_seconds = totalTimeSeconds;
       nextRow.allocated_time_seconds = Math.max(0, (parseNumberLikeInline(edited?.allocated_time_seconds) ?? fromOperatorTimes) as number);
-      nextRow.remaining_time_seconds = Math.max(0, parseNumberLikeInline(edited?.remaining_time_seconds) ?? 0);
+      nextRow.remaining_time_seconds = Math.max(0, totalTimeSeconds - (parseNumberLikeInline(nextRow.allocated_time_seconds) ?? 0));
       if (Array.isArray(edited?.operator_allocations)) {
         nextRow.operator_allocations = edited.operator_allocations.map((item: any) => ({ ...(item || {}), time_seconds: Math.max(0, parseNumberLikeInline(item?.time_seconds) ?? 0) }));
       } else if (nextRow?.operator_times) {
@@ -1667,12 +1748,22 @@ export default function Home() {
       const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
       const novoRaw = resposta.data ?? {};
       const novosResultados = buildResultadosFromApiInline(novoRaw, resultadosAtuaisInline!);
-      setResultadosAtuaisInline(novosResultados);
-      setAjusteBodyBaseInline((prev: any) => ({
-        ...(prev || {}),
+      const proximoAjusteBodyBase = {
+        ...(ajusteBodyBaseInline || {}),
         ...(novoRaw || {}),
-        operation_allocations: ensureArray(novoRaw?.operation_allocations ?? novoRaw?.operationAllocations ?? prev?.operation_allocations),
-      }));
+        operation_allocations: ensureArray(novoRaw?.operation_allocations ?? novoRaw?.operationAllocations ?? ajusteBodyBaseInline?.operation_allocations),
+      };
+      setResultadosAtuaisInline(novosResultados);
+      setResultadosInlineData((prev) =>
+        prev
+          ? {
+              ...prev,
+              resultados: novosResultados,
+              ajusteBodyBase: proximoAjusteBodyBase,
+            }
+          : prev
+      );
+      setAjusteBodyBaseInline(proximoAjusteBodyBase);
     } catch (error) {
       const apiMessage = (error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.message || (error as any)?.message;
       setErroPopupInline(apiMessage || "Erro ao ajustar alocação. Verifica os valores editados e tenta novamente.");
@@ -1882,8 +1973,17 @@ export default function Home() {
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
+          operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),
+          kpis: (r as any)?.kpis ?? null,
+          machines_used: (r as any)?.machines_used ?? null,
+          required: ((r as any)?.machines_used?.required ?? (r as any)?.required) ?? null,
+          overall_avg_time_seconds: pickNumber(((r as any)?.machines_used ?? {}), ["overall_avg_time_seconds"]) ?? pickNumber(r, ["overall_avg_time_seconds"]) ?? undefined,
           taktTime,
           tempoCiclo,
+          cycle_time_seconds: tempoCicloApi ?? undefined,
+          balance_loss: perdas,
+          production_per_hour: numeroCiclosPorHora,
+          estimated_productivity: produtividade,
           numeroCiclosPorHora,
           produtividade,
           perdas,
@@ -2044,8 +2144,17 @@ export default function Home() {
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
+          operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),
+          kpis: (r as any)?.kpis ?? null,
+          machines_used: (r as any)?.machines_used ?? null,
+          required: ((r as any)?.machines_used?.required ?? (r as any)?.required) ?? null,
+          overall_avg_time_seconds: pickNumber(((r as any)?.machines_used ?? {}), ["overall_avg_time_seconds"]) ?? pickNumber(r, ["overall_avg_time_seconds"]) ?? undefined,
           taktTime,
           tempoCiclo,
+          cycle_time_seconds: tempoCicloApi ?? undefined,
+          balance_loss: perdas,
+          production_per_hour: numeroCiclosPorHora,
+          estimated_productivity: produtividade,
           numeroCiclosPorHora,
           produtividade,
           perdas,
@@ -2207,8 +2316,17 @@ export default function Home() {
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
+          operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),
+          kpis: (r as any)?.kpis ?? null,
+          machines_used: (r as any)?.machines_used ?? null,
+          required: ((r as any)?.machines_used?.required ?? (r as any)?.required) ?? null,
+          overall_avg_time_seconds: pickNumber(((r as any)?.machines_used ?? {}), ["overall_avg_time_seconds"]) ?? pickNumber(r, ["overall_avg_time_seconds"]) ?? undefined,
           taktTime,
           tempoCiclo,
+          cycle_time_seconds: tempoCicloApi ?? undefined,
+          balance_loss: perdas,
+          production_per_hour: numeroCiclosPorHora,
+          estimated_productivity: produtividade,
           numeroCiclosPorHora,
           produtividade,
           perdas,
@@ -2315,8 +2433,17 @@ export default function Home() {
           operation_allocations: operationAllocations,
           operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
+          operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),
+          kpis: (r as any)?.kpis ?? null,
+          machines_used: (r as any)?.machines_used ?? null,
+          required: ((r as any)?.machines_used?.required ?? (r as any)?.required) ?? null,
+          overall_avg_time_seconds: pickNumber(((r as any)?.machines_used ?? {}), ["overall_avg_time_seconds"]) ?? pickNumber(r, ["overall_avg_time_seconds"]) ?? undefined,
           taktTime,
           tempoCiclo,
+          cycle_time_seconds: pickNumber(r, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]) ?? undefined,
+          balance_loss: perdas,
+          production_per_hour: numeroCiclosPorHora,
+          estimated_productivity: produtividade,
           numeroCiclosPorHora,
           produtividade,
           perdas,
@@ -2964,6 +3091,7 @@ export default function Home() {
             operadores={resultadosInlineData.operadores}
             operacoes={resultadosInlineData.operacoes}
             layoutConfig={resultadosInlineData.layoutConfig}
+            viewMode={viewModeInline}
           />
         </section>
       )}

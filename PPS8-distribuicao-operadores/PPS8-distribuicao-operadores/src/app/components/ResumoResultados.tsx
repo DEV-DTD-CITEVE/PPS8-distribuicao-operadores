@@ -18,8 +18,25 @@ interface ResumoResultadosProps {
 }
 
 export function ResumoResultados({ resultados, config, mostrarTaktTime, layout = "row" }: ResumoResultadosProps) {
-  // Compatibilidade retroativa: suporta tanto numeroCiclosPorHora (novo) como numeroPecasHora (legado)
-  const ciclosPorHora = (resultados.numeroCiclosPorHora ?? (resultados as any).numeroPecasHora ?? 0);
+  const rawKpis = (resultados as any)?.kpis ?? null;
+  const resolveNumber = (...values: unknown[]) => {
+    for (const value of values) {
+      const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value.replace(",", ".")) : Number.NaN;
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return 0;
+  };
+  const cycleTimeSeconds = resolveNumber(rawKpis?.cycle_time_seconds, (resultados as any)?.cycle_time_seconds, resultados.tempoCiclo * 60);
+  const tempoCicloMin = cycleTimeSeconds > 10 ? cycleTimeSeconds / 60 : resolveNumber(resultados.tempoCiclo);
+  const ciclosPorHora = resolveNumber(
+    rawKpis?.cycles_per_hour,
+    (resultados as any)?.production_per_hour,
+    resultados.numeroCiclosPorHora,
+    (resultados as any).numeroPecasHora
+  );
+  const produtividade = resolveNumber(rawKpis?.productivity_pct, (resultados as any)?.estimated_productivity, resultados.produtividade);
+  const perdas = resolveNumber(rawKpis?.balance_loss_pct, (resultados as any)?.balance_loss, resultados.perdas, Math.max(0, 100 - produtividade));
+  const numeroOperadores = resolveNumber(rawKpis?.num_operators, resultados.numeroOperadores, config.numeroOperadores);
   const exibirTaktTime = mostrarTaktTime ?? (config.possibilidade === 2);
   const isColumn = layout === "column";
 
@@ -65,7 +82,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
       : []),
     {
       label: 'Tempo Ciclo',
-      value: resultados.tempoCiclo.toFixed(2),
+      value: tempoCicloMin.toFixed(2),
       unit: 'min',
       bgColor: 'bg-[#f3e8ff]',
       iconColor: '#9810FA',
@@ -81,7 +98,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
     },
     {
       label: 'Produtividade',
-      value: resultados.produtividade.toFixed(1),
+      value: produtividade.toFixed(1),
       unit: '%',
       bgColor: 'bg-[#dcfce7]',
       iconColor: '#00A63E',
@@ -96,8 +113,8 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
     },
     {
       label: 'Perdas',
-      value: isNaN(resultados.perdas) ? '-' : resultados.perdas.toFixed(1),
-      unit: isNaN(resultados.perdas) ? '' : '%',
+      value: Number.isFinite(perdas) ? perdas.toFixed(1) : '-',
+      unit: Number.isFinite(perdas) ? '%' : '',
       bgColor: 'bg-[#fef3c6]',
       iconColor: '#E17100',
       icon: (
@@ -112,7 +129,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
     },
     {
       label: 'Operadores',
-      value: resultados.numeroOperadores.toString(),
+      value: String(numeroOperadores),
       unit: '',
       bgColor: 'bg-[#e0e7ff]',
       iconColor: '#4F39F6',

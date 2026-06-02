@@ -129,7 +129,35 @@ export interface OperationAllocation {
   operator_allocations?: any[];
   occupancy_percentages?: Record<string, number>;
   operator_times?: Record<string, number>;
+  original_operator_times?: Record<string, number>;
   operator_positions?: Record<string, OperationAllocationOperatorPosition>;
+}
+
+export interface OperatorSlot {
+  operator_id?: string;
+  operator_name?: string;
+  position_number?: number;
+  position_label?: string;
+  position_side?: string;
+}
+
+export interface BalanceamentoKpis {
+  num_operators?: number;
+  cycle_time_seconds?: number;
+  cycles_per_hour?: number;
+  productivity_pct?: number;
+  balance_loss_pct?: number;
+}
+
+export interface RequiredMachineMetric {
+  label?: string;
+  avg_time_seconds?: number;
+  machines_needed?: number;
+}
+
+export interface MachinesUsedMetrics {
+  overall_avg_time_seconds?: number;
+  required?: RequiredMachineMetric[] | Record<string, RequiredMachineMetric> | null;
 }
 
 export interface ResultadosBalanceamento {
@@ -138,9 +166,18 @@ export interface ResultadosBalanceamento {
   machine_layout?: any[] | null;
   operator_flow?: Record<string, Array<{ step?: number; machine_name?: string; position_label?: string }>> | null;
   machine_times_per_operator?: Record<string, any> | null;
+  operator_slots?: OperatorSlot[];
+  kpis?: BalanceamentoKpis | null;
   numeroCiclosPorHora: number;
   taktTime: number; // minutos
   tempoCiclo: number; // minutos
+  cycle_time_seconds?: number;
+  balance_loss?: number;
+  production_per_hour?: number;
+  estimated_productivity?: number;
+  machines_used?: MachinesUsedMetrics | null;
+  required?: RequiredMachineMetric[] | Record<string, RequiredMachineMetric> | null;
+  overall_avg_time_seconds?: number;
   ocupacaoTotal?: number;
   produtividade?: number;
   perdas?: number;

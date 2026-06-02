@@ -87,6 +87,21 @@ function getBatteryColor(ocupacao: number): string {
   return "#F97316";
 }
 
+const operatorPalette = [
+  "#2563eb",
+  "#16a34a",
+  "#db2777",
+  "#ea580c",
+  "#7c3aed",
+  "#ca8a04",
+  "#0891b2",
+  "#0f766e",
+  "#dc2626",
+  "#4f46e5",
+  "#9333ea",
+  "#c2410c",
+];
+
 function getCollaboratorLabel(rawOperatorId: string, fallbackCode: string): string {
   const rawDigits = (String(rawOperatorId || "").match(/\d+/g) || []).join("");
   if (rawDigits) return String(Number(rawDigits));
@@ -120,6 +135,10 @@ export function DashboardResultados({
   showOccupacaoCard = true,
   showTabela = true,
 }: DashboardResultadosProps) {
+  const cycleTimeSeconds =
+    Number((resultados as any)?.cycle_time_seconds) > 0
+      ? Number((resultados as any)?.cycle_time_seconds)
+      : Math.max(0, Number(resultados?.tempoCiclo || 0) * 60);
   const totaisSegundosPorOperador = new Map<string, number>();
   const operationAllocations = Array.isArray((resultados as any)?.operation_allocations)
     ? ((resultados as any).operation_allocations as any[])
@@ -136,28 +155,73 @@ export function DashboardResultados({
     });
   });
 
+  const orderedOperatorCodes = (() => {
+    const slots = Array.isArray((resultados as any)?.operator_slots) ? [...((resultados as any).operator_slots as any[])] : [];
+    if (slots.length > 0) {
+      return slots
+        .sort((a, b) => {
+          const aPos = Number(a?.position_number);
+          const bPos = Number(b?.position_number);
+          const safeAPos = Number.isFinite(aPos) ? aPos : Number.MAX_SAFE_INTEGER;
+          const safeBPos = Number.isFinite(bPos) ? bPos : Number.MAX_SAFE_INTEGER;
+          if (safeAPos !== safeBPos) return safeAPos - safeBPos;
+          return String(a?.operator_id || "").localeCompare(String(b?.operator_id || ""));
+        })
+        .map((slot) => resolveOperatorCode(String(slot?.operator_id || slot?.operator_name || ""), operadores))
+        .filter(Boolean);
+    }
+
+    if (totaisSegundosPorOperador.size > 0) {
+      return Array.from(totaisSegundosPorOperador.keys()).map((key) => {
+        const fromOperadores = operadores.find((op: any) => normalizeKey(String(op?.id || "")) === key);
+        return String(fromOperadores?.id || key);
+      });
+    }
+
+    return resultados.distribuicao.map((dist) => resolveOperatorCode(dist.operadorId, operadores)).filter(Boolean);
+  })();
+  const operatorFillMap = new Map<string, string>();
+  orderedOperatorCodes.forEach((code, index) => {
+    operatorFillMap.set(normalizeKey(code), operatorPalette[index % operatorPalette.length]);
+  });
   const displayCodeByOperatorId = buildDisplayCodeMap(resultados.distribuicao || []);
-  const dadosCarga = resultados.distribuicao.map((dist, index) => {
-    const resolvedOperatorCode = resolveOperatorCode(dist.operadorId, operadores);
+  const distribuicaoByOperator = new Map(
+    (resultados.distribuicao || []).map((dist) => [normalizeKey(resolveOperatorCode(dist.operadorId, operadores)), dist])
+  );
+  const dadosCarga = orderedOperatorCodes.map((operatorCode, index) => {
+    const normalizedOperatorCode = normalizeKey(operatorCode);
+    const dist = distribuicaoByOperator.get(normalizedOperatorCode);
     const codigo =
       displayCodeByOperatorId.get(String(dist?.operadorId || "").trim()) ||
-      resolvedOperatorCode;
-    const colaboradorLabel = getCollaboratorLabel(dist.operadorId, codigo);
-    const totalFromAllocations = totaisSegundosPorOperador.get(normalizeKey(resolvedOperatorCode));
-    const fallbackTotal = Number(dist.cargaHoraria) * 60;
+      operatorCode;
+    const colaboradorLabel = getCollaboratorLabel(String(dist?.operadorId || operatorCode), codigo);
+    const totalFromAllocations = totaisSegundosPorOperador.get(normalizedOperatorCode);
+    const fallbackTotal = Number(dist?.cargaHoraria) * 60;
     const totalTimeSeconds = Number.isFinite(totalFromAllocations as number)
       ? (totalFromAllocations as number)
       : Number.isFinite(fallbackTotal)
         ? fallbackTotal
         : 0;
+    const ocupacaoExact = cycleTimeSeconds > 0
+      ? (totalTimeSeconds / cycleTimeSeconds) * 100
+      : Number(dist?.ocupacao || 0);
 
     return {
       idx: `op_${index}`,
       codigo,
       colaboradorLabel,
-      ocupacao: Math.round(dist.ocupacao),
+      operatorSortKey: normalizedOperatorCode,
+      ocupacao: ocupacaoExact,
+      ocupacaoDisplay: Math.round(ocupacaoExact),
       totalTimeSeconds,
     };
+  }).filter((item) => item.totalTimeSeconds > 0 || item.ocupacao > 0).sort((a, b) => {
+    const aIdx = orderedOperatorCodes.findIndex((code) => normalizeKey(code) === a.operatorSortKey);
+    const bIdx = orderedOperatorCodes.findIndex((code) => normalizeKey(code) === b.operatorSortKey);
+    const safeA = aIdx >= 0 ? aIdx : Number.MAX_SAFE_INTEGER;
+    const safeB = bIdx >= 0 ? bIdx : Number.MAX_SAFE_INTEGER;
+    if (safeA !== safeB) return safeA - safeB;
+    return a.codigo.localeCompare(b.codigo);
   });
   const showTaktTimeLine = Number(config?.possibilidade) === 2;
 
@@ -184,15 +248,15 @@ export function DashboardResultados({
         </div>
 
         <div className="relative shrink-0 w-full overflow-x-auto">
-          <div className="content-stretch flex gap-[8px] items-start justify-center px-[24px] min-w-full w-max relative">
+          <div className="content-stretch flex gap-[12px] items-start justify-center px-[24px] min-w-full w-max relative">
             {dadosCarga.map((d) => {
               const fillHeight = (Math.min(d.ocupacao, 100) / 100) * BATTERY_TOTAL_HEIGHT;
               const fillMT = BATTERY_START_MT + (BATTERY_TOTAL_HEIGHT - fillHeight);
-              const color = getBatteryColor(d.ocupacao);
+              const color = operatorFillMap.get(d.operatorSortKey) || getBatteryColor(d.ocupacao);
               const fillPath = generateFillPath(fillHeight);
 
               return (
-                <div key={d.idx} className="content-stretch flex flex-col gap-px items-center relative shrink-0 w-[63px]">
+                <div key={d.idx} className="content-stretch flex flex-col gap-px items-center relative shrink-0 w-[76px]">
                   <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
                     <div className="col-1 h-[6.545px] ml-[13.09px] mt-0 relative row-1 w-[17.455px]">
                       <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 17.4545 6.54545">
@@ -232,7 +296,7 @@ export function DashboardResultados({
                   {["OP1", "OP2", "OP3", "OP4", "OP5"].map((op, i) => {
                     const tops = [156.05, 120.05, 87.14, 50.05, 14.05];
                     return (
-                      <p key={op} className="col-1 font-bold leading-[normal] not-italic relative row-1 text-[#dddbdb] text-[10.909px] text-center whitespace-nowrap" style={{ marginLeft: "9.91px", marginTop: `${tops[i]}px` }}>
+                      <p key={op} className="col-1 font-bold leading-[normal] not-italic relative row-1 text-[#dddbdb] text-[11.5px] text-center whitespace-nowrap" style={{ marginLeft: "9.91px", marginTop: `${tops[i]}px` }}>
                         {op}
                       </p>
                     );
@@ -242,13 +306,13 @@ export function DashboardResultados({
                   <div className="relative shrink-0 w-full">
                     <div className="flex flex-col items-center justify-center size-full">
                       <div className="content-stretch flex flex-col gap-[8px] items-center justify-center p-[2px] relative w-full">
-                        <p title={d.codigo} className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[9.818px] text-center whitespace-nowrap cursor-help">
+                        <p title={d.codigo} className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[11px] text-center whitespace-nowrap cursor-help">
                           {d.colaboradorLabel}
                         </p>
-                        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[14px] w-[68px]">
-                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[9.818px] text-right whitespace-nowrap pr-[3px]">{d.totalTimeSeconds.toFixed(1)}s</p>
-                          <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[9.818px] text-center whitespace-nowrap">|</p>
-                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[9.818px] text-left whitespace-nowrap pl-[3px]">{d.ocupacao}%</p>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[16px] w-[78px]">
+                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[11px] text-right whitespace-nowrap pr-[4px]">{d.totalTimeSeconds.toFixed(1)}s</p>
+                          <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[11px] text-center whitespace-nowrap">|</p>
+                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[11px] text-left whitespace-nowrap pl-[4px]">{d.ocupacaoDisplay}%</p>
                         </div>
                       </div>
                     </div>

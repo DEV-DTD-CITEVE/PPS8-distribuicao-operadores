@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { ResultadosBalanceamento, DistribuicaoCarga, OperationAllocation } from "../types";
+import { ResultadosBalanceamento, DistribuicaoCarga, OperationAllocation, OperatorSlot } from "../types";
 import { Button } from "./ui/button";
 
 interface TabelaDistribuicaoProps {
@@ -121,8 +121,28 @@ const resolveOperatorLabel = (code: string, position: { operator_name?: string }
   return code;
 };
 
-const buildOperatorColumns = (rows: OperationAllocationRow[], operadores: any[]): OperatorColumn[] => {
+const buildOperatorColumns = (
+  rows: OperationAllocationRow[],
+  operadores: any[],
+  operatorSlots: OperatorSlot[] = []
+): OperatorColumn[] => {
   const columns = new Map<string, OperatorColumn>();
+
+  operatorSlots.forEach((slot) => {
+    const code = String(slot?.operator_id || "").trim();
+    if (!code) return;
+    const key = normalizeKey(code);
+    if (!key || columns.has(key)) return;
+
+    columns.set(key, {
+      key,
+      code,
+      label: resolveOperatorLabel(code, { operator_name: slot?.operator_name }, operadores),
+      positionNumber: parseNumberLike(slot?.position_number) ?? undefined,
+      positionLabel: slot?.position_label,
+      positionSide: slot?.position_side,
+    });
+  });
 
   rows.forEach((row) => {
     const operatorTimes = row.operator_times || {};
@@ -137,13 +157,14 @@ const buildOperatorColumns = (rows: OperationAllocationRow[], operadores: any[])
       const position = positionEntry?.[1];
       const code = positionEntry?.[0] || rawCode;
 
+      const existing = columns.get(key);
       columns.set(key, {
         key,
         code,
-        label: resolveOperatorLabel(code, position, operadores),
-        positionNumber: parseNumberLike(position?.position_number) ?? undefined,
-        positionLabel: position?.position_label,
-        positionSide: position?.position_side,
+        label: existing?.label || resolveOperatorLabel(code, position, operadores),
+        positionNumber: existing?.positionNumber ?? parseNumberLike(position?.position_number) ?? undefined,
+        positionLabel: existing?.positionLabel ?? position?.position_label,
+        positionSide: existing?.positionSide ?? position?.position_side,
       });
     });
   });
@@ -299,6 +320,12 @@ const getOperatorPercentage = (
     if (parsed != null) return normalizePercentageValue(parsed);
   }
 
+  const seconds = getOperatorTime(row, column);
+  const totalTimeSeconds = Math.max(0, parseNumberLike(row.total_time_seconds) ?? 0);
+  if (seconds != null && totalTimeSeconds > 0) {
+    return (seconds / totalTimeSeconds) * 100;
+  }
+
   return null;
 };
 
@@ -438,10 +465,13 @@ function TabelaAllocacoes({
   );
   const [draftRows, setDraftRows] = useState<OperationAllocationRow[]>([]);
   const rows = isEditing ? draftRows : baseRows;
+  const operatorSlots = Array.isArray((resultados as any)?.operator_slots)
+    ? ((resultados as any).operator_slots as OperatorSlot[])
+    : [];
 
   const operatorColumns = useMemo(
-    () => buildOperatorColumns(rows, operadores),
-    [rows, operadores]
+    () => buildOperatorColumns(rows, operadores, operatorSlots),
+    [rows, operadores, operatorSlots]
   );
 
   const totalsByOperator = useMemo(() => {
@@ -461,6 +491,10 @@ function TabelaAllocacoes({
   }, [rows, operatorColumns]);
 
   const totalTime = rows.reduce((sum, row) => sum + (parseNumberLike(row.total_time_seconds) ?? 0), 0);
+  const cycleTimeSeconds =
+    Number((resultados as any)?.cycle_time_seconds) > 0
+      ? Number((resultados as any)?.cycle_time_seconds)
+      : Math.max(0, Number(resultados?.tempoCiclo || 0) * 60);
   const operatorColumnWidth = useMemo(() => {
     const count = operatorColumns.length;
     if (count >= 24) return 64;
@@ -472,13 +506,11 @@ function TabelaAllocacoes({
   const totalsByOperatorPercent = useMemo(() => {
     const percentages: Record<string, number> = {};
     operatorColumns.forEach((column) => {
-      percentages[column.key] = rows.reduce((sum, row) => {
-        const value = getOperatorPercentage(row, column);
-        return sum + (value ?? 0);
-      }, 0);
+      const totalSeconds = totalsByOperator[column.key] ?? 0;
+      percentages[column.key] = cycleTimeSeconds > 0 ? (totalSeconds / cycleTimeSeconds) * 100 : 0;
     });
     return percentages;
-  }, [operatorColumns, rows]);
+  }, [operatorColumns, totalsByOperator, cycleTimeSeconds]);
 
   const formatMetric = (value: number | null | undefined): string => {
     if (value == null) return "-";
@@ -488,7 +520,12 @@ function TabelaAllocacoes({
 
   const commitCellValue = (rowIndex: number, column: OperatorColumn, rawValue: string): OperationAllocationRow[] => {
     const parsed = parseNumberLike(rawValue);
-    const nextSeconds = Math.max(0, parsed ?? 0);
+    const baseRow = draftRows[rowIndex];
+    const rowTotalSeconds = Math.max(0, parseNumberLike(baseRow?.total_time_seconds) ?? 0);
+    const nextSeconds = Math.max(
+      0,
+      viewMode === "percentagem" ? ((parsed ?? 0) / 100) * rowTotalSeconds : parsed ?? 0
+    );
     const nextRows = draftRows.map((r, idx) => {
         if (idx !== rowIndex) return r;
         const nextRow = { ...r, operator_times: { ...(r.operator_times || {}) } };
@@ -507,11 +544,12 @@ function TabelaAllocacoes({
           (sum: number, raw) => sum + Math.max(0, parseNumberLike(raw) ?? 0),
           0
         );
-        nextRow.total_time_seconds = recalculatedTotal;
+        const fixedTotalTime = Math.max(0, parseNumberLike(r.total_time_seconds) ?? recalculatedTotal);
+        nextRow.total_time_seconds = fixedTotalTime;
         nextRow.allocated_time_seconds = recalculatedTotal;
         nextRow.remaining_time_seconds = Math.max(
           0,
-          (parseNumberLike(nextRow.total_time_seconds) ?? 0) - (parseNumberLike(nextRow.allocated_time_seconds) ?? 0)
+          fixedTotalTime - (parseNumberLike(nextRow.allocated_time_seconds) ?? 0)
         );
         const existingAllocations = Array.isArray(r.operator_allocations) ? r.operator_allocations : [];
         const existingAllocationByOperator = new Map<string, Record<string, unknown>>();
@@ -522,7 +560,7 @@ function TabelaAllocacoes({
           if (!operatorRef) return;
           existingAllocationByOperator.set(normalizeKey(operatorRef), allocation);
         });
-        nextRow.operator_allocations = Object.entries(nextRow.operator_times || {}).map(([operatorCode, seconds]) => {
+        const nextOperatorAllocations = Object.entries(nextRow.operator_times || {}).map(([operatorCode, seconds]) => {
           const normalizedOperator = normalizeKey(operatorCode);
           const existingAllocation = existingAllocationByOperator.get(normalizedOperator);
           const normalizedSeconds = Math.max(0, parseNumberLike(seconds) ?? 0);
@@ -542,6 +580,20 @@ function TabelaAllocacoes({
             time_seconds: normalizedSeconds,
           };
         });
+        if (nextSeconds === 0 && targetOperatorRef) {
+          const normalizedTarget = normalizeKey(targetOperatorRef);
+          const existingAllocation = existingAllocationByOperator.get(normalizedTarget);
+          nextOperatorAllocations.push({
+            ...(existingAllocation || {}),
+            operator_id: targetOperatorRef,
+            operator_name: resolveOperatorNameFromCode(targetOperatorRef, operadores) || column.label,
+            position_number: column.positionNumber,
+            position_label: column.positionLabel,
+            position_side: column.positionSide,
+            time_seconds: 0,
+          });
+        }
+        nextRow.operator_allocations = nextOperatorAllocations;
         const existingPositions =
           nextRow.operator_positions && typeof nextRow.operator_positions === "object"
             ? nextRow.operator_positions
@@ -586,7 +638,7 @@ function TabelaAllocacoes({
     columnKey: string,
     value: number | null | undefined
   ) => {
-    if (!onConfirmarEdicao || isEditing || isSaving || isAjustando || viewMode !== "tempo") return;
+    if (!onConfirmarEdicao || isEditing || isSaving || isAjustando) return;
     setDraftRows(structuredClone(baseRows));
     setIsEditing(true);
     setActiveCell({ rowIndex, columnKey });
@@ -740,7 +792,7 @@ function TabelaAllocacoes({
                       viewMode === "percentagem"
                         ? getOperatorPercentage(row, column)
                         : getOperatorTime(row, column);
-                    const editable = isEditing && viewMode === "tempo";
+                    const editable = isEditing;
                     return (
                       <td
                         key={column.key}
