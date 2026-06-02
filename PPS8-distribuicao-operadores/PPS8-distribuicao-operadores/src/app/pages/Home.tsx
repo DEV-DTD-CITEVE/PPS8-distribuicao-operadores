@@ -1629,6 +1629,8 @@ export default function Home() {
     return {
       distribuicao: distribuicao as any,
       operation_allocations: operationAllocations as any,
+      share_per_operator_seconds: (raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds ?? null) as any,
+      table_data: (raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table ?? null) as any,
       machine_layout: resolveMachineLayoutInline(raw),
       operator_flow: (raw?.operator_flow ?? raw?.operatorFlow ?? null) as any,
       machine_times_per_operator: (raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator ?? null) as any,
@@ -1970,6 +1972,8 @@ export default function Home() {
         const resultadosApi = {
           distribuicao,
           operation_allocations: operationAllocations,
+          share_per_operator_seconds: (r as any)?.share_per_operator_seconds ?? (r as any)?.sharePerOperatorSeconds ?? null,
+          table_data: (r as any)?.table_data ?? (r as any)?.tableData ?? (r as any)?.operator_table ?? (r as any)?.operatorTable ?? (r as any)?.results_table ?? null,
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
@@ -2141,6 +2145,8 @@ export default function Home() {
         const resultadosApi = {
           distribuicao,
           operation_allocations: operationAllocations,
+          share_per_operator_seconds: (r as any)?.share_per_operator_seconds ?? (r as any)?.sharePerOperatorSeconds ?? null,
+          table_data: (r as any)?.table_data ?? (r as any)?.tableData ?? (r as any)?.operator_table ?? (r as any)?.operatorTable ?? (r as any)?.results_table ?? null,
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
@@ -2313,6 +2319,8 @@ export default function Home() {
         const resultadosApi = {
           distribuicao,
           operation_allocations: operationAllocations,
+          share_per_operator_seconds: (r as any)?.share_per_operator_seconds ?? (r as any)?.sharePerOperatorSeconds ?? null,
+          table_data: (r as any)?.table_data ?? (r as any)?.tableData ?? (r as any)?.operator_table ?? (r as any)?.operatorTable ?? (r as any)?.results_table ?? null,
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
           operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
@@ -2431,6 +2439,8 @@ export default function Home() {
         const resultadosCustom = {
           distribuicao,
           operation_allocations: operationAllocations,
+          share_per_operator_seconds: (r as any)?.share_per_operator_seconds ?? (r as any)?.sharePerOperatorSeconds ?? null,
+          table_data: (r as any)?.table_data ?? (r as any)?.tableData ?? (r as any)?.operator_table ?? (r as any)?.operatorTable ?? (r as any)?.results_table ?? null,
           operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
           operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),

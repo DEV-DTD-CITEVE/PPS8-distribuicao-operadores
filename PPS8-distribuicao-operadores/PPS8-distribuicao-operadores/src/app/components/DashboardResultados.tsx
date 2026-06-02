@@ -83,7 +83,21 @@ function getBatteryColor(ocupacao: number): string {
   if (ocupacao > 100) return "#DC2626";
   if (ocupacao >= 90) return "#10B981";
   if (ocupacao >= 70) return "#FBBF24";
-  return "#DC2626";
+  return "#FBBF24";
+}
+
+function parseNumberLike(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const normalized = value.trim().replace(",", ".");
+    const parsed = Number(normalized);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function normalizePercentageValue(value: number): number {
+  return value <= 1 ? value * 100 : value;
 }
 
 const operatorPalette = [
@@ -138,40 +152,152 @@ export function DashboardResultados({
     Number((resultados as any)?.cycle_time_seconds) > 0
       ? Number((resultados as any)?.cycle_time_seconds)
       : Math.max(0, Number(resultados?.tempoCiclo || 0) * 60);
+  const slotOrderedOperatorCodes = (() => {
+    const slots = Array.isArray((resultados as any)?.operator_slots) ? [...((resultados as any).operator_slots as any[])] : [];
+    if (slots.length === 0) return [] as string[];
+    return slots
+      .sort((a, b) => {
+        const aPos = Number(a?.position_number);
+        const bPos = Number(b?.position_number);
+        const safeAPos = Number.isFinite(aPos) ? aPos : Number.MAX_SAFE_INTEGER;
+        const safeBPos = Number.isFinite(bPos) ? bPos : Number.MAX_SAFE_INTEGER;
+        if (safeAPos !== safeBPos) return safeAPos - safeBPos;
+        return String(a?.operator_id || "").localeCompare(String(b?.operator_id || ""));
+      })
+      .map((slot) => resolveOperatorCode(String(slot?.operator_id || slot?.operator_name || ""), operadores))
+      .filter(Boolean);
+  })();
+  const resolveOperatorAliases = (rawRef: string): string[] => {
+    const ref = String(rawRef || "").trim();
+    if (!ref) return [];
+    const aliases = new Set<string>();
+    const addAlias = (value: string) => {
+      const normalized = normalizeKey(value);
+      if (normalized) aliases.add(normalized);
+    };
+    addAlias(ref);
+    addAlias(resolveOperatorCode(ref, operadores));
+    const opMatch = ref.match(/^OP\s*0*(\d+)$/i);
+    if (opMatch) {
+      const idx = Number(opMatch[1]) - 1;
+      if (idx >= 0 && idx < slotOrderedOperatorCodes.length) {
+        addAlias(slotOrderedOperatorCodes[idx]);
+      }
+    }
+    return Array.from(aliases);
+  };
+  const occupancyByOperator = new Map<string, number>();
+  const tableDataRaw =
+    (resultados as any)?.table_data ??
+    (resultados as any)?.tableData ??
+    (resultados as any)?.operator_table ??
+    (resultados as any)?.operatorTable ??
+    (resultados as any)?.results_table ??
+    null;
+  const tableRows = Array.isArray(tableDataRaw)
+    ? tableDataRaw
+    : tableDataRaw && typeof tableDataRaw === "object"
+      ? Object.entries(tableDataRaw as Record<string, unknown>).map(([key, value]) =>
+          value && typeof value === "object" && !Array.isArray(value)
+            ? { operator: key, ...(value as Record<string, unknown>) }
+            : { operator: key, occupancy: value }
+        )
+      : [];
+  tableRows.forEach((row: any) => {
+    const operatorRef = String(row?.operator ?? row?.operator_id ?? row?.operador ?? row?.operador_id ?? "").trim();
+    if (!operatorRef) return;
+    const rawOccupancy = Number(
+      row?.occupancy ??
+      row?.occupancy_percent ??
+      row?.operator_occupancy ??
+      row?.worker_occupancy ??
+      row?.ocupacao
+    );
+    if (!Number.isFinite(rawOccupancy)) return;
+    const normalizedOccupancy = rawOccupancy <= 1 ? rawOccupancy * 100 : rawOccupancy;
+    resolveOperatorAliases(operatorRef).forEach((key) => {
+      occupancyByOperator.set(key, normalizedOccupancy);
+    });
+  });
+  const maxSegundosPorOperador = new Map<string, number>();
   const totaisSegundosPorOperador = new Map<string, number>();
+  const sharePerOperatorSeconds =
+    (resultados as any)?.share_per_operator_seconds &&
+    typeof (resultados as any).share_per_operator_seconds === "object"
+      ? ((resultados as any).share_per_operator_seconds as Record<string, unknown>)
+      : null;
+
+  if (sharePerOperatorSeconds) {
+    Object.entries(sharePerOperatorSeconds).forEach(([operatorRef, rawSeconds]) => {
+      const seconds = Number(rawSeconds);
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      resolveOperatorAliases(String(operatorRef)).forEach((key) => {
+        maxSegundosPorOperador.set(key, seconds);
+      });
+    });
+  }
   const operationAllocations = Array.isArray((resultados as any)?.operation_allocations)
     ? ((resultados as any).operation_allocations as any[])
     : [];
   operationAllocations.forEach((row: any) => {
     const operatorTimes = row?.operator_times && typeof row.operator_times === "object" ? row.operator_times : {};
-    Object.entries(operatorTimes).forEach(([operatorRef, rawSeconds]) => {
-      const seconds = Number(rawSeconds);
+    const hasOperatorTimes = Object.keys(operatorTimes).length > 0;
+    if (hasOperatorTimes) {
+      Object.entries(operatorTimes).forEach(([operatorRef, rawSeconds]) => {
+        const seconds = Number(rawSeconds);
+        if (!Number.isFinite(seconds) || seconds <= 0) return;
+        resolveOperatorAliases(String(operatorRef)).forEach((key) => {
+          totaisSegundosPorOperador.set(key, (totaisSegundosPorOperador.get(key) || 0) + seconds);
+        });
+      });
+      return;
+    }
+
+    const operatorAllocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
+    if (operatorAllocations.length > 0) {
+      operatorAllocations.forEach((allocation: any) => {
+        const operatorRef = String(
+          allocation?.operator_code ??
+          allocation?.operator_id ??
+          allocation?.operador_id ??
+          allocation?.operator ??
+          allocation?.operador ??
+          ""
+        ).trim();
+        if (!operatorRef) return;
+        const seconds = Number(
+          allocation?.time_seconds ??
+          allocation?.tempo_segundos ??
+          allocation?.seconds ??
+          allocation?.time
+        );
+        if (!Number.isFinite(seconds) || seconds <= 0) return;
+        resolveOperatorAliases(String(operatorRef)).forEach((key) => {
+          totaisSegundosPorOperador.set(key, (totaisSegundosPorOperador.get(key) || 0) + seconds);
+        });
+      });
+      return;
+    }
+
+    const operatorPositions = row?.operator_positions && typeof row.operator_positions === "object" ? row.operator_positions : {};
+    Object.entries(operatorPositions).forEach(([operatorRef, positionRaw]) => {
+      const position = positionRaw && typeof positionRaw === "object" ? (positionRaw as Record<string, unknown>) : null;
+      const seconds = Number(position?.time_seconds);
       if (!Number.isFinite(seconds) || seconds <= 0) return;
-      const resolved = resolveOperatorCode(String(operatorRef), operadores);
-      const key = normalizeKey(resolved || String(operatorRef));
-      if (!key) return;
-      totaisSegundosPorOperador.set(key, (totaisSegundosPorOperador.get(key) || 0) + seconds);
+      resolveOperatorAliases(String(operatorRef)).forEach((key) => {
+        totaisSegundosPorOperador.set(key, (totaisSegundosPorOperador.get(key) || 0) + seconds);
+      });
     });
   });
 
   const orderedOperatorCodes = (() => {
-    const slots = Array.isArray((resultados as any)?.operator_slots) ? [...((resultados as any).operator_slots as any[])] : [];
-    if (slots.length > 0) {
-      return slots
-        .sort((a, b) => {
-          const aPos = Number(a?.position_number);
-          const bPos = Number(b?.position_number);
-          const safeAPos = Number.isFinite(aPos) ? aPos : Number.MAX_SAFE_INTEGER;
-          const safeBPos = Number.isFinite(bPos) ? bPos : Number.MAX_SAFE_INTEGER;
-          if (safeAPos !== safeBPos) return safeAPos - safeBPos;
-          return String(a?.operator_id || "").localeCompare(String(b?.operator_id || ""));
-        })
-        .map((slot) => resolveOperatorCode(String(slot?.operator_id || slot?.operator_name || ""), operadores))
-        .filter(Boolean);
-    }
+    if (slotOrderedOperatorCodes.length > 0) return slotOrderedOperatorCodes;
 
-    if (totaisSegundosPorOperador.size > 0) {
-      return Array.from(totaisSegundosPorOperador.keys()).map((key) => {
+    if (totaisSegundosPorOperador.size > 0 || maxSegundosPorOperador.size > 0) {
+      return Array.from(new Set([
+        ...Array.from(totaisSegundosPorOperador.keys()),
+        ...Array.from(maxSegundosPorOperador.keys()),
+      ])).map((key) => {
         const fromOperadores = operadores.find((op: any) => normalizeKey(String(op?.id || "")) === key);
         return String(fromOperadores?.id || key);
       });
@@ -183,6 +309,118 @@ export function DashboardResultados({
   const distribuicaoByOperator = new Map(
     (resultados.distribuicao || []).map((dist) => [normalizeKey(resolveOperatorCode(dist.operadorId, operadores)), dist])
   );
+  const occupancyPercentByOperator = new Map<string, number>();
+  const getOperatorTimeFromRow = (row: any, operatorCode: string): number | null => {
+    const directTime = parseNumberLike(row?.operator_times?.[operatorCode]);
+    if (directTime != null) return directTime;
+
+    const normalizedKey = normalizeKey(operatorCode);
+    const normalizedMatch = Object.entries(row?.operator_times || {}).find(([candidate]) => normalizeKey(candidate) === normalizedKey);
+    if (normalizedMatch) {
+      const parsed = parseNumberLike(normalizedMatch[1]);
+      if (parsed != null) return parsed;
+    }
+
+    const allocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
+    for (const allocation of allocations) {
+      const record = allocation as Record<string, unknown>;
+      const allocationOperatorCode = String(
+        record.operator_code ??
+        record.operator_id ??
+        record.operador_id ??
+        record.operator ??
+        record.operador ??
+        record.code ??
+        ""
+      ).trim();
+      if (!allocationOperatorCode || normalizeKey(allocationOperatorCode) !== normalizedKey) continue;
+      const parsed = parseNumberLike(
+        record.time_seconds ??
+        record.tempo_segundos ??
+        record.seconds ??
+        record.time ??
+        record.time_min ??
+        record.time_minutes ??
+        record.minutes
+      );
+      if (parsed != null) return parsed;
+    }
+
+    const positionEntry = Object.entries(row?.operator_positions || {}).find(([candidate]) => normalizeKey(candidate) === normalizedKey);
+    const positionTime = parseNumberLike((positionEntry?.[1] as any)?.time_seconds);
+    if (positionTime != null) return positionTime;
+    return null;
+  };
+  const getOperatorPercentageFromRow = (row: any, operatorCode: string): number | null => {
+    const normalizedKey = normalizeKey(operatorCode);
+    const candidateKeys = new Set<string>([
+      operatorCode,
+      normalizedKey,
+    ]);
+
+    const percentageMaps = [
+      row?.occupancy_percentage,
+      row?.occupancy_percentages,
+      row?.operator_percentages,
+      row?.operator_percentage,
+      row?.operator_percents,
+      row?.operator_occupancy,
+    ];
+
+    for (const map of percentageMaps) {
+      if (!map || typeof map !== "object") continue;
+      for (const [rawKey, rawValue] of Object.entries(map as Record<string, unknown>)) {
+        const parsed = parseNumberLike(rawValue);
+        if (parsed == null) continue;
+        const normalizedRawKey = normalizeKey(rawKey);
+        if (candidateKeys.has(rawKey) || candidateKeys.has(normalizedRawKey) || normalizedRawKey === normalizedKey) {
+          return normalizePercentageValue(parsed);
+        }
+      }
+    }
+
+    const allocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
+    for (const allocation of allocations) {
+      const record = allocation as Record<string, unknown>;
+      const allocationOperatorCode = String(
+        record.operator_code ??
+        record.operator_id ??
+        record.operador_id ??
+        record.operator ??
+        record.operador ??
+        record.code ??
+        ""
+      ).trim();
+      const normalizedAllocationCode = normalizeKey(allocationOperatorCode);
+      if (!allocationOperatorCode || (!candidateKeys.has(allocationOperatorCode) && !candidateKeys.has(normalizedAllocationCode) && normalizedAllocationCode !== normalizedKey)) {
+        continue;
+      }
+      const parsed = parseNumberLike(
+        record.occupancy_percentage ??
+        record.percentage ??
+        record.percent ??
+        record.occupancy_percent ??
+        record.operator_occupancy ??
+        record.allocation_percentage ??
+        record.share
+      );
+      if (parsed != null) return normalizePercentageValue(parsed);
+    }
+
+    const seconds = getOperatorTimeFromRow(row, operatorCode);
+    const totalTimeSeconds = Math.max(0, parseNumberLike(row?.total_time_seconds) ?? 0);
+    if (seconds != null && totalTimeSeconds > 0) return (seconds / totalTimeSeconds) * 100;
+    return null;
+  };
+  orderedOperatorCodes.forEach((operatorCode) => {
+    let totalPercent = 0;
+    operationAllocations.forEach((row: any) => {
+      const rowPercent = getOperatorPercentageFromRow(row, operatorCode);
+      if (rowPercent != null) totalPercent += rowPercent;
+    });
+    occupancyPercentByOperator.set(normalizeKey(operatorCode), totalPercent);
+  });
+  const hasOccupancyFromTable = Array.from(occupancyPercentByOperator.values()).some((value) => value > 0);
   const dadosCarga = orderedOperatorCodes.map((operatorCode, index) => {
     const normalizedOperatorCode = normalizeKey(operatorCode);
     const dist = distribuicaoByOperator.get(normalizedOperatorCode);
@@ -191,14 +429,23 @@ export function DashboardResultados({
       operatorCode;
     const colaboradorLabel = getCollaboratorLabel(String(dist?.operadorId || operatorCode), codigo);
     const totalFromAllocations = totaisSegundosPorOperador.get(normalizedOperatorCode);
+    const maxFromShare = maxSegundosPorOperador.get(normalizedOperatorCode);
     const fallbackTotal = Number(dist?.cargaHoraria) * 60;
-    const totalTimeSeconds = Number.isFinite(totalFromAllocations as number)
+    const totalTimeSeconds = Number.isFinite(totalFromAllocations as number) && (totalFromAllocations as number) > 0
       ? (totalFromAllocations as number)
-      : Number.isFinite(fallbackTotal)
+      : Number.isFinite(fallbackTotal) && fallbackTotal > 0
         ? fallbackTotal
         : 0;
-    const ocupacaoExact = cycleTimeSeconds > 0
-      ? (totalTimeSeconds / cycleTimeSeconds) * 100
+    const denominatorSeconds = Number.isFinite(maxFromShare as number) && (maxFromShare as number) > 0
+      ? (maxFromShare as number)
+      : cycleTimeSeconds > 0
+        ? cycleTimeSeconds
+        : 0;
+    const ocupacaoFromTable = occupancyPercentByOperator.get(normalizedOperatorCode);
+    const ocupacaoExact = Number.isFinite(ocupacaoFromTable as number)
+      ? (ocupacaoFromTable as number)
+      : denominatorSeconds > 0
+        ? (totalTimeSeconds / denominatorSeconds) * 100
       : Number(dist?.ocupacao || 0);
 
     return {
@@ -210,7 +457,10 @@ export function DashboardResultados({
       ocupacaoDisplay: Math.round(ocupacaoExact),
       totalTimeSeconds,
     };
-  }).filter((item) => item.totalTimeSeconds > 0 || item.ocupacao > 0).sort((a, b) => {
+  }).filter((item) => {
+    if (hasOccupancyFromTable) return item.ocupacao > 0;
+    return item.totalTimeSeconds > 0 || item.ocupacao > 0;
+  }).sort((a, b) => {
     const aIdx = orderedOperatorCodes.findIndex((code) => normalizeKey(code) === a.operatorSortKey);
     const bIdx = orderedOperatorCodes.findIndex((code) => normalizeKey(code) === b.operatorSortKey);
     const safeA = aIdx >= 0 ? aIdx : Number.MAX_SAFE_INTEGER;

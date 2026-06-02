@@ -896,6 +896,77 @@ export function VisualizadorFluxo({
 
   const barrasEmpilhadasPorOperador = useMemo(() => {
     const machineColorMap = new Map<string, string>();
+    const sharePerOperatorSeconds =
+      (resultados as any)?.share_per_operator_seconds &&
+      typeof (resultados as any).share_per_operator_seconds === "object"
+        ? ((resultados as any).share_per_operator_seconds as Record<string, unknown>)
+        : null;
+    const tableDataRaw =
+      (resultados as any)?.table_data ??
+      (resultados as any)?.tableData ??
+      (resultados as any)?.operator_table ??
+      (resultados as any)?.operatorTable ??
+      (resultados as any)?.results_table ??
+      null;
+    const occupancyByOperator = new Map<string, number>();
+    const resolveOperatorAliases = (rawRef: string): string[] => {
+      const ref = String(rawRef || "").trim();
+      if (!ref) return [];
+      const aliases = new Set<string>();
+      const pushAlias = (value: string) => {
+        const normalized = normalizeKey(value);
+        if (normalized) aliases.add(normalized);
+      };
+      pushAlias(ref);
+      pushAlias(resolveOperatorCode(ref));
+      const opMatch = ref.match(/^OP\s*0*(\d+)$/i);
+      if (opMatch) {
+        const idx = Number(opMatch[1]) - 1;
+        if (idx >= 0 && idx < orderedOperatorKeys.length) {
+          pushAlias(orderedOperatorKeys[idx]);
+        }
+      }
+      return Array.from(aliases);
+    };
+    const getMappedNumericValue = (source: Record<string, unknown> | null, rawRef: string): number => {
+      if (!source) return Number.NaN;
+      const aliases = resolveOperatorAliases(rawRef);
+      for (const alias of aliases) {
+        for (const [sourceKey, sourceValue] of Object.entries(source)) {
+          if (normalizeKey(sourceKey) !== alias) continue;
+          const parsed = Number(sourceValue);
+          if (Number.isFinite(parsed)) return parsed;
+        }
+      }
+      return Number.NaN;
+    };
+    const tableRows = Array.isArray(tableDataRaw)
+      ? tableDataRaw
+      : tableDataRaw && typeof tableDataRaw === "object"
+        ? Object.entries(tableDataRaw as Record<string, unknown>).map(([key, value]) =>
+            value && typeof value === "object" && !Array.isArray(value)
+              ? { operator: key, ...(value as Record<string, unknown>) }
+              : { operator: key, occupancy: value }
+          )
+        : [];
+
+    tableRows.forEach((row: any) => {
+      const operatorRef = String(row?.operator ?? row?.operator_id ?? row?.operador ?? row?.operador_id ?? "").trim();
+      if (!operatorRef) return;
+      const rawOccupancy = Number(
+        row?.occupancy ??
+        row?.occupancy_percent ??
+        row?.operator_occupancy ??
+        row?.worker_occupancy ??
+        row?.ocupacao
+      );
+      if (!Number.isFinite(rawOccupancy)) return;
+      const normalizedOccupancy = rawOccupancy <= 1 ? rawOccupancy * 100 : rawOccupancy;
+      resolveOperatorAliases(operatorRef).forEach((alias) => {
+        occupancyByOperator.set(alias, normalizedOccupancy);
+      });
+    });
+
     let colorIdx = 0;
     const pickColor = (machine: string) => {
       if (!machineColorMap.has(machine)) {
@@ -927,11 +998,21 @@ export function VisualizadorFluxo({
       });
 
       const operadores = Array.from(perOperatorMachine.entries()).map(([operatorKey, byMachine]) => {
-        const segmentos = Array.from(byMachine.entries()).map(([maquina, segundos]) => ({
+        const normalizedOperator = normalizeKey(resolveOperatorCode(operatorKey));
+        const rawSegmentos = Array.from(byMachine.entries()).map(([maquina, segundos]) => ({
           maquina,
           segundos,
           color: pickColor(maquina),
         }));
+        const segmentSum = rawSegmentos.reduce((sum, s) => sum + s.segundos, 0);
+        const shareSeconds = getMappedNumericValue(sharePerOperatorSeconds, operatorKey);
+        const occupancyPct = occupancyByOperator.get(normalizedOperator);
+        const targetTotalSeconds =
+          Number.isFinite(shareSeconds) && Number.isFinite(occupancyPct)
+            ? shareSeconds * ((occupancyPct as number) / 100)
+            : segmentSum;
+        const scale = segmentSum > 0 && targetTotalSeconds > 0 ? targetTotalSeconds / segmentSum : 1;
+        const segmentos = rawSegmentos.map((seg) => ({ ...seg, segundos: seg.segundos * scale }));
         const totalSegundos = segmentos.reduce((sum, s) => sum + s.segundos, 0);
         return { operador: operatorKey, totalSegundos, segmentos };
       }).filter((o) => o.totalSegundos > 0);
@@ -978,6 +1059,9 @@ export function VisualizadorFluxo({
             color: pickColor(maquina),
           }));
           let totalSegundos = segmentos.reduce((sum, s) => sum + s.segundos, 0);
+          const normalizedOperator = normalizeKey(operador);
+          const shareSeconds = getMappedNumericValue(sharePerOperatorSeconds, operador);
+          const occupancyPct = occupancyByOperator.get(normalizedOperator);
 
           if (totalSegundos <= 0) {
             const cargaMin = Number(dist?.cargaHoraria);
@@ -985,6 +1069,13 @@ export function VisualizadorFluxo({
               totalSegundos = cargaMin * 60;
               segmentos = [{ maquina: "Total", segundos: totalSegundos, color: pickColor("Total") }];
             }
+          }
+
+          if (totalSegundos > 0 && Number.isFinite(shareSeconds) && Number.isFinite(occupancyPct)) {
+            const targetTotalSeconds = shareSeconds * ((occupancyPct as number) / 100);
+            const scale = targetTotalSeconds > 0 ? targetTotalSeconds / totalSegundos : 1;
+            segmentos = segmentos.map((seg) => ({ ...seg, segundos: seg.segundos * scale }));
+            totalSegundos = segmentos.reduce((sum, s) => sum + s.segundos, 0);
           }
 
           if (totalSegundos <= 0) return null;
@@ -1059,7 +1150,7 @@ export function VisualizadorFluxo({
 
     const legenda = Array.from(machineColorMap.entries()).map(([maquina, color]) => ({ maquina, color }));
     return { operadores, legenda };
-  }, [resultados, pieColors, operacoes, operadores, orderedOperatorKeys]);
+  }, [resultados, pieColors, operacoes, operadores, orderedOperatorKeys, resolveOperatorCode]);
 
   return (
     <div className="space-y-6">

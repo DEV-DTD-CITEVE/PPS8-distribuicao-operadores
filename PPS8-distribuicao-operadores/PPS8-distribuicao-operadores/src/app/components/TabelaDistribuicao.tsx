@@ -329,6 +329,9 @@ const getOperatorPercentage = (
   return null;
 };
 
+const roundToHundredths = (value: number): number =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+
 const thBase = (extra?: CSSProperties): CSSProperties => ({
   background: "#ffffff",
   color: "#374151",
@@ -483,7 +486,7 @@ function TabelaAllocacoes({
     rows.forEach((row) => {
       operatorColumns.forEach((column) => {
         const value = getOperatorTime(row, column);
-        if (value != null) totals[column.key] += value;
+        if (value != null) totals[column.key] = roundToHundredths(totals[column.key] + value);
       });
     });
 
@@ -506,11 +509,15 @@ function TabelaAllocacoes({
   const totalsByOperatorPercent = useMemo(() => {
     const percentages: Record<string, number> = {};
     operatorColumns.forEach((column) => {
-      const totalSeconds = totalsByOperator[column.key] ?? 0;
-      percentages[column.key] = cycleTimeSeconds > 0 ? (totalSeconds / cycleTimeSeconds) * 100 : 0;
+      let totalPercent = 0;
+      rows.forEach((row) => {
+        const cellPercent = getOperatorPercentage(row, column);
+        if (cellPercent != null) totalPercent = roundToHundredths(totalPercent + cellPercent);
+      });
+      percentages[column.key] = totalPercent;
     });
     return percentages;
-  }, [operatorColumns, totalsByOperator, cycleTimeSeconds]);
+  }, [operatorColumns, rows]);
 
   const formatMetric = (value: number | null | undefined): string => {
     if (value == null) return "-";
