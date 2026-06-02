@@ -1328,7 +1328,10 @@ export function VisualizadorFluxo({
                     )}
                     {requiredMachineMetrics.map((item) => (
                       <div key={`avg-${item.label}`}>
-                        {item.label}: <span className="font-semibold text-gray-900">{item.avg_time_seconds.toFixed(1)}s</span>
+                        {item.label}:{" "}
+                        <span className="font-semibold text-gray-900">{item.avg_time_seconds.toFixed(1)}s</span>
+                        {" · "}
+                        <span className="font-semibold text-gray-900">{item.machines_needed}</span> máquinas
                       </div>
                     ))}
                   </div>
