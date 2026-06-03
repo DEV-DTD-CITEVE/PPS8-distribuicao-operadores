@@ -291,19 +291,33 @@ export function DashboardResultados({
   });
 
   const orderedOperatorCodes = (() => {
-    if (slotOrderedOperatorCodes.length > 0) return slotOrderedOperatorCodes;
+    const ordered = new Map<string, string>();
+    const appendOperator = (rawCode: string) => {
+      const resolved = resolveOperatorCode(rawCode, operadores);
+      const normalized = normalizeKey(resolved || rawCode);
+      if (!normalized) return;
+      if (!ordered.has(normalized)) {
+        ordered.set(normalized, String(resolved || rawCode));
+      }
+    };
+
+    slotOrderedOperatorCodes.forEach(appendOperator);
 
     if (totaisSegundosPorOperador.size > 0 || maxSegundosPorOperador.size > 0) {
-      return Array.from(new Set([
+      Array.from(new Set([
         ...Array.from(totaisSegundosPorOperador.keys()),
         ...Array.from(maxSegundosPorOperador.keys()),
-      ])).map((key) => {
+      ])).forEach((key) => {
         const fromOperadores = operadores.find((op: any) => normalizeKey(String(op?.id || "")) === key);
-        return String(fromOperadores?.id || key);
+        appendOperator(String(fromOperadores?.id || key));
       });
     }
 
-    return resultados.distribuicao.map((dist) => resolveOperatorCode(dist.operadorId, operadores)).filter(Boolean);
+    (resultados.distribuicao || []).forEach((dist) => {
+      appendOperator(String(dist?.operadorId || ""));
+    });
+
+    return Array.from(ordered.values());
   })();
   const displayCodeByOperatorId = buildDisplayCodeMap(resultados.distribuicao || []);
   const distribuicaoByOperator = new Map(
@@ -407,18 +421,20 @@ export function DashboardResultados({
       if (parsed != null) return normalizePercentageValue(parsed);
     }
 
-    const seconds = getOperatorTimeFromRow(row, operatorCode);
-    const totalTimeSeconds = Math.max(0, parseNumberLike(row?.total_time_seconds) ?? 0);
-    if (seconds != null && totalTimeSeconds > 0) return (seconds / totalTimeSeconds) * 100;
     return null;
   };
   orderedOperatorCodes.forEach((operatorCode) => {
     let totalPercent = 0;
+    let hasPercentData = false;
     operationAllocations.forEach((row: any) => {
       const rowPercent = getOperatorPercentageFromRow(row, operatorCode);
-      if (rowPercent != null) totalPercent += rowPercent;
+      if (rowPercent == null) return;
+      hasPercentData = true;
+      totalPercent += rowPercent;
     });
-    occupancyPercentByOperator.set(normalizeKey(operatorCode), totalPercent);
+    if (hasPercentData) {
+      occupancyPercentByOperator.set(normalizeKey(operatorCode), totalPercent);
+    }
   });
   const hasOccupancyFromTable = Array.from(occupancyPercentByOperator.values()).some((value) => value > 0);
   const dadosCarga = orderedOperatorCodes.map((operatorCode, index) => {
@@ -441,9 +457,15 @@ export function DashboardResultados({
       : cycleTimeSeconds > 0
         ? cycleTimeSeconds
         : 0;
+    const ocupacaoFromDistribuicao = parseNumberLike(dist?.ocupacao);
+    const ocupacaoFromSummary = occupancyByOperator.get(normalizedOperatorCode);
     const ocupacaoFromTable = occupancyPercentByOperator.get(normalizedOperatorCode);
-    const ocupacaoExact = Number.isFinite(ocupacaoFromTable as number)
-      ? (ocupacaoFromTable as number)
+    const ocupacaoExact = Number.isFinite(ocupacaoFromDistribuicao as number)
+      ? (ocupacaoFromDistribuicao as number)
+      : Number.isFinite(ocupacaoFromTable as number)
+        ? (ocupacaoFromTable as number)
+      : Number.isFinite(ocupacaoFromSummary as number)
+        ? (ocupacaoFromSummary as number)
       : denominatorSeconds > 0
         ? (totalTimeSeconds / denominatorSeconds) * 100
       : Number(dist?.ocupacao || 0);

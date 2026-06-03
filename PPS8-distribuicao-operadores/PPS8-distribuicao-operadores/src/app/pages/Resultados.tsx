@@ -250,7 +250,11 @@ export default function Resultados() {
   };
 
   const buildResultadosFromApi = (raw: any): ResultadosBalanceamento => {
-    const operationAllocations = ensureArray(raw?.operation_allocations ?? raw?.operationAllocations);
+    const nextOperationAllocations = ensureArray(raw?.operation_allocations ?? raw?.operationAllocations);
+    const operationAllocations =
+      nextOperationAllocations.length > 0
+        ? nextOperationAllocations
+        : ensureArray(resultadosAtuais?.operation_allocations);
     const taktSeconds = parseNumberLike(raw?.takt_time_seconds ?? raw?.takt_time ?? raw?.taktTime) ?? 0;
     const cicloApi = parseNumberLike(raw?.real_cycle_time_seconds ?? raw?.cycle_time_seconds ?? raw?.cycle_time ?? raw?.tempo_ciclo_segundos) ?? 0;
     const tempoCiclo = cicloApi > 10 ? cicloApi / 60 : cicloApi;
@@ -258,13 +262,35 @@ export default function Resultados() {
     const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
 
     const distribuicaoFromApi = ensureArray(raw?.distribuicao ?? raw?.distribution);
-    const distribuicao = distribuicaoFromApi.length > 0 ? distribuicaoFromApi : buildDistribuicaoFromAllocations(operationAllocations);
+    const distribuicao =
+      distribuicaoFromApi.length > 0
+        ? distribuicaoFromApi
+        : operationAllocations.length > 0
+          ? buildDistribuicaoFromAllocations(operationAllocations)
+          : resultadosAtuais.distribuicao;
+    const machineLayout = resolveMachineLayout(raw);
 
     return {
       distribuicao: distribuicao as any,
       operation_allocations: operationAllocations as any,
-      machine_layout: resolveMachineLayout(raw),
-      machine_times_per_operator: (raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator ?? null) as any,
+      share_per_operator_seconds:
+        ((raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds) ??
+          (resultadosAtuais as any)?.share_per_operator_seconds ??
+          null) as any,
+      table_data:
+        ((raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table) ??
+          (resultadosAtuais as any)?.table_data ??
+          null) as any,
+      machine_layout: (machineLayout.length > 0 ? machineLayout : resolveMachineLayout(resultadosAtuais)) as any,
+      operator_flow: ((raw?.operator_flow ?? raw?.operatorFlow) ?? (resultadosAtuais as any)?.operator_flow ?? null) as any,
+      machine_times_per_operator:
+        ((raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator) ??
+          (resultadosAtuais as any)?.machine_times_per_operator ??
+          null) as any,
+      operator_slots:
+        ((ensureArray(raw?.operator_slots ?? raw?.operatorSlots).length > 0
+          ? ensureArray(raw?.operator_slots ?? raw?.operatorSlots)
+          : (resultadosAtuais as any)?.operator_slots) ?? []) as any,
       taktTime: taktSeconds / 60,
       tempoCiclo,
       numeroCiclosPorHora:

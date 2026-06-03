@@ -1584,7 +1584,11 @@ export default function Home() {
   }, []);
 
   const buildResultadosFromApiInline = useCallback((raw: any, currentResultados: ResultadosBalanceamento): ResultadosBalanceamento => {
-    const operationAllocations = ensureArray(raw?.operation_allocations ?? raw?.operationAllocations);
+    const nextOperationAllocations = ensureArray(raw?.operation_allocations ?? raw?.operationAllocations);
+    const operationAllocations =
+      nextOperationAllocations.length > 0
+        ? nextOperationAllocations
+        : ensureArray(currentResultados?.operation_allocations);
     const machinesUsed = raw?.machines_used && typeof raw.machines_used === "object" ? raw.machines_used : null;
     const taktSeconds = parseNumberLikeInline(raw?.takt_time_seconds ?? raw?.takt_time ?? raw?.taktTime) ?? 0;
     const cycleTimeSeconds =
@@ -1606,9 +1610,11 @@ export default function Home() {
     const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
     const distribuicaoFromApi = ensureArray(raw?.distribuicao ?? raw?.distribution);
     const distribuicao =
-      operationAllocations.length > 0
-        ? buildDistribuicaoFromAllocationsInline(operationAllocations, tempoCiclo)
-        : distribuicaoFromApi;
+      distribuicaoFromApi.length > 0
+        ? distribuicaoFromApi
+        : operationAllocations.length > 0
+          ? buildDistribuicaoFromAllocationsInline(operationAllocations, tempoCiclo)
+          : currentResultados.distribuicao;
     const numeroCiclosPorHora =
       pickKpiInline(
         raw,
@@ -1625,20 +1631,39 @@ export default function Home() {
       ) ?? distribuicao.length;
     const balanceLoss =
       pickKpiInline(raw, ["balance_loss"], ["balance_loss_pct"], { preferNested: true }) ?? Math.max(0, 100 - produtividade);
-    const operatorSlots = normalizeOperatorSlotsInline(raw?.operator_slots ?? raw?.operatorSlots);
+    const operatorSlotsFromApi = normalizeOperatorSlotsInline(raw?.operator_slots ?? raw?.operatorSlots);
+    const operatorSlots =
+      operatorSlotsFromApi.length > 0
+        ? operatorSlotsFromApi
+        : Array.isArray((currentResultados as any)?.operator_slots)
+          ? ((currentResultados as any).operator_slots as any[])
+          : [];
+    const machineLayout = resolveMachineLayoutInline(raw);
     return {
       distribuicao: distribuicao as any,
       operation_allocations: operationAllocations as any,
-      share_per_operator_seconds: (raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds ?? null) as any,
-      table_data: (raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table ?? null) as any,
-      machine_layout: resolveMachineLayoutInline(raw),
-      operator_flow: (raw?.operator_flow ?? raw?.operatorFlow ?? null) as any,
-      machine_times_per_operator: (raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator ?? null) as any,
+      share_per_operator_seconds:
+        ((raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds) ??
+          (currentResultados as any)?.share_per_operator_seconds ??
+          null) as any,
+      table_data:
+        ((raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table) ??
+          (currentResultados as any)?.table_data ??
+          null) as any,
+      machine_layout:
+        ((machineLayout.length > 0 ? machineLayout : resolveMachineLayoutInline(currentResultados)) ?? null) as any,
+      operator_flow: ((raw?.operator_flow ?? raw?.operatorFlow) ?? (currentResultados as any)?.operator_flow ?? null) as any,
+      machine_times_per_operator:
+        ((raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator) ??
+          (currentResultados as any)?.machine_times_per_operator ??
+          null) as any,
       operator_slots: operatorSlots as any,
-      kpis: (raw?.kpis ?? null) as any,
-      machines_used: (machinesUsed ?? null) as any,
-      required: ((machinesUsed?.required ?? raw?.required) ?? null) as any,
-      overall_avg_time_seconds: parseNumberLikeInline(machinesUsed?.overall_avg_time_seconds ?? raw?.overall_avg_time_seconds) ?? undefined,
+      kpis: ((raw?.kpis ?? (currentResultados as any)?.kpis) ?? null) as any,
+      machines_used: ((machinesUsed ?? (currentResultados as any)?.machines_used) ?? null) as any,
+      required: ((machinesUsed?.required ?? raw?.required ?? (currentResultados as any)?.required) ?? null) as any,
+      overall_avg_time_seconds:
+        parseNumberLikeInline(machinesUsed?.overall_avg_time_seconds ?? raw?.overall_avg_time_seconds) ??
+        currentResultados.overall_avg_time_seconds,
       taktTime: taktSeconds / 60,
       tempoCiclo,
       cycle_time_seconds: cycleTimeSeconds || undefined,

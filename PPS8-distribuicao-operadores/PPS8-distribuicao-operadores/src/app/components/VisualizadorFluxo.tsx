@@ -870,22 +870,50 @@ export function VisualizadorFluxo({
   ];
 
   const orderedOperatorKeys = useMemo(() => {
-    const slots = Array.isArray((resultados as any)?.operator_slots) ? [...((resultados as any).operator_slots as any[])] : [];
-    if (slots.length > 0) {
-      return slots
-        .sort((a, b) => {
-          const aPos = Number(a?.position_number);
-          const bPos = Number(b?.position_number);
-          const safeAPos = Number.isFinite(aPos) ? aPos : Number.MAX_SAFE_INTEGER;
-          const safeBPos = Number.isFinite(bPos) ? bPos : Number.MAX_SAFE_INTEGER;
-          if (safeAPos !== safeBPos) return safeAPos - safeBPos;
-          return String(a?.operator_id || "").localeCompare(String(b?.operator_id || ""));
-        })
-        .map((slot) => resolveOperatorCode(String(slot?.operator_id || slot?.operator_name || "").trim()))
-        .filter(Boolean);
-    }
+    const ordered = new Map<string, string>();
+    const appendOperator = (rawCode: string) => {
+      const resolved = resolveOperatorCode(String(rawCode || "").trim());
+      const normalized = normalizeKey(resolved || rawCode);
+      if (!normalized) return;
+      if (!ordered.has(normalized)) {
+        ordered.set(normalized, String(resolved || rawCode).trim());
+      }
+    };
 
-    return [...new Set(Object.values(estacoesMapeadas).map((e) => e?.operador || "").filter(Boolean))];
+    const slots = Array.isArray((resultados as any)?.operator_slots) ? [...((resultados as any).operator_slots as any[])] : [];
+    slots
+      .sort((a, b) => {
+        const aPos = Number(a?.position_number);
+        const bPos = Number(b?.position_number);
+        const safeAPos = Number.isFinite(aPos) ? aPos : Number.MAX_SAFE_INTEGER;
+        const safeBPos = Number.isFinite(bPos) ? bPos : Number.MAX_SAFE_INTEGER;
+        if (safeAPos !== safeBPos) return safeAPos - safeBPos;
+        return String(a?.operator_id || "").localeCompare(String(b?.operator_id || ""));
+      })
+      .forEach((slot) => appendOperator(String(slot?.operator_id || slot?.operator_name || "").trim()));
+
+    const operationAllocations = Array.isArray((resultados as any)?.operation_allocations)
+      ? ((resultados as any).operation_allocations as any[])
+      : [];
+    operationAllocations.forEach((row: any) => {
+      Object.keys(row?.operator_times && typeof row.operator_times === "object" ? row.operator_times : {}).forEach(appendOperator);
+      const allocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
+      allocations.forEach((alloc: any) => {
+        appendOperator(String(
+          alloc?.operator_id ?? alloc?.operator_code ?? alloc?.operador_id ?? alloc?.operator ?? alloc?.operador ?? ""
+        ).trim());
+      });
+      Object.keys(row?.operator_positions && typeof row.operator_positions === "object" ? row.operator_positions : {}).forEach(appendOperator);
+    });
+
+    Object.keys((resultados as any)?.share_per_operator_seconds && typeof (resultados as any).share_per_operator_seconds === "object"
+      ? (resultados as any).share_per_operator_seconds
+      : {}).forEach(appendOperator);
+
+    (resultados.distribuicao || []).forEach((dist: any) => appendOperator(String(dist?.operadorId ?? dist?.operator_id ?? dist?.operator ?? "")));
+    Object.values(estacoesMapeadas).forEach((entry) => appendOperator(entry?.operador || ""));
+
+    return Array.from(ordered.values());
   }, [resultados, estacoesMapeadas, operadores]);
 
   const operatorColorMap = useMemo(() => {
@@ -981,19 +1009,48 @@ export function VisualizadorFluxo({
       : [];
     if (operationAllocations.length > 0) {
       const perOperatorMachine = new Map<string, Map<string, number>>();
+      const addOperatorMachineTime = (operatorKeyRaw: unknown, machine: string, secondsRaw: unknown) => {
+        const operatorKey = String(operatorKeyRaw ?? "").trim();
+        const seconds = Number(secondsRaw);
+        if (!operatorKey || !Number.isFinite(seconds) || seconds <= 0) return;
+        if (!perOperatorMachine.has(operatorKey)) perOperatorMachine.set(operatorKey, new Map<string, number>());
+        const byMachine = perOperatorMachine.get(operatorKey)!;
+        byMachine.set(machine, (byMachine.get(machine) || 0) + seconds);
+      };
+
       operationAllocations.forEach((row: any) => {
         const machine = String(row?.machine_type || row?.machine_name || "-").trim() || "-";
+        const operatorTimes =
+          row?.operator_times && typeof row.operator_times === "object"
+            ? (row.operator_times as Record<string, unknown>)
+            : {};
+        const hasOperatorTimes = Object.keys(operatorTimes).length > 0;
+
+        if (hasOperatorTimes) {
+          Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
+            addOperatorMachineTime(operatorRef, machine, secondsRaw);
+          });
+          return;
+        }
+
         const operatorAllocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
-        operatorAllocations.forEach((alloc: any) => {
-          const operatorKey = String(
-            alloc?.operator_id ?? alloc?.operator_code ?? alloc?.operador_id ?? alloc?.operator ?? alloc?.operador ?? ""
-          ).trim();
-          if (!operatorKey) return;
-          const seconds = Number(alloc?.time_seconds);
-          if (!Number.isFinite(seconds) || seconds <= 0) return;
-          if (!perOperatorMachine.has(operatorKey)) perOperatorMachine.set(operatorKey, new Map<string, number>());
-          const byMachine = perOperatorMachine.get(operatorKey)!;
-          byMachine.set(machine, (byMachine.get(machine) || 0) + seconds);
+        if (operatorAllocations.length > 0) {
+          operatorAllocations.forEach((alloc: any) => {
+            addOperatorMachineTime(
+              alloc?.operator_id ?? alloc?.operator_code ?? alloc?.operador_id ?? alloc?.operator ?? alloc?.operador ?? "",
+              machine,
+              alloc?.time_seconds ?? alloc?.tempo_segundos ?? alloc?.seconds ?? alloc?.time
+            );
+          });
+          return;
+        }
+
+        const operatorPositions =
+          row?.operator_positions && typeof row.operator_positions === "object"
+            ? (row.operator_positions as Record<string, any>)
+            : {};
+        Object.entries(operatorPositions).forEach(([operatorRef, position]) => {
+          addOperatorMachineTime(operatorRef, machine, position?.time_seconds);
         });
       });
 
