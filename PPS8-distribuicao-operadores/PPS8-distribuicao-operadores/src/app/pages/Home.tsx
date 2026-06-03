@@ -1524,16 +1524,38 @@ export default function Home() {
 
   const buildDistribuicaoFromAllocationsInline = useCallback((operationAllocations: any[], tempoCicloMin: number): any[] => {
     const byOperator: Record<string, { operacoes: Set<string>; segundos: number; temposOperacoes: Record<string, number> }> = {};
+    const processOperatorTime = (operatorRef: unknown, opCode: string, secondsRaw: unknown) => {
+      const normalizedOperatorRef = String(operatorRef || "").trim();
+      const seconds = parseNumberLikeInline(secondsRaw) ?? 0;
+      if (!normalizedOperatorRef || seconds <= 0) return;
+      if (!byOperator[normalizedOperatorRef]) byOperator[normalizedOperatorRef] = { operacoes: new Set<string>(), segundos: 0, temposOperacoes: {} };
+      if (opCode) byOperator[normalizedOperatorRef].operacoes.add(opCode);
+      byOperator[normalizedOperatorRef].segundos += seconds;
+      if (opCode) byOperator[normalizedOperatorRef].temposOperacoes[opCode] = (byOperator[normalizedOperatorRef].temposOperacoes[opCode] || 0) + seconds / 60;
+    };
     operationAllocations.forEach((row: any) => {
       const opCode = String(row?.operation_code || row?.operation_id || "").trim();
       const operatorTimes = row?.operator_times && typeof row.operator_times === "object" ? row.operator_times : {};
-      Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
-        const seconds = parseNumberLikeInline(secondsRaw) ?? 0;
-        if (!operatorRef || seconds <= 0) return;
-        if (!byOperator[operatorRef]) byOperator[operatorRef] = { operacoes: new Set<string>(), segundos: 0, temposOperacoes: {} };
-        if (opCode) byOperator[operatorRef].operacoes.add(opCode);
-        byOperator[operatorRef].segundos += seconds;
-        if (opCode) byOperator[operatorRef].temposOperacoes[opCode] = (byOperator[operatorRef].temposOperacoes[opCode] || 0) + seconds / 60;
+      if (Object.keys(operatorTimes).length > 0) {
+        Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
+          processOperatorTime(operatorRef, opCode, secondsRaw);
+        });
+        return;
+      }
+      const operatorPositions = row?.operator_positions && typeof row.operator_positions === "object" ? row.operator_positions : {};
+      if (Object.keys(operatorPositions).length > 0) {
+        Object.entries(operatorPositions).forEach(([operatorRef, positionRaw]) => {
+          processOperatorTime(operatorRef, opCode, (positionRaw as any)?.time_seconds ?? (positionRaw as any)?.seconds);
+        });
+        return;
+      }
+      const operatorAllocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
+      operatorAllocations.forEach((allocation: any) => {
+        processOperatorTime(
+          allocation?.operator_code ?? allocation?.operator_id ?? allocation?.operador_id ?? allocation?.operator ?? allocation?.operador ?? allocation?.code,
+          opCode,
+          allocation?.time_seconds ?? allocation?.tempo_segundos ?? allocation?.seconds ?? allocation?.time
+        );
       });
     });
     return Object.entries(byOperator).map(([operadorId, dados]) => {
@@ -1610,10 +1632,10 @@ export default function Home() {
     const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
     const distribuicaoFromApi = ensureArray(raw?.distribuicao ?? raw?.distribution);
     const distribuicao =
-      distribuicaoFromApi.length > 0
-        ? distribuicaoFromApi
-        : operationAllocations.length > 0
-          ? buildDistribuicaoFromAllocationsInline(operationAllocations, tempoCiclo)
+      operationAllocations.length > 0
+        ? buildDistribuicaoFromAllocationsInline(operationAllocations, tempoCiclo)
+        : distribuicaoFromApi.length > 0
+          ? distribuicaoFromApi
           : currentResultados.distribuicao;
     const numeroCiclosPorHora =
       pickKpiInline(

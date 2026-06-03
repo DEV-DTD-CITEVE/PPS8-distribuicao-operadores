@@ -221,10 +221,17 @@ export function DashboardResultados({
   });
   const maxSegundosPorOperador = new Map<string, number>();
   const totaisSegundosPorOperador = new Map<string, number>();
+  const sharePerOperatorSecondsRaw = (resultados as any)?.share_per_operator_seconds;
+  const sharePerOperatorSecondsScalar =
+    typeof sharePerOperatorSecondsRaw === "number" && Number.isFinite(sharePerOperatorSecondsRaw) && sharePerOperatorSecondsRaw > 0
+      ? sharePerOperatorSecondsRaw
+      : typeof sharePerOperatorSecondsRaw === "string"
+        ? parseNumberLike(sharePerOperatorSecondsRaw)
+        : null;
   const sharePerOperatorSeconds =
-    (resultados as any)?.share_per_operator_seconds &&
-    typeof (resultados as any).share_per_operator_seconds === "object"
-      ? ((resultados as any).share_per_operator_seconds as Record<string, unknown>)
+    sharePerOperatorSecondsRaw &&
+    typeof sharePerOperatorSecondsRaw === "object"
+      ? (sharePerOperatorSecondsRaw as Record<string, unknown>)
       : null;
 
   if (sharePerOperatorSeconds) {
@@ -444,31 +451,39 @@ export function DashboardResultados({
       displayCodeByOperatorId.get(String(dist?.operadorId || "").trim()) ||
       operatorCode;
     const colaboradorLabel = getCollaboratorLabel(String(dist?.operadorId || operatorCode), codigo);
+    const fallbackTotal = Number(dist?.cargaHoraria) * 60;
     const totalFromAllocations = totaisSegundosPorOperador.get(normalizedOperatorCode);
     const maxFromShare = maxSegundosPorOperador.get(normalizedOperatorCode);
-    const fallbackTotal = Number(dist?.cargaHoraria) * 60;
-    const totalTimeSeconds = Number.isFinite(totalFromAllocations as number) && (totalFromAllocations as number) > 0
-      ? (totalFromAllocations as number)
-      : Number.isFinite(fallbackTotal) && fallbackTotal > 0
-        ? fallbackTotal
-        : 0;
-    const denominatorSeconds = Number.isFinite(maxFromShare as number) && (maxFromShare as number) > 0
-      ? (maxFromShare as number)
-      : cycleTimeSeconds > 0
-        ? cycleTimeSeconds
-        : 0;
+    const totalTimeSeconds = Number.isFinite(fallbackTotal) && fallbackTotal > 0
+      ? fallbackTotal
+      : Number.isFinite(totalFromAllocations as number) && (totalFromAllocations as number) > 0
+        ? (totalFromAllocations as number)
+        : Number(totalFromAllocations || 0);
+    const denominatorSeconds = Number.isFinite(sharePerOperatorSecondsScalar as number) && (sharePerOperatorSecondsScalar as number) > 0
+      ? (sharePerOperatorSecondsScalar as number)
+      : Number.isFinite(maxFromShare as number) && (maxFromShare as number) > 0
+        ? (maxFromShare as number)
+        : cycleTimeSeconds > 0
+          ? cycleTimeSeconds
+          : 0;
     const ocupacaoFromDistribuicao = parseNumberLike(dist?.ocupacao);
     const ocupacaoFromSummary = occupancyByOperator.get(normalizedOperatorCode);
     const ocupacaoFromTable = occupancyPercentByOperator.get(normalizedOperatorCode);
-    const ocupacaoExact = Number.isFinite(ocupacaoFromDistribuicao as number)
-      ? (ocupacaoFromDistribuicao as number)
-      : Number.isFinite(ocupacaoFromTable as number)
-        ? (ocupacaoFromTable as number)
-      : Number.isFinite(ocupacaoFromSummary as number)
-        ? (ocupacaoFromSummary as number)
-      : denominatorSeconds > 0
-        ? (totalTimeSeconds / denominatorSeconds) * 100
-      : Number(dist?.ocupacao || 0);
+    const ocupacaoFromTotal = denominatorSeconds > 0
+      ? (totalTimeSeconds / denominatorSeconds) * 100
+      : null;
+    const ocupacaoExact =
+      Number.isFinite(sharePerOperatorSecondsScalar as number) && Number.isFinite(ocupacaoFromTotal as number)
+        ? (ocupacaoFromTotal as number)
+        : Number.isFinite(ocupacaoFromSummary as number)
+          ? (ocupacaoFromSummary as number)
+          : Number.isFinite(ocupacaoFromDistribuicao as number)
+            ? (ocupacaoFromDistribuicao as number)
+            : Number.isFinite(ocupacaoFromTable as number)
+              ? (ocupacaoFromTable as number)
+              : Number.isFinite(ocupacaoFromTotal as number)
+                ? (ocupacaoFromTotal as number)
+                : Number(dist?.ocupacao || 0);
 
     return {
       idx: `op_${index}`,

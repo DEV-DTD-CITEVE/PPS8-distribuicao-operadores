@@ -89,6 +89,20 @@ export default function Resultados() {
     }
     return [];
   };
+  const pickKpi = (
+    raw: any,
+    topLevelKeys: string[],
+    nestedKpiKeys: string[] = topLevelKeys,
+    options?: { preferNested?: boolean }
+  ): number | null => {
+    const kpis = raw?.kpis && typeof raw.kpis === "object" ? raw.kpis : null;
+    const nested = kpis
+      ? parseNumberLike(nestedKpiKeys.map((key) => kpis?.[key]).find((value) => value != null))
+      : null;
+    const direct = parseNumberLike(topLevelKeys.map((key) => raw?.[key]).find((value) => value != null));
+    if (options?.preferNested) return nested ?? direct;
+    return direct ?? nested;
+  };
   const resolveMachineLayout = (raw: any): any[] =>
     ensureArray(
       raw?.machine_layout ??
@@ -108,28 +122,51 @@ export default function Resultados() {
   const normalizeToken = (value: unknown): string =>
     String(value ?? "").trim().toLowerCase().replace(/^0+(\d)/, "$1");
 
-  const buildDistribuicaoFromAllocations = (operationAllocations: any[]): any[] => {
+  const buildDistribuicaoFromAllocations = (operationAllocations: any[], tempoCicloMin: number): any[] => {
     const byOperator: Record<string, { operacoes: Set<string>; segundos: number; temposOperacoes: Record<string, number> }> = {};
+    const processOperatorTime = (operatorRef: unknown, opCode: string, secondsRaw: unknown) => {
+      const normalizedOperatorRef = String(operatorRef || "").trim();
+      const seconds = parseNumberLike(secondsRaw) ?? 0;
+      if (!normalizedOperatorRef || seconds <= 0) return;
+      if (!byOperator[normalizedOperatorRef]) {
+        byOperator[normalizedOperatorRef] = { operacoes: new Set<string>(), segundos: 0, temposOperacoes: {} };
+      }
+      if (opCode) byOperator[normalizedOperatorRef].operacoes.add(opCode);
+      byOperator[normalizedOperatorRef].segundos += seconds;
+      if (opCode) {
+        byOperator[normalizedOperatorRef].temposOperacoes[opCode] =
+          (byOperator[normalizedOperatorRef].temposOperacoes[opCode] || 0) + seconds / 60;
+      }
+    };
 
     operationAllocations.forEach((row: any) => {
       const opCode = String(row?.operation_code || row?.operation_id || "").trim();
       const operatorTimes = row?.operator_times && typeof row.operator_times === "object" ? row.operator_times : {};
-      Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
-        const seconds = parseNumberLike(secondsRaw) ?? 0;
-        if (!operatorRef || seconds <= 0) return;
-        if (!byOperator[operatorRef]) {
-          byOperator[operatorRef] = { operacoes: new Set<string>(), segundos: 0, temposOperacoes: {} };
-        }
-        if (opCode) byOperator[operatorRef].operacoes.add(opCode);
-        byOperator[operatorRef].segundos += seconds;
-        if (opCode) {
-          byOperator[operatorRef].temposOperacoes[opCode] =
-            (byOperator[operatorRef].temposOperacoes[opCode] || 0) + seconds / 60;
-        }
+      if (Object.keys(operatorTimes).length > 0) {
+        Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
+          processOperatorTime(operatorRef, opCode, secondsRaw);
+        });
+        return;
+      }
+
+      const operatorPositions = row?.operator_positions && typeof row.operator_positions === "object" ? row.operator_positions : {};
+      if (Object.keys(operatorPositions).length > 0) {
+        Object.entries(operatorPositions).forEach(([operatorRef, positionRaw]) => {
+          processOperatorTime(operatorRef, opCode, (positionRaw as any)?.time_seconds ?? (positionRaw as any)?.seconds);
+        });
+        return;
+      }
+
+      const operatorAllocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
+      operatorAllocations.forEach((allocation: any) => {
+        processOperatorTime(
+          allocation?.operator_code ?? allocation?.operator_id ?? allocation?.operador_id ?? allocation?.operator ?? allocation?.operador ?? allocation?.code,
+          opCode,
+          allocation?.time_seconds ?? allocation?.tempo_segundos ?? allocation?.seconds ?? allocation?.time
+        );
       });
     });
 
-    const tempoCicloMin = parseNumberLike(resultadosAtuais.tempoCiclo) ?? 0;
     return Object.entries(byOperator).map(([operadorId, dados]) => {
       const cargaHoraria = dados.segundos / 60;
       return {
@@ -256,17 +293,29 @@ export default function Resultados() {
         ? nextOperationAllocations
         : ensureArray(resultadosAtuais?.operation_allocations);
     const taktSeconds = parseNumberLike(raw?.takt_time_seconds ?? raw?.takt_time ?? raw?.taktTime) ?? 0;
-    const cicloApi = parseNumberLike(raw?.real_cycle_time_seconds ?? raw?.cycle_time_seconds ?? raw?.cycle_time ?? raw?.tempo_ciclo_segundos) ?? 0;
-    const tempoCiclo = cicloApi > 10 ? cicloApi / 60 : cicloApi;
-    const produtividadeRaw = parseNumberLike(raw?.estimated_productivity ?? raw?.productivity ?? raw?.produtividade_estimada) ?? (resultadosAtuais.produtividade ?? 0);
+    const cycleTimeSeconds =
+      pickKpi(
+        raw,
+        ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"],
+        ["cycle_time_seconds"],
+        { preferNested: true }
+      ) ?? 0;
+    const tempoCiclo = cycleTimeSeconds > 10 ? cycleTimeSeconds / 60 : cycleTimeSeconds;
+    const produtividadeRaw =
+      pickKpi(
+        raw,
+        ["estimated_productivity", "productivity", "produtividade_estimada"],
+        ["productivity_pct", "estimated_productivity"],
+        { preferNested: true }
+      ) ?? (resultadosAtuais.produtividade ?? 0);
     const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
 
     const distribuicaoFromApi = ensureArray(raw?.distribuicao ?? raw?.distribution);
     const distribuicao =
-      distribuicaoFromApi.length > 0
-        ? distribuicaoFromApi
-        : operationAllocations.length > 0
-          ? buildDistribuicaoFromAllocations(operationAllocations)
+      operationAllocations.length > 0
+        ? buildDistribuicaoFromAllocations(operationAllocations, tempoCiclo)
+        : distribuicaoFromApi.length > 0
+          ? distribuicaoFromApi
           : resultadosAtuais.distribuicao;
     const machineLayout = resolveMachineLayout(raw);
 
@@ -293,13 +342,14 @@ export default function Resultados() {
           : (resultadosAtuais as any)?.operator_slots) ?? []) as any,
       taktTime: taktSeconds / 60,
       tempoCiclo,
+      cycle_time_seconds: cycleTimeSeconds || undefined,
       numeroCiclosPorHora:
-        (parseNumberLike(raw?.production_per_hour ?? raw?.numero_ciclos_por_hora) ??
+        (pickKpi(raw, ["production_per_hour", "numero_ciclos_por_hora"], ["cycles_per_hour", "production_per_hour"], { preferNested: true }) ??
           (tempoCiclo > 0 ? 60 / tempoCiclo : resultadosAtuais.numeroCiclosPorHora)) || 0,
       produtividade,
       perdas: Math.max(0, 100 - produtividade),
       numeroOperadores:
-        (parseNumberLike(raw?.num_operators ?? raw?.numero_operadores ?? raw?.numeroOperadores) ?? distribuicao.length) || 0,
+        (pickKpi(raw, ["num_operators", "numero_operadores", "numeroOperadores"], ["num_operators"], { preferNested: true }) ?? distribuicao.length) || 0,
       ocupacaoTotal:
         (parseNumberLike(raw?.occupancy_total ?? raw?.ocupacao_total ?? raw?.total_occupancy ?? raw?.total_load) ??
           distribuicao.reduce((sum: number, d: any) => sum + ((parseNumberLike(d?.cargaHoraria) ?? 0) * 60), 0)) || 0,
