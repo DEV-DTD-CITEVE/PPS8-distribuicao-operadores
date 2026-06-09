@@ -251,13 +251,47 @@ const resolveRowOperatorRef = (row: OperationAllocationRow, column: OperatorColu
   return column.code;
 };
 
+const resolveOperatorShareSeconds = (
+  column: OperatorColumn,
+  sharePerOperatorSeconds: Record<string, unknown> | null,
+  sharePerOperatorScalar: number | null,
+  fallbackSeconds: number
+): number => {
+  if (sharePerOperatorSeconds) {
+    for (const candidate of [column.code, column.key, column.label]) {
+      const normalizedCandidate = normalizeKey(String(candidate || ""));
+      for (const [rawKey, rawValue] of Object.entries(sharePerOperatorSeconds)) {
+        if (normalizeKey(rawKey) !== normalizedCandidate) continue;
+        const parsed = parseNumberLike(rawValue);
+        if (parsed != null && parsed > 0) return parsed;
+      }
+    }
+  }
+
+  if (sharePerOperatorScalar != null && sharePerOperatorScalar > 0) {
+    return sharePerOperatorScalar;
+  }
+
+  return fallbackSeconds;
+};
+
 const normalizePercentageValue = (value: number): number =>
   value <= 1 ? value * 100 : value;
 
 const getOperatorPercentage = (
   row: OperationAllocationRow,
-  column: OperatorColumn
+  column: OperatorColumn,
+  cycleTimeSeconds?: number
 ): number | null => {
+  const seconds = getOperatorTime(row, column);
+  const denominatorSeconds = Math.max(
+    0,
+    cycleTimeSeconds ?? parseNumberLike(row.total_time_seconds) ?? 0
+  );
+  if (seconds != null && denominatorSeconds > 0) {
+    return (seconds / denominatorSeconds) * 100;
+  }
+
   const candidateKeys = new Set<string>([
     column.code,
     column.key,
@@ -320,17 +354,25 @@ const getOperatorPercentage = (
     if (parsed != null) return normalizePercentageValue(parsed);
   }
 
-  const seconds = getOperatorTime(row, column);
-  const totalTimeSeconds = Math.max(0, parseNumberLike(row.total_time_seconds) ?? 0);
-  if (seconds != null && totalTimeSeconds > 0) {
-    return (seconds / totalTimeSeconds) * 100;
-  }
-
   return null;
 };
 
 const roundToHundredths = (value: number): number =>
   Math.round((value + Number.EPSILON) * 100) / 100;
+
+const buildOccupancyPercentagesFromTimes = (
+  operatorTimes: Record<string, number>,
+  denominatorSeconds: number
+): Record<string, number> => {
+  const percentages: Record<string, number> = {};
+  if (denominatorSeconds <= 0) return percentages;
+  Object.entries(operatorTimes).forEach(([operatorCode, secondsRaw]) => {
+    const seconds = Math.max(0, parseNumberLike(secondsRaw) ?? 0);
+    if (seconds <= 0) return;
+    percentages[operatorCode] = roundToHundredths((seconds / denominatorSeconds) * 100);
+  });
+  return percentages;
+};
 
 const thBase = (extra?: CSSProperties): CSSProperties => ({
   background: "#ffffff",
@@ -498,6 +540,17 @@ function TabelaAllocacoes({
     Number((resultados as any)?.cycle_time_seconds) > 0
       ? Number((resultados as any)?.cycle_time_seconds)
       : Math.max(0, Number(resultados?.tempoCiclo || 0) * 60);
+  const sharePerOperatorSecondsRaw = (resultados as any)?.share_per_operator_seconds;
+  const sharePerOperatorSecondsScalar =
+    typeof sharePerOperatorSecondsRaw === "number" && Number.isFinite(sharePerOperatorSecondsRaw) && sharePerOperatorSecondsRaw > 0
+      ? sharePerOperatorSecondsRaw
+      : typeof sharePerOperatorSecondsRaw === "string"
+        ? parseNumberLike(sharePerOperatorSecondsRaw)
+        : null;
+  const sharePerOperatorSecondsMap =
+    sharePerOperatorSecondsRaw && typeof sharePerOperatorSecondsRaw === "object"
+      ? (sharePerOperatorSecondsRaw as Record<string, unknown>)
+      : null;
   const operatorColumnWidth = useMemo(() => {
     const count = operatorColumns.length;
     if (count >= 24) return 64;
@@ -509,15 +562,18 @@ function TabelaAllocacoes({
   const totalsByOperatorPercent = useMemo(() => {
     const percentages: Record<string, number> = {};
     operatorColumns.forEach((column) => {
-      let totalPercent = 0;
-      rows.forEach((row) => {
-        const cellPercent = getOperatorPercentage(row, column);
-        if (cellPercent != null) totalPercent = roundToHundredths(totalPercent + cellPercent);
-      });
-      percentages[column.key] = totalPercent;
+      const totalSeconds = totalsByOperator[column.key] ?? 0;
+      const percentageBaseSeconds = resolveOperatorShareSeconds(
+        column,
+        sharePerOperatorSecondsMap,
+        sharePerOperatorSecondsScalar,
+        cycleTimeSeconds
+      );
+      percentages[column.key] =
+        percentageBaseSeconds > 0 ? roundToHundredths((totalSeconds / percentageBaseSeconds) * 100) : 0;
     });
     return percentages;
-  }, [operatorColumns, rows]);
+  }, [cycleTimeSeconds, operatorColumns, sharePerOperatorSecondsMap, sharePerOperatorSecondsScalar, totalsByOperator]);
 
   const formatMetric = (value: number | null | undefined): string => {
     if (value == null) return "-";
@@ -529,9 +585,15 @@ function TabelaAllocacoes({
     const parsed = parseNumberLike(rawValue);
     const baseRow = draftRows[rowIndex];
     const rowTotalSeconds = Math.max(0, parseNumberLike(baseRow?.total_time_seconds) ?? 0);
+    const percentageBaseSeconds = resolveOperatorShareSeconds(
+      column,
+      sharePerOperatorSecondsMap,
+      sharePerOperatorSecondsScalar,
+      cycleTimeSeconds > 0 ? cycleTimeSeconds : rowTotalSeconds
+    );
     const nextSeconds = Math.max(
       0,
-      viewMode === "percentagem" ? ((parsed ?? 0) / 100) * rowTotalSeconds : parsed ?? 0
+      viewMode === "percentagem" ? ((parsed ?? 0) / 100) * percentageBaseSeconds : parsed ?? 0
     );
     const nextRows = draftRows.map((r, idx) => {
         if (idx !== rowIndex) return r;
@@ -621,6 +683,11 @@ function TabelaAllocacoes({
           };
         });
         nextRow.operator_positions = nextPositions;
+        const nextPercentages = buildOccupancyPercentagesFromTimes(
+          nextRow.operator_times || {},
+          percentageBaseSeconds
+        );
+        nextRow.occupancy_percentages = nextPercentages;
         return nextRow;
       });
     setDraftRows(nextRows);
@@ -795,9 +862,15 @@ function TabelaAllocacoes({
                     {formatExact(row.total_time_seconds)}
                   </td>
                   {operatorColumns.map((column) => {
+                    const percentageBaseSeconds = resolveOperatorShareSeconds(
+                      column,
+                      sharePerOperatorSecondsMap,
+                      sharePerOperatorSecondsScalar,
+                      cycleTimeSeconds
+                    );
                     const value =
                       viewMode === "percentagem"
-                        ? getOperatorPercentage(row, column)
+                        ? getOperatorPercentage(row, column, percentageBaseSeconds)
                         : getOperatorTime(row, column);
                     const editable = isEditing;
                     return (

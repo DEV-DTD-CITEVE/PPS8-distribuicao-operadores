@@ -1571,6 +1571,26 @@ export default function Home() {
     });
   }, []);
 
+  const buildTableDataFromDistribuicaoInline = useCallback((distribuicao: any[]) => {
+    return distribuicao.map((dist: any) => ({
+      operator: String(dist?.operadorId ?? dist?.operator_id ?? dist?.operator ?? "").trim(),
+      occupancy: parseNumberLikeInline(dist?.ocupacao) ?? 0,
+      load_minutes: parseNumberLikeInline(dist?.cargaHoraria) ?? 0,
+      cycles_per_hour: parseNumberLikeInline(dist?.ciclosPorHora) ?? 0,
+    })).filter((row: any) => row.operator);
+  }, []);
+
+  const buildSharePerOperatorSecondsInline = useCallback((distribuicao: any[], cycleTimeSeconds: number) => {
+    if (cycleTimeSeconds <= 0) return null;
+    const perOperator: Record<string, number> = {};
+    distribuicao.forEach((dist: any) => {
+      const operatorId = String(dist?.operadorId ?? dist?.operator_id ?? dist?.operator ?? "").trim();
+      if (!operatorId) return;
+      perOperator[operatorId] = cycleTimeSeconds;
+    });
+    return Object.keys(perOperator).length > 0 ? perOperator : null;
+  }, []);
+
   const normalizeOperatorSlotsInline = useCallback((rawSlots: unknown): any[] => {
     return ensureArray(rawSlots)
       .map((slot) => ({
@@ -1637,6 +1657,9 @@ export default function Home() {
         : distribuicaoFromApi.length > 0
           ? distribuicaoFromApi
           : currentResultados.distribuicao;
+    const derivedTableData = buildTableDataFromDistribuicaoInline(distribuicao);
+    const derivedSharePerOperatorSeconds = buildSharePerOperatorSecondsInline(distribuicao, cycleTimeSeconds);
+    const shouldPreferDerivedOperatorMetrics = operationAllocations.length > 0;
     const numeroCiclosPorHora =
       pickKpiInline(
         raw,
@@ -1653,6 +1676,21 @@ export default function Home() {
       ) ?? distribuicao.length;
     const balanceLoss =
       pickKpiInline(raw, ["balance_loss"], ["balance_loss_pct"], { preferNested: true }) ?? Math.max(0, 100 - produtividade);
+    const ocupacaoTotal =
+      (parseNumberLikeInline(raw?.occupancy_total ?? raw?.ocupacao_total ?? raw?.total_occupancy ?? raw?.total_load) ??
+        distribuicao.reduce((sum: number, d: any) => sum + ((parseNumberLikeInline(d?.cargaHoraria) ?? 0) * 60), 0)) || 0;
+    const derivedKpis = {
+      cycle_time_seconds: cycleTimeSeconds || undefined,
+      cycles_per_hour: numeroCiclosPorHora || 0,
+      production_per_hour: numeroCiclosPorHora || 0,
+      productivity_pct: produtividade,
+      estimated_productivity: produtividade,
+      balance_loss_pct: balanceLoss,
+      balance_loss: balanceLoss,
+      num_operators: numeroOperadores || 0,
+      occupancy_total: ocupacaoTotal,
+      total_occupancy: ocupacaoTotal,
+    };
     const operatorSlotsFromApi = normalizeOperatorSlotsInline(raw?.operator_slots ?? raw?.operatorSlots);
     const operatorSlots =
       operatorSlotsFromApi.length > 0
@@ -1665,11 +1703,21 @@ export default function Home() {
       distribuicao: distribuicao as any,
       operation_allocations: operationAllocations as any,
       share_per_operator_seconds:
-        ((raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds) ??
+        ((shouldPreferDerivedOperatorMetrics
+          ? derivedSharePerOperatorSeconds
+          : (raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds)) ??
+          (shouldPreferDerivedOperatorMetrics
+            ? (raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds)
+            : derivedSharePerOperatorSeconds) ??
           (currentResultados as any)?.share_per_operator_seconds ??
           null) as any,
       table_data:
-        ((raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table) ??
+        ((shouldPreferDerivedOperatorMetrics
+          ? derivedTableData
+          : (raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table)) ??
+          (shouldPreferDerivedOperatorMetrics
+            ? (raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table)
+            : derivedTableData) ??
           (currentResultados as any)?.table_data ??
           null) as any,
       machine_layout:
@@ -1680,7 +1728,7 @@ export default function Home() {
           (currentResultados as any)?.machine_times_per_operator ??
           null) as any,
       operator_slots: operatorSlots as any,
-      kpis: ((raw?.kpis ?? (currentResultados as any)?.kpis) ?? null) as any,
+      kpis: ({ ...derivedKpis, ...(((raw?.kpis ?? null) && typeof raw?.kpis === "object") ? raw.kpis : {}) }) as any,
       machines_used: ((machinesUsed ?? (currentResultados as any)?.machines_used) ?? null) as any,
       required: ((machinesUsed?.required ?? raw?.required ?? (currentResultados as any)?.required) ?? null) as any,
       overall_avg_time_seconds:
@@ -1696,14 +1744,35 @@ export default function Home() {
       produtividade,
       perdas: balanceLoss,
       numeroOperadores: numeroOperadores || 0,
-      ocupacaoTotal: (parseNumberLikeInline(raw?.occupancy_total ?? raw?.ocupacao_total ?? raw?.total_occupancy ?? raw?.total_load) ?? distribuicao.reduce((sum: number, d: any) => sum + ((parseNumberLikeInline(d?.cargaHoraria) ?? 0) * 60), 0)) || 0,
+      ocupacaoTotal,
     };
-  }, [buildDistribuicaoFromAllocationsInline, normalizeOperatorSlotsInline, pickKpiInline]);
+  }, [buildDistribuicaoFromAllocationsInline, buildSharePerOperatorSecondsInline, buildTableDataFromDistribuicaoInline, normalizeOperatorSlotsInline, pickKpiInline]);
+
+  const buildOccupancyPercentagesInline = useCallback((operatorTimes: Record<string, number>, totalTimeSeconds: number) => {
+    const percentages: Record<string, number> = {};
+    if (totalTimeSeconds <= 0) return percentages;
+    Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
+      const seconds = Math.max(0, parseNumberLikeInline(secondsRaw) ?? 0);
+      if (!operatorRef || seconds <= 0) return;
+      percentages[operatorRef] = Math.round((((seconds / totalTimeSeconds) * 100) + Number.EPSILON) * 100) / 100;
+    });
+    return percentages;
+  }, []);
 
   const mergeRowsIntoAdjustBodyInline = (baseBody: any, editedRows: any[]): any => {
     const clone = structuredClone(baseBody);
     const originalRows = ensureArray(clone?.operation_allocations);
     if (originalRows.length === 0) return clone;
+    const cycleTimeSecondsBase = Math.max(
+      0,
+      parseNumberLikeInline(
+        clone?.cycle_time_seconds ??
+        clone?.real_cycle_time_seconds ??
+        clone?.cycle_time ??
+        clone?.tempo_ciclo_segundos ??
+        clone?.kpis?.cycle_time_seconds
+      ) ?? 0
+    );
     const normalizeToken = (value: unknown): string => String(value ?? "").trim().toLowerCase().replace(/^0+(\d)/, "$1");
     const editedByKey = new Map<string, any>();
     const editedBySeq = new Map<string, any[]>();
@@ -1738,13 +1807,44 @@ export default function Home() {
         0,
         (parseNumberLikeInline(edited?.total_time_seconds) ?? parseNumberLikeInline(row?.total_time_seconds) ?? fromOperatorTimes) as number
       );
+      const occupancyPercentages = buildOccupancyPercentagesInline(
+        nextRow.operator_times || {},
+        cycleTimeSecondsBase > 0 ? cycleTimeSecondsBase : totalTimeSeconds
+      );
       nextRow.total_time_seconds = totalTimeSeconds;
       nextRow.allocated_time_seconds = Math.max(0, (parseNumberLikeInline(edited?.allocated_time_seconds) ?? fromOperatorTimes) as number);
       nextRow.remaining_time_seconds = Math.max(0, totalTimeSeconds - (parseNumberLikeInline(nextRow.allocated_time_seconds) ?? 0));
+      nextRow.occupancy_percentages = occupancyPercentages;
       if (Array.isArray(edited?.operator_allocations)) {
-        nextRow.operator_allocations = edited.operator_allocations.map((item: any) => ({ ...(item || {}), time_seconds: Math.max(0, parseNumberLikeInline(item?.time_seconds) ?? 0) }));
+        nextRow.operator_allocations = edited.operator_allocations.map((item: any) => {
+          const nextItem = { ...(item || {}), time_seconds: Math.max(0, parseNumberLikeInline(item?.time_seconds) ?? 0) } as any;
+          const operatorRef = String(
+            nextItem.operator_code ??
+            nextItem.operator_id ??
+            nextItem.operador_id ??
+            nextItem.operator ??
+            nextItem.operador ??
+            nextItem.code ??
+            ""
+          ).trim();
+          if (operatorRef) {
+            const percent = occupancyPercentages[operatorRef];
+            if (percent != null) {
+              nextItem.occupancy_percentage = percent;
+              nextItem.percentage = percent;
+              nextItem.percent = percent;
+            }
+          }
+          return nextItem;
+        });
       } else if (nextRow?.operator_times) {
-        nextRow.operator_allocations = Object.entries(nextRow.operator_times).map(([code, seconds]) => ({ operator_code: code, time_seconds: Math.max(0, parseNumberLikeInline(seconds) ?? 0) }));
+        nextRow.operator_allocations = Object.entries(nextRow.operator_times).map(([code, seconds]) => ({
+          operator_code: code,
+          time_seconds: Math.max(0, parseNumberLikeInline(seconds) ?? 0),
+          occupancy_percentage: occupancyPercentages[code] ?? 0,
+          percentage: occupancyPercentages[code] ?? 0,
+          percent: occupancyPercentages[code] ?? 0,
+        }));
       }
       return nextRow;
     });
