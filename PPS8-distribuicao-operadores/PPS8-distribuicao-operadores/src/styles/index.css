@@ -1,3 +1,23 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+summary,
+[data-slot="select-trigger"]:not([data-disabled]),
+[data-slot="select-item"]:not([data-disabled]),
+[data-slot="switch"],
+[data-slot="checkbox"],
+[data-slot="radio-group-item"],
+[data-slot="tabs-trigger"],
+[data-slot="accordion-trigger"],
+[data-slot="collapsible-trigger"],
+[data-slot="dropdown-menu-trigger"],
+[data-slot="dialog-trigger"],
+[data-slot="popover-trigger"],
+[data-slot="sheet-trigger"],
+[data-slot="drawer-trigger"] {
+  cursor: pointer;
+}

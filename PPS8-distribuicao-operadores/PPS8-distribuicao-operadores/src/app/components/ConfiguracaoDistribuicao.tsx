@@ -13,6 +13,16 @@ interface ConfiguracaoDistribuicaoProps {
   numeroOperadoresDisponiveis: number;
   operacoes: any[];
   onCalcularOperadoresNecessarios?: (quantidade: number) => void;
+  horasTurno: number;
+  produtividadeEstimada: number;
+  quantidadeObjetivoInput: string;
+  numeroOperadoresInput: string;
+  usarAllocateModo1Api: boolean;
+  totalOperadoresLinha: number;
+  onHorasTurnoChange: (value: number) => void;
+  onProdutividadeEstimadaChange: (value: number) => void;
+  onQuantidadeObjetivoInputChange: (value: string) => void;
+  onNumeroOperadoresInputChange: (value: string) => void;
 }
 
 export function ConfiguracaoDistribuicaoComponent({
@@ -21,6 +31,16 @@ export function ConfiguracaoDistribuicaoComponent({
   numeroOperadoresDisponiveis,
   operacoes,
   onCalcularOperadoresNecessarios,
+  horasTurno,
+  produtividadeEstimada,
+  quantidadeObjetivoInput,
+  numeroOperadoresInput,
+  usarAllocateModo1Api,
+  totalOperadoresLinha,
+  onHorasTurnoChange,
+  onProdutividadeEstimadaChange,
+  onQuantidadeObjetivoInputChange,
+  onNumeroOperadoresInputChange,
 }: ConfiguracaoDistribuicaoProps) {
   const [naoDividirMaiorInput, setNaoDividirMaiorInput] = useState(String(config.naoDividirMaiorQue));
   const [naoDividirMenorInput, setNaoDividirMenorInput] = useState(String(config.naoDividirMenorQue));
@@ -150,7 +170,7 @@ export function ConfiguracaoDistribuicaoComponent({
               Parametros Adicionais
             </Label>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3">
               <div className="p-4 border border-gray-200 rounded-sm">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1">
@@ -170,8 +190,13 @@ export function ConfiguracaoDistribuicaoComponent({
                 </div>
               </div>
 
-              <div className="p-4 border border-gray-200 rounded-sm space-y-2">
-                <Label className="text-xs font-medium text-gray-700">Carga Maxima por Operador</Label>
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                <div>
+                  <Label className="font-medium text-gray-900 text-sm">Carga Maxima por Operador</Label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Limite percentual considerado para a carga individual.
+                  </p>
+                </div>
                 <Input
                   type="number"
                   min={50}
@@ -184,11 +209,14 @@ export function ConfiguracaoDistribuicaoComponent({
                   className="rounded-sm text-sm font-mono"
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-gray-200 rounded-sm">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-gray-700">Nao Dividir Operacoes Maiores Que </Label>
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                <div>
+                  <Label className="font-medium text-gray-900 text-sm">Nao Dividir Operacoes Maiores Que</Label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Mantem operacoes extensas intactas acima deste limiar.
+                  </p>
+                </div>
                 <Input
                   type="number"
                   min={1.01}
@@ -207,8 +235,13 @@ export function ConfiguracaoDistribuicaoComponent({
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-gray-700">Nao Dividir Operacoes Menores Que </Label>
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                <div>
+                  <Label className="font-medium text-gray-900 text-sm">Nao Dividir Operacoes Menores Que</Label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Evita subdivisoes para operacoes curtas abaixo deste valor.
+                  </p>
+                </div>
                 <Input
                   type="number"
                   min={0}
@@ -226,6 +259,173 @@ export function ConfiguracaoDistribuicaoComponent({
                   className="rounded-sm text-sm font-mono"
                 />
               </div>
+
+              {config.possibilidade === 1 && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Horas do Turno</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Define a duracao do turno usada no calculo automatico.
+                      </p>
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={24}
+                      step={0.5}
+                      value={horasTurno}
+                      onChange={(e) => {
+                        const next = e.currentTarget.valueAsNumber;
+                        if (!Number.isFinite(next)) return;
+                        onHorasTurnoChange(next);
+                      }}
+                      className="rounded-sm text-sm font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Produtividade Estimada (%)</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Percentagem esperada de produtividade para o turno.
+                      </p>
+                    </div>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={produtividadeEstimada}
+                      onChange={(e) => {
+                        const next = e.currentTarget.valueAsNumber;
+                        if (!Number.isFinite(next)) return;
+                        onProdutividadeEstimadaChange(next);
+                      }}
+                      className="rounded-sm text-sm font-mono"
+                    />
+                  </div>
+
+                  {!usarAllocateModo1Api && (
+                    <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-center p-4 border border-gray-200 rounded-sm bg-gray-50">
+                      <div>
+                        <Label className="font-medium text-gray-900 text-sm">Numero de Operadores</Label>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Total actualmente considerado para a linha.
+                        </p>
+                      </div>
+                      <div className="rounded-sm border border-gray-300 bg-white px-3 py-2 text-right text-sm font-mono font-semibold text-gray-900">
+                        {numeroOperadoresDisponiveis}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {config.possibilidade === 2 && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Objetivo (pecas/dia)</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Meta diaria usada para calcular os operadores necessarios.
+                      </p>
+                    </div>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={quantidadeObjetivoInput}
+                      onChange={(e) => {
+                        const raw = e.currentTarget.value.replace(/[^\d]/g, "");
+                        onQuantidadeObjetivoInputChange(raw);
+                      }}
+                      placeholder="Ex: 500"
+                      className="rounded-sm text-sm font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Horas do Turno</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Janela de producao usada para atingir o objetivo.
+                      </p>
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={24}
+                      step={0.5}
+                      value={horasTurno}
+                      onChange={(e) => {
+                        const next = e.currentTarget.valueAsNumber;
+                        if (!Number.isFinite(next)) return;
+                        onHorasTurnoChange(next);
+                      }}
+                      className="rounded-sm text-sm font-mono"
+                    />
+                  </div>
+                </>
+              )}
+
+              {config.possibilidade === 3 && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Numero de Operadores</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Quantidade fixa de operadores a distribuir na linha.
+                      </p>
+                    </div>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={numeroOperadoresInput}
+                      onChange={(e) => {
+                        const raw = e.currentTarget.value.replace(/[^\d]/g, "");
+                        onNumeroOperadoresInputChange(raw);
+                      }}
+                      className="rounded-sm text-sm font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-center p-4 border border-gray-200 rounded-sm bg-gray-50">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Disponiveis na Linha</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Numero total de operadores carregados para esta unidade.
+                      </p>
+                    </div>
+                    <div className="rounded-sm border border-gray-300 bg-white px-3 py-2 text-right text-sm font-mono font-semibold text-gray-900">
+                      {totalOperadoresLinha}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Horas do Turno</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Duracao do turno usada para avaliar a carga resultante.
+                      </p>
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={24}
+                      step={0.5}
+                      value={horasTurno}
+                      onChange={(e) => {
+                        const next = e.currentTarget.valueAsNumber;
+                        if (!Number.isFinite(next)) return;
+                        onHorasTurnoChange(next);
+                      }}
+                      className="rounded-sm text-sm font-mono"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

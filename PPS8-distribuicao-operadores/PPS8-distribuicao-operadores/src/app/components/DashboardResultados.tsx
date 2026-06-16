@@ -1,6 +1,8 @@
 ﻿import { ResultadosBalanceamento, ConfiguracaoDistribuicao, DistribuicaoCarga } from "../types";
 import { TabelaDistribuicao } from "./TabelaDistribuicao";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import svgPaths from "../../imports/Card-2/svg-8qif09w5n2";
+import { useState } from "react";
 
 interface DashboardResultadosProps {
   resultados: ResultadosBalanceamento;
@@ -69,21 +71,17 @@ function resolveOperatorCode(operadorId: string, operadores: any[]): string {
   return shortFromRaw || operadorId;
 }
 
-function buildDisplayCodeMap(distribuicao: DistribuicaoCarga[]): Map<string, string> {
-  const map = new Map<string, string>();
-  distribuicao.forEach((dist) => {
-    const rawId = String(dist?.operadorId || "").trim();
-    if (!rawId || map.has(rawId)) return;
-    map.set(rawId, `OP${map.size + 1}`);
-  });
-  return map;
-}
-
 function getBatteryColor(ocupacao: number): string {
-  if (ocupacao > 100) return "#DC2626";
+  if (ocupacao > 100.05) return "#DC2626";
   if (ocupacao >= 90) return "#10B981";
   if (ocupacao >= 70) return "#FBBF24";
   return "#FBBF24";
+}
+
+function normalizeOccupancyForDisplay(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (Math.abs(value - 100) < 0.05) return 100;
+  return value;
 }
 
 function parseNumberLike(value: unknown): number | null {
@@ -130,7 +128,7 @@ function generateFillPath(height: number): string {
   return `M37.6364 0H1.63636C0.732625 0 0 0.732625 0 1.63636V${(h - 1.63636).toFixed(5)}C0 ${(h - 0.732625).toFixed(5)} 0.732625 ${h.toFixed(5)} 1.63636 ${h.toFixed(5)}H37.6364C38.5401 ${h.toFixed(5)} 39.2727 ${(h - 0.732625).toFixed(5)} 39.2727 ${(h - 1.63636).toFixed(5)}V1.63636C39.2727 0.732625 38.5401 0 37.6364 0Z`;
 }
 
-const BATTERY_TOTAL_HEIGHT = 174.545;
+const BATTERY_TOTAL_HEIGHT = 198;
 const BATTERY_START_MT = 6.55;
 
 export function DashboardResultados({
@@ -148,6 +146,11 @@ export function DashboardResultados({
   showOccupacaoCard = true,
   showTabela = true,
 }: DashboardResultadosProps) {
+  const [operadorDetalheAberto, setOperadorDetalheAberto] = useState<{
+    codigo: string;
+    colaboradorLabel: string;
+    operacoes: string[];
+  } | null>(null);
   const cycleTimeSeconds =
     Number((resultados as any)?.cycle_time_seconds) > 0
       ? Number((resultados as any)?.cycle_time_seconds)
@@ -326,7 +329,9 @@ export function DashboardResultados({
 
     return Array.from(ordered.values());
   })();
-  const displayCodeByOperatorId = buildDisplayCodeMap(resultados.distribuicao || []);
+  const operacaoById = new Map(
+    (operacoes || []).map((operacao: any) => [String(operacao?.id || "").trim(), operacao])
+  );
   const distribuicaoByOperator = new Map(
     (resultados.distribuicao || []).map((dist) => [normalizeKey(resolveOperatorCode(dist.operadorId, operadores)), dist])
   );
@@ -443,22 +448,25 @@ export function DashboardResultados({
       occupancyPercentByOperator.set(normalizeKey(operatorCode), totalPercent);
     }
   });
-  const hasOccupancyFromTable = Array.from(occupancyPercentByOperator.values()).some((value) => value > 0);
+  const hasOccupancyFromTable = Array.from(occupancyByOperator.values()).some((value) => value > 0);
   const dadosCarga = orderedOperatorCodes.map((operatorCode, index) => {
     const normalizedOperatorCode = normalizeKey(operatorCode);
     const dist = distribuicaoByOperator.get(normalizedOperatorCode);
-    const codigo =
-      displayCodeByOperatorId.get(String(dist?.operadorId || "").trim()) ||
-      operatorCode;
+    const codigo = resolveOperatorCode(String(dist?.operadorId || operatorCode), operadores) || operatorCode;
     const colaboradorLabel = getCollaboratorLabel(String(dist?.operadorId || operatorCode), codigo);
+    const operacoesAtribuidas = Array.isArray(dist?.operacoes)
+      ? dist.operacoes
+          .map((operationId) => {
+            const rawId = String(operationId || "").trim();
+            if (!rawId) return null;
+            const operacao = operacaoById.get(rawId);
+            return String(operacao?.id || operacao?.sequencia || rawId);
+          })
+          .filter((value): value is string => Boolean(value))
+      : [];
     const fallbackTotal = Number(dist?.cargaHoraria) * 60;
     const totalFromAllocations = totaisSegundosPorOperador.get(normalizedOperatorCode);
     const maxFromShare = maxSegundosPorOperador.get(normalizedOperatorCode);
-    const totalTimeSeconds = Number.isFinite(fallbackTotal) && fallbackTotal > 0
-      ? fallbackTotal
-      : Number.isFinite(totalFromAllocations as number) && (totalFromAllocations as number) > 0
-        ? (totalFromAllocations as number)
-        : Number(totalFromAllocations || 0);
     const denominatorSeconds = Number.isFinite(sharePerOperatorSecondsScalar as number) && (sharePerOperatorSecondsScalar as number) > 0
       ? (sharePerOperatorSecondsScalar as number)
       : Number.isFinite(maxFromShare as number) && (maxFromShare as number) > 0
@@ -467,29 +475,42 @@ export function DashboardResultados({
           ? cycleTimeSeconds
           : 0;
     const ocupacaoFromDistribuicao = parseNumberLike(dist?.ocupacao);
-    const ocupacaoFromSummary = occupancyByOperator.get(normalizedOperatorCode);
-    const ocupacaoFromTable = occupancyPercentByOperator.get(normalizedOperatorCode);
+    const ocupacaoFromTableData = occupancyByOperator.get(normalizedOperatorCode);
+    const ocupacaoFromAllocations = occupancyPercentByOperator.get(normalizedOperatorCode);
+    const totalTimeFromFallback = Number.isFinite(fallbackTotal) && fallbackTotal > 0
+      ? fallbackTotal
+      : Number.isFinite(totalFromAllocations as number) && (totalFromAllocations as number) > 0
+        ? (totalFromAllocations as number)
+        : Number(totalFromAllocations || 0);
+    const ocupacaoAuthoritative =
+      Number.isFinite(ocupacaoFromTableData as number)
+        ? (ocupacaoFromTableData as number)
+        : Number.isFinite(ocupacaoFromAllocations as number)
+          ? (ocupacaoFromAllocations as number)
+          : Number.isFinite(ocupacaoFromDistribuicao as number)
+            ? (ocupacaoFromDistribuicao as number)
+            : null;
+    const totalTimeSeconds =
+      Number.isFinite(ocupacaoAuthoritative as number) && denominatorSeconds > 0
+        ? ((ocupacaoAuthoritative as number) / 100) * denominatorSeconds
+        : totalTimeFromFallback;
     const ocupacaoFromTotal = denominatorSeconds > 0
       ? (totalTimeSeconds / denominatorSeconds) * 100
       : null;
-    const ocupacaoExact =
-      Number.isFinite(sharePerOperatorSecondsScalar as number) && Number.isFinite(ocupacaoFromTotal as number)
-        ? (ocupacaoFromTotal as number)
-        : Number.isFinite(ocupacaoFromSummary as number)
-          ? (ocupacaoFromSummary as number)
-          : Number.isFinite(ocupacaoFromDistribuicao as number)
-            ? (ocupacaoFromDistribuicao as number)
-            : Number.isFinite(ocupacaoFromTable as number)
-              ? (ocupacaoFromTable as number)
-              : Number.isFinite(ocupacaoFromTotal as number)
-                ? (ocupacaoFromTotal as number)
-                : Number(dist?.ocupacao || 0);
+    const ocupacaoExactRaw =
+      Number.isFinite(ocupacaoAuthoritative as number)
+        ? (ocupacaoAuthoritative as number)
+        : Number.isFinite(ocupacaoFromTotal as number)
+          ? (ocupacaoFromTotal as number)
+          : Number(dist?.ocupacao || 0);
+    const ocupacaoExact = normalizeOccupancyForDisplay(ocupacaoExactRaw);
 
     return {
       idx: `op_${index}`,
       codigo,
       colaboradorLabel,
       operatorSortKey: normalizedOperatorCode,
+      operacoesAtribuidas,
       ocupacao: ocupacaoExact,
       ocupacaoDisplay: Math.round(ocupacaoExact),
       totalTimeSeconds,
@@ -510,7 +531,7 @@ export function DashboardResultados({
   return (
     <div className="flex flex-col gap-4 items-start w-full">
       {showOccupacaoCard && (
-      <div className="bg-white content-stretch flex flex-col gap-[41px] items-center pb-[24px] pt-px px-px relative rounded-[6px] w-full min-w-0">
+        <div className="bg-white content-stretch flex flex-col gap-7 items-center pb-[24px] pt-px px-px relative rounded-[6px] w-full min-w-0">
         <div aria-hidden="true" className="absolute border border-[#e5e7eb] border-solid inset-0 pointer-events-none rounded-[6px] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_0px_rgba(0,0,0,0.1)]" />
 
         <div className="relative shrink-0 w-full">
@@ -530,23 +551,47 @@ export function DashboardResultados({
         </div>
 
         <div className="relative shrink-0 w-full overflow-x-auto">
-          <div className="content-stretch flex gap-[12px] items-start justify-center px-[24px] min-w-full w-max relative">
+          <div className="content-stretch flex gap-2 items-start justify-center px-4 md:px-5 min-w-full w-full relative">
             {dadosCarga.map((d) => {
-              const fillHeight = (Math.min(d.ocupacao, 100) / 100) * BATTERY_TOTAL_HEIGHT;
+              const cappedOccupancy = Math.min(d.ocupacao, 100);
+              const overflowOccupancy = Math.max(0, d.ocupacao - 100);
+              const fillHeight = (cappedOccupancy / 100) * BATTERY_TOTAL_HEIGHT;
               const fillMT = BATTERY_START_MT + (BATTERY_TOTAL_HEIGHT - fillHeight);
+              const overflowHeight = overflowOccupancy > 0 ? (overflowOccupancy / 100) * BATTERY_TOTAL_HEIGHT : 0;
+              const overflowVisualHeight = overflowHeight > 0 ? Math.min(overflowHeight, 44) : 0;
               const color = getBatteryColor(d.ocupacao);
               const fillPath = generateFillPath(fillHeight);
+              const maxVisibleOperations = 8;
+              const shouldCollapseOperations = d.operacoesAtribuidas.length > maxVisibleOperations;
+              const operationLabels = shouldCollapseOperations
+                ? d.operacoesAtribuidas.slice(0, maxVisibleOperations - 1)
+                : d.operacoesAtribuidas;
+              const batteryInnerTop = 18;
+              const batteryInnerBottom = 176;
+              const batteryInnerHeight = batteryInnerBottom - batteryInnerTop;
+              const segmentHeight = operationLabels.length > 0 ? batteryInnerHeight / operationLabels.length : 0;
+              const operationSegments = operationLabels.map((label, idx) => ({
+                label,
+                top: batteryInnerBottom - segmentHeight * (idx + 1),
+                height: segmentHeight,
+              }));
+              const separatorTops =
+                operationLabels.length <= 1
+                  ? []
+                  : operationLabels.slice(0, -1).map((_, idx) => {
+                      return batteryInnerBottom - segmentHeight * (idx + 1);
+                    });
 
               return (
-                <div key={d.idx} className="content-stretch flex flex-col gap-px items-center relative shrink-0 w-[76px]">
+                <div key={d.idx} className="content-stretch flex flex-col gap-1 items-center relative shrink-0 w-[96px] md:w-[102px]">
                   <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-                    <div className="col-1 h-[6.545px] ml-[13.09px] mt-0 relative row-1 w-[17.455px]">
+                    <div className="col-1 h-[7px] ml-[18px] mt-0 relative row-1 w-[22px]">
                       <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 17.4545 6.54545">
                         <path d={svgPaths.p2631fa00} fill="#9CA3AF" />
                       </svg>
                     </div>
 
-                  <div className="col-1 h-[174.545px] ml-0 mt-[6.55px] relative row-1 w-[43.636px]">
+                  <div className="col-1 h-[198px] ml-0 mt-[6.55px] relative row-1 w-[58px]">
                     <div className="absolute inset-[-0.47%_-1.87%_-0.47%_-1.88%]">
                       <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 45.2727 176.182">
                         <path d={svgPaths.p3d6b6400} fill="#F9FAFB" stroke="#D1D5DB" strokeWidth="1.63636" />
@@ -556,7 +601,7 @@ export function DashboardResultados({
 
                   {fillHeight > 2 && (
                     <div
-                      className="col-1 ml-[2.18px] relative row-1 w-[39.273px]"
+                      className="col-1 ml-[3px] relative row-1 w-[52px]"
                       style={{ height: `${fillHeight}px`, marginTop: `${fillMT}px` }}
                     >
                       <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox={`0 0 39.2727 ${fillHeight}`}>
@@ -565,8 +610,19 @@ export function DashboardResultados({
                     </div>
                   )}
 
-                  {[144.73, 108.36, 72, 35.64].map((mt, idx) => (
-                    <div key={idx} className="col-1 h-0 ml-[3.27px] relative row-1 w-[37.091px]" style={{ marginTop: `${mt}px` }}>
+                  {overflowVisualHeight > 0 && (
+                    <div
+                      className="col-1 ml-[3px] relative row-1 w-[52px] overflow-hidden rounded-t-sm border border-red-300 bg-red-500/85"
+                      style={{
+                        height: `${overflowVisualHeight}px`,
+                        marginTop: `${BATTERY_START_MT - overflowVisualHeight}px`,
+                      }}
+                      title={`${d.ocupacao.toFixed(1)}%`}
+                    />
+                  )}
+
+                  {separatorTops.map((mt, idx) => (
+                    <div key={idx} className="col-1 h-0 ml-[5px] relative row-1 w-[48px]" style={{ marginTop: `${mt}px` }}>
                       <div className="absolute inset-[-0.27px_0]">
                         <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 37.0909 0.545455">
                           <path d="M0 0.272727H37.0909" stroke="#E5E7EB" strokeDasharray="2.18 2.18" strokeWidth="0.545455" />
@@ -575,27 +631,48 @@ export function DashboardResultados({
                     </div>
                   ))}
 
-                  {["OP1", "OP2", "OP3", "OP4", "OP5"].map((op, i) => {
-                    const tops = [156.05, 120.05, 87.14, 50.05, 14.05];
-                    return (
-                      <p key={op} className="col-1 font-bold leading-[normal] not-italic relative row-1 text-[#dddbdb] text-[11.5px] text-center whitespace-nowrap" style={{ marginLeft: "9.91px", marginTop: `${tops[i]}px` }}>
-                        {op}
+                  {operationSegments.map((segment, i) => (
+                    <div
+                      key={`${d.idx}-${segment.label}-${i}`}
+                      className="col-1 relative row-1 ml-[5px] w-[48px] flex items-center justify-center"
+                      style={{ marginTop: `${segment.top}px`, height: `${segment.height}px` }}
+                    >
+                      <p className="font-bold leading-none not-italic text-[#f2efef] text-[12px] text-center whitespace-nowrap">
+                        {segment.label}
                       </p>
-                    );
-                  })}
+                    </div>
+                  ))}
+                  {shouldCollapseOperations && (
+                    <button
+                      type="button"
+                      className="col-1 relative row-1 ml-[9px] mt-[8px] rounded-sm bg-white/85 px-1.5 py-[2px] text-[10px] font-semibold text-blue-600 shadow-sm hover:bg-white"
+                      onClick={() =>
+                        setOperadorDetalheAberto({
+                          codigo: d.codigo,
+                          colaboradorLabel: d.colaboradorLabel,
+                          operacoes: d.operacoesAtribuidas,
+                        })
+                      }
+                    >
+                      ver mais
+                    </button>
+                  )}
                 </div>
 
                   <div className="relative shrink-0 w-full">
                     <div className="flex flex-col items-center justify-center size-full">
                       <div className="content-stretch flex flex-col gap-[8px] items-center justify-center p-[2px] relative w-full">
-                        <p title={d.codigo} className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[11px] text-center whitespace-nowrap cursor-help">
+                        <p title={d.codigo} className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[12px] text-center whitespace-nowrap cursor-help">
                           {d.colaboradorLabel}
                         </p>
-                        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[16px] w-[78px]">
-                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[11px] text-right whitespace-nowrap pr-[4px]">{d.totalTimeSeconds.toFixed(1)}s</p>
-                          <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[11px] text-center whitespace-nowrap">|</p>
-                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[11px] text-left whitespace-nowrap pl-[4px]">{d.ocupacaoDisplay}%</p>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[18px] w-[102px]">
+                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[12px] text-right whitespace-nowrap pr-[4px]">{d.totalTimeSeconds.toFixed(1)}s</p>
+                          <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[12px] text-center whitespace-nowrap">|</p>
+                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[12px] text-left whitespace-nowrap pl-[4px]">{d.ocupacaoDisplay}%</p>
                         </div>
+                        <p className="text-[11px] font-medium text-gray-400 text-center whitespace-nowrap">
+                          {d.operacoesAtribuidas.length} {d.operacoesAtribuidas.length === 1 ? "operação" : "operações"}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -623,6 +700,32 @@ export function DashboardResultados({
         </div>
       </div>
       )}
+      <Dialog open={Boolean(operadorDetalheAberto)} onOpenChange={(open) => { if (!open) setOperadorDetalheAberto(null); }}>
+        <DialogContent className="max-w-md rounded-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {operadorDetalheAberto?.colaboradorLabel || "Operador"} · {operadorDetalheAberto?.codigo || ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500">
+              {operadorDetalheAberto?.operacoes.length || 0} operações atribuídas
+            </p>
+            <div className="max-h-80 overflow-y-auto rounded-sm border border-gray-200 bg-gray-50 p-3">
+              <div className="flex flex-wrap gap-2">
+                {(operadorDetalheAberto?.operacoes || []).map((operacao, index) => (
+                  <span
+                    key={`${operacao}-${index}`}
+                    className="rounded-sm border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700"
+                  >
+                    {operacao}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {showTabela && (
       <div className="w-full min-w-0">

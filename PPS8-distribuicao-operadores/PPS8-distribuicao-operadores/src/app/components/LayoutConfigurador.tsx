@@ -37,9 +37,10 @@ interface LayoutConfiguradorProps {
   onLayoutChange?: (config: LayoutConfig) => void;
   agruparPorMaquina?: boolean;
   value?: LayoutConfig;
+  hideTipoLayout?: boolean;
 }
 
-export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquina = false, value }: LayoutConfiguradorProps) {
+export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquina = false, value, hideTipoLayout = false }: LayoutConfiguradorProps) {
   const mostrarRestricoes = false;
   const [tipoLayout, setTipoLayout] = useState<"linha" | "espinha">(value?.tipoLayout || "linha");
   const [postosPorLado, setPostosPorLado] = useState(value?.postosPorLado ?? 8);
@@ -111,55 +112,56 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
           </CardTitle>
         </CardHeader>
         <CardContent className="p-3">
-          <div className="grid grid-cols-[auto_1fr_1fr] gap-3">
-            {/* Tipo de Layout */}
-            <div>
-              <Label className="text-[10px] font-semibold text-gray-700 mb-1.5 block">
-                <Layout className="w-3 h-3 inline mr-1" />
-                Layout
-              </Label>
-              <div className="flex flex-col gap-1.5 w-[72px]">
-                <button
-                  onClick={() => {
-                    setTipoLayout("linha");
-                    setPostosPorLado(8);
-                  }}
-                  className={`p-1.5 border-2 rounded-sm transition-all ${
-                    tipoLayout === "linha"
-                      ? "border-blue-700 bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300"
-                  }`}
-                >
-                  <div className="flex flex-col items-center gap-1">
-                    <Grid3x3 className={`w-3.5 h-3.5 ${tipoLayout === "linha" ? "text-blue-700" : "text-gray-400"}`} />
-                    <span className={`text-[9px] font-medium ${tipoLayout === "linha" ? "text-blue-700" : "text-gray-600"}`}>
-                      Linha
-                    </span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => {
-                    setTipoLayout("espinha");
-                    setPostosPorLado(16);
-                  }}
-                  className={`p-1.5 border-2 rounded-sm transition-all ${
-                    tipoLayout === "espinha"
-                      ? "border-blue-700 bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300"
-                  }`}
-                >
-                  <div className="flex flex-col items-center gap-1">
-                    <Layout className={`w-3.5 h-3.5 ${tipoLayout === "espinha" ? "text-blue-700" : "text-gray-400"}`} />
-                    <span className={`text-[9px] font-medium ${tipoLayout === "espinha" ? "text-blue-700" : "text-gray-600"}`}>
-                      Espinha
-                    </span>
-                  </div>
-                </button>
+          <div className={hideTipoLayout ? "grid grid-cols-1 gap-3" : "grid grid-cols-[auto_1fr_1fr] gap-3"}>
+            {!hideTipoLayout && (
+              <div>
+                <Label className="text-[10px] font-semibold text-gray-700 mb-1.5 block">
+                  <Layout className="w-3 h-3 inline mr-1" />
+                  Layout
+                </Label>
+                <div className="flex flex-col gap-1.5 w-[72px]">
+                  <button
+                    onClick={() => {
+                      setTipoLayout("linha");
+                      setPostosPorLado(8);
+                    }}
+                    className={`p-1.5 border-2 rounded-sm transition-all ${
+                      tipoLayout === "linha"
+                        ? "border-blue-700 bg-blue-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <Grid3x3 className={`w-3.5 h-3.5 ${tipoLayout === "linha" ? "text-blue-700" : "text-gray-400"}`} />
+                      <span className={`text-[9px] font-medium ${tipoLayout === "linha" ? "text-blue-700" : "text-gray-600"}`}>
+                        Linha
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTipoLayout("espinha");
+                      setPostosPorLado(16);
+                    }}
+                    className={`p-1.5 border-2 rounded-sm transition-all ${
+                      tipoLayout === "espinha"
+                        ? "border-blue-700 bg-blue-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <Layout className={`w-3.5 h-3.5 ${tipoLayout === "espinha" ? "text-blue-700" : "text-gray-400"}`} />
+                      <span className={`text-[9px] font-medium ${tipoLayout === "espinha" ? "text-blue-700" : "text-gray-600"}`}>
+                        Espinha
+                      </span>
+                    </div>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Mobilidade de Operadores */}
-            <div className="col-span-2 p-2 bg-blue-50 rounded-sm border border-blue-200">
+            <div className={`${hideTipoLayout ? "" : "col-span-2"} p-2 bg-blue-50 rounded-sm border border-blue-200`}>
               <div className="flex items-center gap-1 mb-2">
                 <Move className="w-3 h-3 text-blue-700" />
                 <span className="text-[10px] font-semibold text-gray-900">Mobilidade</span>

@@ -73,16 +73,16 @@ const parseNumberLike = (value: unknown): number | null => {
   return null;
 };
 
-const formatExact = (value: unknown): string => {
+const formatDisplayDecimal = (value: unknown): string => {
   if (value == null || value === "") return "-";
-  if (typeof value === "number") return Number.isFinite(value) ? value.toFixed(2) : "-";
+  if (typeof value === "number") return Number.isFinite(value) ? value.toFixed(1) : "-";
   if (typeof value === "string") {
     const parsed = parseNumberLike(value);
-    if (parsed != null) return parsed.toFixed(2);
+    if (parsed != null) return parsed.toFixed(1);
     return value.trim() || "-";
   }
   const numeric = parseNumberLike(value);
-  return numeric != null ? numeric.toFixed(2) : String(value);
+  return numeric != null ? numeric.toFixed(1) : String(value);
 };
 
 const resolveOperationLabel = (row: OperationAllocationRow, operacoes: any[]): string => {
@@ -283,15 +283,6 @@ const getOperatorPercentage = (
   column: OperatorColumn,
   cycleTimeSeconds?: number
 ): number | null => {
-  const seconds = getOperatorTime(row, column);
-  const denominatorSeconds = Math.max(
-    0,
-    cycleTimeSeconds ?? parseNumberLike(row.total_time_seconds) ?? 0
-  );
-  if (seconds != null && denominatorSeconds > 0) {
-    return (seconds / denominatorSeconds) * 100;
-  }
-
   const candidateKeys = new Set<string>([
     column.code,
     column.key,
@@ -322,6 +313,15 @@ const getOperatorPercentage = (
         return normalizePercentageValue(parsed);
       }
     }
+  }
+
+  const seconds = getOperatorTime(row, column);
+  const denominatorSeconds = Math.max(
+    0,
+    cycleTimeSeconds ?? parseNumberLike(row.total_time_seconds) ?? 0
+  );
+  if (seconds != null && denominatorSeconds > 0) {
+    return (seconds / denominatorSeconds) * 100;
   }
 
   const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
@@ -357,9 +357,6 @@ const getOperatorPercentage = (
   return null;
 };
 
-const roundToHundredths = (value: number): number =>
-  Math.round((value + Number.EPSILON) * 100) / 100;
-
 const buildOccupancyPercentagesFromTimes = (
   operatorTimes: Record<string, number>,
   denominatorSeconds: number
@@ -369,7 +366,7 @@ const buildOccupancyPercentagesFromTimes = (
   Object.entries(operatorTimes).forEach(([operatorCode, secondsRaw]) => {
     const seconds = Math.max(0, parseNumberLike(secondsRaw) ?? 0);
     if (seconds <= 0) return;
-    percentages[operatorCode] = roundToHundredths((seconds / denominatorSeconds) * 100);
+    percentages[operatorCode] = (seconds / denominatorSeconds) * 100;
   });
   return percentages;
 };
@@ -497,6 +494,7 @@ function TabelaAllocacoes({
   const [isSaving, setIsSaving] = useState(false);
   const [activeCell, setActiveCell] = useState<{ rowIndex: number; columnKey: string } | null>(null);
   const [activeCellValue, setActiveCellValue] = useState<string>("");
+  const [activeCellInitialDisplay, setActiveCellInitialDisplay] = useState<string>("");
   const baseRows = useMemo<OperationAllocationRow[]>(
     () => {
       const apiRows = (resultados.operation_allocations || []) as OperationAllocationRow[];
@@ -528,7 +526,7 @@ function TabelaAllocacoes({
     rows.forEach((row) => {
       operatorColumns.forEach((column) => {
         const value = getOperatorTime(row, column);
-        if (value != null) totals[column.key] = roundToHundredths(totals[column.key] + value);
+        if (value != null) totals[column.key] += value;
       });
     });
 
@@ -570,15 +568,21 @@ function TabelaAllocacoes({
         cycleTimeSeconds
       );
       percentages[column.key] =
-        percentageBaseSeconds > 0 ? roundToHundredths((totalSeconds / percentageBaseSeconds) * 100) : 0;
+        percentageBaseSeconds > 0 ? (totalSeconds / percentageBaseSeconds) * 100 : 0;
     });
     return percentages;
   }, [cycleTimeSeconds, operatorColumns, sharePerOperatorSecondsMap, sharePerOperatorSecondsScalar, totalsByOperator]);
 
   const formatMetric = (value: number | null | undefined): string => {
     if (value == null) return "-";
-    if (viewMode === "percentagem") return `${formatExact(value)}%`;
-    return formatExact(value);
+    if (viewMode === "percentagem") return `${formatDisplayDecimal(value)}%`;
+    return formatDisplayDecimal(value);
+  };
+
+  const getMetricColor = (value: number | null | undefined): string => {
+    if (value == null) return "#d1d5db";
+    if (viewMode === "percentagem" && value > 100) return "#dc2626";
+    return "#2563eb";
   };
 
   const commitCellValue = (rowIndex: number, column: OperatorColumn, rawValue: string): OperationAllocationRow[] => {
@@ -616,10 +620,8 @@ function TabelaAllocacoes({
         const fixedTotalTime = Math.max(0, parseNumberLike(r.total_time_seconds) ?? recalculatedTotal);
         nextRow.total_time_seconds = fixedTotalTime;
         nextRow.allocated_time_seconds = recalculatedTotal;
-        nextRow.remaining_time_seconds = Math.max(
-          0,
-          fixedTotalTime - (parseNumberLike(nextRow.allocated_time_seconds) ?? 0)
-        );
+        nextRow.remaining_time_seconds =
+          fixedTotalTime - (parseNumberLike(nextRow.allocated_time_seconds) ?? 0);
         const existingAllocations = Array.isArray(r.operator_allocations) ? r.operator_allocations : [];
         const existingAllocationByOperator = new Map<string, Record<string, unknown>>();
         existingAllocations.forEach((item) => {
@@ -716,7 +718,9 @@ function TabelaAllocacoes({
     setDraftRows(structuredClone(baseRows));
     setIsEditing(true);
     setActiveCell({ rowIndex, columnKey });
-    setActiveCellValue(value == null ? "" : String(value));
+    const displayValue = value == null ? "" : formatDisplayDecimal(value);
+    setActiveCellValue(displayValue);
+    setActiveCellInitialDisplay(displayValue);
   };
 
   return (
@@ -726,7 +730,7 @@ function TabelaAllocacoes({
           {[
             { label: "Operadores", value: String(operatorColumns.length) },
             { label: "Operacoes", value: String(rows.length) },
-            { label: "Tempo total", value: formatExact(totalTime) },
+            { label: "Tempo total", value: formatDisplayDecimal(totalTime) },
           ].map((item, index) => (
             <div key={index} className="flex items-center gap-1.5">
               <span className="text-[11px] text-gray-400">{item.label}</span>
@@ -859,7 +863,7 @@ function TabelaAllocacoes({
                     {machineLabel}
                   </td>
                   <td style={tdBase(bg, { textAlign: "center", fontFamily: "monospace", fontWeight: 700, color: "#2563eb" })}>
-                    {formatExact(row.total_time_seconds)}
+                    {formatDisplayDecimal(row.total_time_seconds)}
                   </td>
                   {operatorColumns.map((column) => {
                     const percentageBaseSeconds = resolveOperatorShareSeconds(
@@ -880,7 +884,7 @@ function TabelaAllocacoes({
                           textAlign: "center",
                           fontFamily: "monospace",
                           fontWeight: 600,
-                          color: editable ? "#2563eb" : value == null ? "#d1d5db" : "#2563eb",
+                          color: editable ? getMetricColor(value) : getMetricColor(value),
                         })}
                         onDoubleClick={() => startEditFromCell(index, column.key, value)}
                       >
@@ -894,18 +898,29 @@ function TabelaAllocacoes({
                                 ? activeCellValue
                                 : value == null
                                   ? ""
-                                  : String(value)
+                                  : formatDisplayDecimal(value)
                             }
                             onFocus={() => {
+                              const displayValue = value == null ? "" : formatDisplayDecimal(value);
                               setActiveCell({ rowIndex: index, columnKey: column.key });
-                              setActiveCellValue(value == null ? "" : String(value));
+                              setActiveCellValue(displayValue);
+                              setActiveCellInitialDisplay(displayValue);
                             }}
                             onChange={(e) => {
                               setActiveCellValue(e.currentTarget.value.replace(",", "."));
                             }}
                             onBlur={(e) => {
-                              const newRows = commitCellValue(index, column, e.currentTarget.value);
                               setActiveCell(null);
+                              const normalizedInput = e.currentTarget.value.replace(",", ".").trim();
+                              const normalizedInitial = activeCellInitialDisplay.replace(",", ".").trim();
+                              if (normalizedInput === normalizedInitial) {
+                                setDraftRows(baseRows);
+                                setIsEditing(false);
+                                setActiveCellInitialDisplay("");
+                                return;
+                              }
+                              const newRows = commitCellValue(index, column, e.currentTarget.value);
+                              setActiveCellInitialDisplay("");
                               void confirmarEdicao(newRows);
                             }}
                             onKeyDown={(e) => {
@@ -932,7 +947,7 @@ function TabelaAllocacoes({
               <td style={tdBase("#f9fafb", { color: "#6b7280", fontSize: 10, fontWeight: 600 })}>Total</td>
               <td style={tdBase("#f9fafb")} />
               <td style={tdBase("#f9fafb", { textAlign: "center", fontFamily: "monospace", fontWeight: 700, color: "#2563eb" })}>
-                {formatExact(totalTime)}
+                {formatDisplayDecimal(totalTime)}
               </td>
               {operatorColumns.map((column) => (
                 <td
@@ -941,12 +956,15 @@ function TabelaAllocacoes({
                     textAlign: "center",
                     fontFamily: "monospace",
                     fontWeight: 700,
-                    color: "#2563eb",
+                    color:
+                      viewMode === "percentagem" && (totalsByOperatorPercent[column.key] ?? 0) > 100
+                        ? "#dc2626"
+                        : "#2563eb",
                   })}
                 >
-                  {viewMode === "percentagem"
-                    ? formatMetric(totalsByOperatorPercent[column.key] ?? 0)
-                    : formatExact(totalsByOperator[column.key] ?? 0)}
+                    {viewMode === "percentagem"
+                      ? formatMetric(totalsByOperatorPercent[column.key] ?? 0)
+                      : formatDisplayDecimal(totalsByOperator[column.key] ?? 0)}
                 </td>
               ))}
             </tr>

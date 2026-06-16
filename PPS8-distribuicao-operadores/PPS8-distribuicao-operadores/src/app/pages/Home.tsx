@@ -3,7 +3,7 @@ import { Operador, Operacao, ConfiguracaoDistribuicao, Produto, ResultadosBalanc
 import { Button } from "../components/ui/button";
 import { Calculator, Users, Package, Factory, ChevronDown, Edit3, AlertTriangle, Download, Printer } from "lucide-react";
 import { ConfiguracaoDistribuicaoComponent } from "../components/ConfiguracaoDistribuicao";
-import { LayoutConfigurador, LayoutConfig } from "../components/LayoutConfigurador";
+import { LayoutConfig } from "../components/LayoutConfigurador";
 import { TabelaOperacoesManual } from "../components/TabelaOperacoesManual";
 import { DashboardResultados } from "../components/DashboardResultados";
 import { ResumoResultados } from "../components/ResumoResultados";
@@ -1132,6 +1132,8 @@ export default function Home() {
   const [viewModeInline, setViewModeInline] = useState<"tempo" | "percentagem">("tempo");
   const [ajusteBodyBaseInline, setAjusteBodyBaseInline] = useState<any>(null);
   const [taskCodeInline, setTaskCodeInline] = useState<string>("");
+  const autoRecalcularLayoutRef = useRef(false);
+  const suppressResultadosScrollRef = useRef(false);
   const [isAjustando, setIsAjustando] = useState(false);
   const [isGuardandoHistorico, setIsGuardandoHistorico] = useState(false);
   const [erroPopupInline, setErroPopupInline] = useState<string | null>(null);
@@ -1748,15 +1750,206 @@ export default function Home() {
     };
   }, [buildDistribuicaoFromAllocationsInline, buildSharePerOperatorSecondsInline, buildTableDataFromDistribuicaoInline, normalizeOperatorSlotsInline, pickKpiInline]);
 
-  const buildOccupancyPercentagesInline = useCallback((operatorTimes: Record<string, number>, totalTimeSeconds: number) => {
+  const resolveSharePerOperatorSecondsInline = useCallback((
+    operatorRef: string,
+    sharePerOperatorSeconds: Record<string, unknown> | null,
+    sharePerOperatorScalar: number | null,
+    fallbackSeconds: number
+  ) => {
+    if (sharePerOperatorSeconds) {
+      const normalizedOperatorRef = normalizeKey(String(operatorRef || ""));
+      for (const [rawKey, rawValue] of Object.entries(sharePerOperatorSeconds)) {
+        if (normalizeKey(rawKey) !== normalizedOperatorRef) continue;
+        const parsed = parseNumberLikeInline(rawValue);
+        if (parsed != null && parsed > 0) return parsed;
+      }
+    }
+
+    if (sharePerOperatorScalar != null && sharePerOperatorScalar > 0) {
+      return sharePerOperatorScalar;
+    }
+
+    return fallbackSeconds;
+  }, []);
+
+  const buildOccupancyPercentagesInline = useCallback((
+    operatorTimes: Record<string, number>,
+    sharePerOperatorSeconds: Record<string, unknown> | null,
+    sharePerOperatorScalar: number | null,
+    fallbackSeconds: number
+  ) => {
     const percentages: Record<string, number> = {};
-    if (totalTimeSeconds <= 0) return percentages;
     Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
       const seconds = Math.max(0, parseNumberLikeInline(secondsRaw) ?? 0);
       if (!operatorRef || seconds <= 0) return;
-      percentages[operatorRef] = Math.round((((seconds / totalTimeSeconds) * 100) + Number.EPSILON) * 100) / 100;
+      const denominatorSeconds = resolveSharePerOperatorSecondsInline(
+        operatorRef,
+        sharePerOperatorSeconds,
+        sharePerOperatorScalar,
+        fallbackSeconds
+      );
+      if (denominatorSeconds <= 0) return;
+      percentages[operatorRef] = (seconds / denominatorSeconds) * 100;
     });
     return percentages;
+  }, [resolveSharePerOperatorSecondsInline]);
+
+  const logAdjustPercentageTraceInline = useCallback((editedRows: any[], requestBody: any, responseBody: any) => {
+    const requestRows = ensureArray(
+      requestBody?.operation_allocations ?? requestBody?.operationAllocations
+    );
+    const responseRows = ensureArray(
+      responseBody?.operation_allocations ?? responseBody?.operationAllocations
+    );
+
+    const buildRowKey = (row: any) => {
+      const seq = String(row?.seq ?? "").trim();
+      const op = String(row?.operation_code || row?.operation_id || "").trim().toLowerCase().replace(/^0+(\d)/, "$1");
+      return `${seq}::${op}`;
+    };
+
+    const resolvePercentMap = (row: any): Record<string, number> => {
+      const rawMap = row?.occupancy_percentages;
+      if (!rawMap || typeof rawMap !== "object") return {};
+      const normalized: Record<string, number> = {};
+      Object.entries(rawMap as Record<string, unknown>).forEach(([key, value]) => {
+        const parsed = parseNumberLikeInline(value);
+        if (parsed == null) return;
+        normalized[normalizeKey(String(key || ""))] = parsed;
+      });
+      return normalized;
+    };
+
+    const resolveTimeMap = (row: any): Record<string, number> => {
+      const rawMap = row?.operator_times;
+      if (!rawMap || typeof rawMap !== "object") return {};
+      const normalized: Record<string, number> = {};
+      Object.entries(rawMap as Record<string, unknown>).forEach(([key, value]) => {
+        const parsed = parseNumberLikeInline(value);
+        if (parsed == null) return;
+        normalized[normalizeKey(String(key || ""))] = parsed;
+      });
+      return normalized;
+    };
+
+    const resolveSharePerOperatorSecondsForTrace = (
+      operatorRef: string,
+      shareMap: Record<string, unknown> | null,
+      shareScalar: number | null,
+      fallbackSeconds: number
+    ) => {
+      if (shareMap) {
+        const normalizedOperatorRef = normalizeKey(String(operatorRef || ""));
+        for (const [rawKey, rawValue] of Object.entries(shareMap)) {
+          if (normalizeKey(rawKey) !== normalizedOperatorRef) continue;
+          const parsed = parseNumberLikeInline(rawValue);
+          if (parsed != null && parsed > 0) return parsed;
+        }
+      }
+
+      if (shareScalar != null && shareScalar > 0) return shareScalar;
+      return fallbackSeconds;
+    };
+
+    const resolveShareContext = (body: any) => {
+      const rawShare = body?.share_per_operator_seconds ?? body?.sharePerOperatorSeconds ?? null;
+      const shareMap =
+        rawShare && typeof rawShare === "object" ? (rawShare as Record<string, unknown>) : null;
+      const shareScalar =
+        typeof rawShare === "number"
+          ? rawShare
+          : typeof rawShare === "string"
+            ? parseNumberLikeInline(rawShare)
+            : null;
+      const fallbackSeconds = Math.max(
+        0,
+        parseNumberLikeInline(
+          body?.cycle_time_seconds ??
+          body?.real_cycle_time_seconds ??
+          body?.cycle_time ??
+          body?.tempo_ciclo_segundos ??
+          body?.kpis?.cycle_time_seconds
+        ) ?? 0
+      );
+      return { shareMap, shareScalar, fallbackSeconds };
+    };
+
+    const requestShareContext = resolveShareContext(requestBody);
+    const responseShareContext = resolveShareContext(responseBody);
+
+    const requestByKey = new Map<string, any>();
+    requestRows.forEach((row) => requestByKey.set(buildRowKey(row), row));
+    const responseByKey = new Map<string, any>();
+    responseRows.forEach((row) => responseByKey.set(buildRowKey(row), row));
+
+    console.groupCollapsed("[AJUSTE][INLINE] Rasto percentagem -> segundos -> resposta");
+    editedRows.forEach((editedRow) => {
+      const rowKey = buildRowKey(editedRow);
+      const reqRow = requestByKey.get(rowKey);
+      const resRow = responseByKey.get(rowKey);
+      const editedPercents = resolvePercentMap(editedRow);
+      const requestPercents = resolvePercentMap(reqRow);
+      const responsePercents = resolvePercentMap(resRow);
+      const requestTimes = resolveTimeMap(reqRow);
+      const responseTimes = resolveTimeMap(resRow);
+
+      const operatorKeys = new Set<string>([
+        ...Object.keys(editedPercents),
+        ...Object.keys(requestPercents),
+        ...Object.keys(responsePercents),
+        ...Object.keys(requestTimes),
+        ...Object.keys(responseTimes),
+      ]);
+
+      operatorKeys.forEach((operatorKey) => {
+        const editedPercent = editedPercents[operatorKey];
+        const requestSeconds = requestTimes[operatorKey];
+        const requestPercent = requestPercents[operatorKey];
+        const responseSeconds = responseTimes[operatorKey];
+        const responsePercentExplicit = responsePercents[operatorKey];
+        const requestDenominator = resolveSharePerOperatorSecondsForTrace(
+          operatorKey,
+          requestShareContext.shareMap,
+          requestShareContext.shareScalar,
+          requestShareContext.fallbackSeconds
+        );
+        const responseDenominator = resolveSharePerOperatorSecondsForTrace(
+          operatorKey,
+          responseShareContext.shareMap,
+          responseShareContext.shareScalar,
+          responseShareContext.fallbackSeconds
+        );
+        const responsePercent =
+          responsePercentExplicit != null
+            ? responsePercentExplicit
+            : responseSeconds != null && responseDenominator > 0
+              ? (responseSeconds / responseDenominator) * 100
+              : null;
+
+        if (
+          editedPercent == null &&
+          requestSeconds == null &&
+          requestPercent == null &&
+          responsePercent == null &&
+          responseSeconds == null
+        ) {
+          return;
+        }
+
+        console.log({
+          row: rowKey,
+          operator: operatorKey,
+          typed_percent: editedPercent ?? null,
+          sent_seconds: requestSeconds ?? null,
+          sent_percent: requestPercent ?? null,
+          sent_denominator_seconds: requestDenominator > 0 ? requestDenominator : null,
+          returned_seconds: responseSeconds ?? null,
+          returned_denominator_seconds: responseDenominator > 0 ? responseDenominator : null,
+          returned_percent: responsePercent ?? null,
+        });
+      });
+    });
+    console.groupEnd();
   }, []);
 
   const mergeRowsIntoAdjustBodyInline = (baseBody: any, editedRows: any[]): any => {
@@ -1773,6 +1966,18 @@ export default function Home() {
         clone?.kpis?.cycle_time_seconds
       ) ?? 0
     );
+    const sharePerOperatorSecondsRaw =
+      clone?.share_per_operator_seconds ?? clone?.sharePerOperatorSeconds ?? null;
+    const sharePerOperatorSecondsMap =
+      sharePerOperatorSecondsRaw && typeof sharePerOperatorSecondsRaw === "object"
+        ? (sharePerOperatorSecondsRaw as Record<string, unknown>)
+        : null;
+    const sharePerOperatorSecondsScalar =
+      typeof sharePerOperatorSecondsRaw === "number"
+        ? sharePerOperatorSecondsRaw
+        : typeof sharePerOperatorSecondsRaw === "string"
+          ? parseNumberLikeInline(sharePerOperatorSecondsRaw)
+          : null;
     const normalizeToken = (value: unknown): string => String(value ?? "").trim().toLowerCase().replace(/^0+(\d)/, "$1");
     const editedByKey = new Map<string, any>();
     const editedBySeq = new Map<string, any[]>();
@@ -1809,11 +2014,13 @@ export default function Home() {
       );
       const occupancyPercentages = buildOccupancyPercentagesInline(
         nextRow.operator_times || {},
+        sharePerOperatorSecondsMap,
+        sharePerOperatorSecondsScalar,
         cycleTimeSecondsBase > 0 ? cycleTimeSecondsBase : totalTimeSeconds
       );
       nextRow.total_time_seconds = totalTimeSeconds;
       nextRow.allocated_time_seconds = Math.max(0, (parseNumberLikeInline(edited?.allocated_time_seconds) ?? fromOperatorTimes) as number);
-      nextRow.remaining_time_seconds = Math.max(0, totalTimeSeconds - (parseNumberLikeInline(nextRow.allocated_time_seconds) ?? 0));
+      nextRow.remaining_time_seconds = totalTimeSeconds - (parseNumberLikeInline(nextRow.allocated_time_seconds) ?? 0);
       nextRow.occupancy_percentages = occupancyPercentages;
       if (Array.isArray(edited?.operator_allocations)) {
         nextRow.operator_allocations = edited.operator_allocations.map((item: any) => {
@@ -1872,6 +2079,10 @@ export default function Home() {
     setViewModeInline("tempo");
     setTaskCodeInline(data.taskCode || "");
     setAjusteBodyBaseInline(data.ajusteBodyBase ?? null);
+    if (suppressResultadosScrollRef.current) {
+      suppressResultadosScrollRef.current = false;
+      return;
+    }
     requestAnimationFrame(() => {
       setTimeout(() => {
         resultadosRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1896,6 +2107,7 @@ export default function Home() {
       const body = mergeRowsIntoAdjustBodyInline(ajusteBodyBaseInline, editedRows);
       const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
       const novoRaw = resposta.data ?? {};
+      logAdjustPercentageTraceInline(editedRows, body, novoRaw);
       const novosResultados = buildResultadosFromApiInline(novoRaw, resultadosAtuaisInline!);
       const proximoAjusteBodyBase = {
         ...(ajusteBodyBaseInline || {}),
@@ -1920,7 +2132,7 @@ export default function Home() {
     } finally {
       setIsAjustando(false);
     }
-  }, [taskCodeInline, ajusteBodyBaseInline, resultadosAtuaisInline, buildResultadosFromApiInline]);
+  }, [taskCodeInline, ajusteBodyBaseInline, resultadosAtuaisInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline]);
 
   const handleGuardarHistoricoInline = useCallback(async () => {
     if (isGuardandoHistorico) return;
@@ -2703,12 +2915,23 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    if (!autoRecalcularLayoutRef.current) return;
+    autoRecalcularLayoutRef.current = false;
+    if (!resultadosInlineData) return;
+    suppressResultadosScrollRef.current = true;
+    void handleCalcular(true);
+  }, [
+    layoutConfig.tipoLayout,
+    layoutConfig.postosPorLado,
+    layoutConfig.distanciaMaxima,
+    layoutConfig.permitirRetrocesso,
+  ]);
+
   const [seccoesExpandidas, setSeccoesExpandidas] = useState({
     grupoArtigo: true,
     configuracaoDistribuicao: true,
     tabelaManual: true,
-    parametrosBalanceamento: true,
-    configuracaoLayout: true,
   });
   const toggleSeccao = (seccao: keyof typeof seccoesExpandidas) =>
     setSeccoesExpandidas((prev) => ({ ...prev, [seccao]: !prev[seccao] }));
@@ -2874,6 +3097,38 @@ export default function Home() {
               numeroOperadoresDisponiveis={operadoresSelecionados.length}
               operacoes={operacoes}
               onCalcularOperadoresNecessarios={handleCalcularOperadoresNecessarios}
+              horasTurno={config.horasTurno}
+              produtividadeEstimada={config.produtividadeEstimada}
+              quantidadeObjetivoInput={quantidadeObjetivoInput}
+              numeroOperadoresInput={numeroOperadoresInput}
+              usarAllocateModo1Api={usarAllocateModo1Api}
+              totalOperadoresLinha={operadores.length}
+              onHorasTurnoChange={(value) => handleConfigChange({ ...config, horasTurno: value })}
+              onProdutividadeEstimadaChange={(value) => handleConfigChange({ ...config, produtividadeEstimada: value })}
+              onQuantidadeObjetivoInputChange={(raw) => {
+                setQuantidadeObjetivoInput(raw);
+                if (!raw) {
+                  handleConfigChange({ ...config, quantidadeObjetivo: undefined });
+                  return;
+                }
+                const quantidade = Number(raw);
+                if (!Number.isFinite(quantidade)) return;
+                handleConfigChange({ ...config, quantidadeObjetivo: quantidade });
+                if (quantidade > 0) handleCalcularOperadoresNecessarios(quantidade);
+              }}
+              onNumeroOperadoresInputChange={(raw) => {
+                setNumeroOperadoresInput(raw);
+                if (!raw) return;
+                const typed = Number(raw);
+                if (!Number.isFinite(typed)) return;
+                const num = Math.max(1, Math.min(typed, operadores.length));
+                handleConfigChange({ ...config, numeroOperadores: num });
+                const novos = operadores.slice(0, num).map((op) => op.id);
+                setDadosUnidades((prev) => ({
+                  ...prev,
+                  [unidadeAtiva]: { ...prev[unidadeAtiva], operadoresSelecionados: novos },
+                }));
+              }}
             />
           </div>
         )}
@@ -2931,211 +3186,6 @@ export default function Home() {
           )}
         </div>
       )}
-
-      {/* Parametros de Balanceamento */}
-      {config.possibilidade !== 4 && (
-        <div className="shadow-sm border border-gray-200 rounded-sm bg-white">
-          <div
-            className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
-            onClick={() => toggleSeccao("parametrosBalanceamento")}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Calculator className="w-5 h-5 text-gray-700" />
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">Parametros de Balanceamento</h3>
-                  <p className="text-xs text-gray-500 font-normal mt-0.5">
-                    Parametros de entrada conforme o metodo selecionado
-                  </p>
-                </div>
-              </div>
-              <ChevronDown
-                className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${seccoesExpandidas.parametrosBalanceamento ? "rotate-180" : ""}`}
-              />
-            </div>
-          </div>
-          {seccoesExpandidas.parametrosBalanceamento && (
-            <div className="p-6">
-            <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Entradas</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {config.possibilidade === 1 && (
-                  <>
-                    <div className="flex items-stretch">
-                      <div className="bg-gray-100 border border-gray-200 px-4 py-3 flex items-center rounded-l-sm flex-1">
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Horas do Turno</span>
-                      </div>
-                      <input
-                        type="number" step="0.5" min={1} max={24}
-                        value={config.horasTurno}
-                        onChange={(e) => {
-                          const next = e.currentTarget.valueAsNumber;
-                          if (!Number.isFinite(next)) return;
-                          handleConfigChange({ ...config, horasTurno: next });
-                        }}
-                        className="bg-white border border-gray-300 px-4 py-3 text-sm text-gray-900 font-semibold rounded-r-sm w-32 text-right focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                      />
-                    </div>
-                    <div className="flex items-stretch">
-                      <div className="bg-gray-100 border border-gray-200 px-4 py-3 flex items-center rounded-l-sm flex-1">
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Produtividade Estimada (%)</span>
-                      </div>
-                      <input
-                        type="number" step="1" min={0} max={100}
-                        value={config.produtividadeEstimada}
-                        onChange={(e) => {
-                          const next = e.currentTarget.valueAsNumber;
-                          if (!Number.isFinite(next)) return;
-                          handleConfigChange({ ...config, produtividadeEstimada: next });
-                        }}
-                        className="bg-white border border-gray-300 px-4 py-3 text-sm text-gray-900 font-semibold rounded-r-sm w-32 text-right focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                      />
-                    </div>
-                    {!usarAllocateModo1Api && (
-                      <div className="flex items-stretch">
-                        <div className="bg-gray-100 border border-gray-200 px-4 py-3 flex items-center rounded-l-sm flex-1">
-                          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Numero de Operadores</span>
-                        </div>
-                        <div className="bg-gray-50 border border-gray-300 px-4 py-3 text-sm text-gray-900 font-semibold rounded-r-sm w-32 text-right font-mono flex items-center justify-end">
-                          {operadoresSelecionados.length}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {config.possibilidade === 2 && (
-                  <>
-                    <div className="flex items-stretch">
-                      <div className="bg-gray-100 border border-gray-200 px-4 py-3 flex items-center rounded-l-sm flex-1">
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Objetivo (pecas/dia)</span>
-                      </div>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={quantidadeObjetivoInput}
-                        onChange={(e) => {
-                          const raw = e.currentTarget.value.replace(/[^\d]/g, "");
-                          setQuantidadeObjetivoInput(raw);
-                          if (!raw) {
-                            handleConfigChange({ ...config, quantidadeObjetivo: undefined });
-                            return;
-                          }
-                          const quantidade = Number(raw);
-                          if (!Number.isFinite(quantidade)) return;
-                          handleConfigChange({ ...config, quantidadeObjetivo: quantidade });
-                          if (quantidade > 0) handleCalcularOperadoresNecessarios(quantidade);
-                        }}
-                        placeholder="Ex: 500"
-                        className="bg-white border border-gray-300 px-4 py-3 text-sm text-gray-900 font-semibold rounded-r-sm w-32 text-right focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                      />
-                    </div>
-                    <div className="flex items-stretch">
-                      <div className="bg-gray-100 border border-gray-200 px-4 py-3 flex items-center rounded-l-sm flex-1">
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Horas do Turno</span>
-                      </div>
-                      <input
-                        type="number" step="0.5" min={1} max={24}
-                        value={config.horasTurno}
-                        onChange={(e) => {
-                          const next = e.currentTarget.valueAsNumber;
-                          if (!Number.isFinite(next)) return;
-                          handleConfigChange({ ...config, horasTurno: next });
-                        }}
-                        className="bg-white border border-gray-300 px-4 py-3 text-sm text-gray-900 font-semibold rounded-r-sm w-32 text-right focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {config.possibilidade === 3 && (
-                  <>
-                    <div className="flex items-stretch">
-                      <div className="bg-gray-100 border border-gray-200 px-4 py-3 flex items-center rounded-l-sm flex-1">
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Numero de Operadores</span>
-                      </div>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={numeroOperadoresInput}
-                        onChange={(e) => {
-                          const raw = e.currentTarget.value.replace(/[^\d]/g, "");
-                          setNumeroOperadoresInput(raw);
-                          if (!raw) return;
-                          const typed = Number(raw);
-                          if (!Number.isFinite(typed)) return;
-                          const num = Math.max(1, Math.min(typed, operadores.length));
-                          handleConfigChange({ ...config, numeroOperadores: num });
-                          const novos = operadores.slice(0, num).map((op) => op.id);
-                          setDadosUnidades((prev) => ({
-                            ...prev,
-                            [unidadeAtiva]: { ...prev[unidadeAtiva], operadoresSelecionados: novos },
-                          }));
-                        }}
-                        className="bg-white border border-gray-300 px-4 py-3 text-sm text-gray-900 font-semibold rounded-r-sm w-32 text-right focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                      />
-                    </div>
-                    <div className="flex items-stretch">
-                      <div className="bg-gray-100 border border-gray-200 px-4 py-3 flex items-center rounded-l-sm flex-1">
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Disponiveis na Linha</span>
-                      </div>
-                      <div className="bg-gray-50 border border-gray-300 px-4 py-3 text-sm text-gray-900 font-semibold rounded-r-sm w-32 text-right font-mono flex items-center justify-end">
-                        {operadores.length}
-                      </div>
-                    </div>
-                    <div className="flex items-stretch">
-                      <div className="bg-gray-100 border border-gray-200 px-4 py-3 flex items-center rounded-l-sm flex-1">
-                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Horas do Turno</span>
-                      </div>
-                      <input
-                        type="number" step="0.5" min={1} max={24}
-                        value={config.horasTurno}
-                        onChange={(e) => {
-                          const next = e.currentTarget.valueAsNumber;
-                          if (!Number.isFinite(next)) return;
-                          handleConfigChange({ ...config, horasTurno: next });
-                        }}
-                        className="bg-white border border-gray-300 px-4 py-3 text-sm text-gray-900 font-semibold rounded-r-sm w-32 text-right focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-          )}
-        </div>
-      )}
-
-      {/* Configuracao de Layout */}
-      <div className="bg-white rounded-sm border border-gray-200 shadow-sm">
-        <div
-          className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
-          onClick={() => toggleSeccao("configuracaoLayout")}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Factory className="w-5 h-5 text-gray-700" />
-              <h3 className="text-base font-semibold text-gray-900">Configuracao de Layout</h3>
-            </div>
-            <ChevronDown
-              className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${seccoesExpandidas.configuracaoLayout ? "rotate-180" : ""}`}
-            />
-          </div>
-        </div>
-        {seccoesExpandidas.configuracaoLayout && (
-          <div className="p-5">
-            <LayoutConfigurador
-              operacoes={operacoes}
-              value={layoutConfig}
-              onLayoutChange={setLayoutConfig}
-              agruparPorMaquina={config.agruparMaquinas}
-            />
-          </div>
-        )}
-      </div>
 
       {/* BotÃƒÆ’Ã‚Â£o Calcular */}
       <div className="flex justify-center pt-4">
@@ -3247,8 +3297,22 @@ export default function Home() {
             resultados={resultadosAtuaisInline}
             operadores={resultadosInlineData.operadores}
             operacoes={resultadosInlineData.operacoes}
-            layoutConfig={resultadosInlineData.layoutConfig}
+            layoutConfig={layoutConfig}
             viewMode={viewModeInline}
+            agruparPorMaquina={configAtualInline.agruparMaquinas}
+            onTipoLayoutChange={(tipo) => {
+              if (layoutConfig.tipoLayout === tipo) return;
+              autoRecalcularLayoutRef.current = true;
+              setLayoutConfig((prev) => ({
+                ...prev,
+                tipoLayout: tipo,
+                postosPorLado: tipo === "espinha" ? 16 : 8,
+              }));
+            }}
+            onLayoutConfigChange={(next) => {
+              autoRecalcularLayoutRef.current = true;
+              setLayoutConfig(next);
+            }}
           />
         </section>
       )}

@@ -2,6 +2,9 @@
 import { LayoutConfig } from "./LayoutConfigurador";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { ArrowRight, Factory, Layout, BarChart2 } from "lucide-react";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Switch } from "./ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +21,9 @@ interface VisualizadorFluxoProps {
   operacoes: any[];
   layoutConfig?: LayoutConfig;
   viewMode?: "tempo" | "percentagem";
+  onTipoLayoutChange?: (tipo: "linha" | "espinha") => void;
+  onLayoutConfigChange?: (config: LayoutConfig) => void;
+  agruparPorMaquina?: boolean;
 }
 
 interface ArrowDef {
@@ -383,6 +389,9 @@ export function VisualizadorFluxo({
   operacoes,
   layoutConfig,
   viewMode = "tempo",
+  onTipoLayoutChange,
+  onLayoutConfigChange,
+  agruparPorMaquina = false,
 }: VisualizadorFluxoProps) {
   const tipoLayout = layoutConfig?.tipoLayout || "linha";
   const postosPorLado = layoutConfig?.postosPorLado || 8;
@@ -1217,7 +1226,7 @@ export function VisualizadorFluxo({
         {/* Visualização - Linha de Produção */}
         <Card className="shadow-sm border border-gray-200 rounded-sm bg-white w-fit">
           <CardHeader className="border-b border-gray-200 py-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-4">
               <CardTitle className="flex items-center gap-2 text-gray-900">
                 <div className="w-7 h-7 bg-purple-100 rounded-sm flex items-center justify-center">
                   <Factory className="w-4 h-4 text-purple-600" />
@@ -1513,10 +1522,10 @@ export function VisualizadorFluxo({
           </CardHeader>
           <CardContent className="p-4">
             {(() => {
-              const CHART_H = 270;
-              const BAR_W = 58;
-              const Y_AXIS_W = 46;
-              const LABEL_H = 56;
+              const CHART_H = 340;
+              const BAR_W = 82;
+              const Y_AXIS_W = 58;
+              const LABEL_H = 72;
               const NUM_TICKS = 5;
               const cycleTimeSeconds = Number((resultados as any)?.cycle_time_seconds ?? 0);
               const formatMetric = (value: number) =>
@@ -1535,8 +1544,8 @@ export function VisualizadorFluxo({
               const getBarH = (t: number) => Math.max(0, Math.round((t / topTick) * CHART_H));
 
               return (
-                <div className="w-full flex justify-center pt-4">
-                  <div style={{ display: "flex", alignItems: "flex-start", width: "100%", maxWidth: 1120 }}>
+                <div className="w-full pt-3">
+                  <div style={{ display: "flex", alignItems: "flex-start", width: "100%", maxWidth: "100%" }}>
 
                     {/* Y Axis */}
                     <div style={{ width: Y_AXIS_W, flexShrink: 0, position: "relative", height: CHART_H + LABEL_H }}>
@@ -1549,7 +1558,7 @@ export function VisualizadorFluxo({
                               position: "absolute",
                               top,
                               right: 4,
-                              fontSize: 11,
+                                fontSize: 13,
                               color: "#6b7280",
                               lineHeight: 1,
                               transform: "translateY(-50%)",
@@ -1587,20 +1596,20 @@ export function VisualizadorFluxo({
                         <div style={{ position: "absolute", top: CHART_H, left: 0, right: 0, borderTop: "1px solid #d1d5db" }} />
 
                         {/* Columns: bar + label, spread evenly */}
-                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 18 }}>
                           {operadoresBarras.map((b) => (
                             <div
                               key={b.operador}
-                              style={{ display: "flex", flexDirection: "column", alignItems: "center", height: "100%", flex: "1 1 0", minWidth: 0 }}
+                              style={{ display: "flex", flexDirection: "column", alignItems: "center", height: "100%", flex: "1 1 0", minWidth: 88 }}
                             >
-                              <div style={{ height: CHART_H, width: "100%", maxWidth: 136, position: "relative" }}>
+                              <div style={{ height: CHART_H, width: "100%", maxWidth: 164, position: "relative" }}>
                                 <div
                                   style={{
                                     position: "absolute",
                                     left: "50%",
                                     bottom: getBarH(toDisplayValue(b.totalSegundos)) + 4,
                                     transform: "translateX(-50%)",
-                                    fontSize: 11,
+                                    fontSize: 13,
                                     fontWeight: 700,
                                     color: "#1f2937",
                                     whiteSpace: "nowrap",
@@ -1630,7 +1639,7 @@ export function VisualizadorFluxo({
                                         width: "100%",
                                         height: getBarH(toDisplayValue(seg.segundos)),
                                         background: seg.color,
-                                        minHeight: seg.segundos > 0 ? 18 : 0,
+                                        minHeight: seg.segundos > 0 ? 22 : 0,
                                         position: "relative",
                                         display: "flex",
                                         alignItems: "center",
@@ -1641,7 +1650,7 @@ export function VisualizadorFluxo({
                                     >
                                       <span
                                         style={{
-                                          fontSize: 10,
+                                           fontSize: 12,
                                           color: "#ffffff",
                                           fontWeight: 700,
                                           lineHeight: 1,
@@ -1656,17 +1665,18 @@ export function VisualizadorFluxo({
                                   ))}
                                 </div>
                               </div>
-                              <div style={{ height: LABEL_H, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 6, width: "100%", minWidth: 0 }}>
+                              <div style={{ height: LABEL_H, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 10, width: "100%", minWidth: 0 }}>
                                   <div
                                   style={{
-                                    fontSize: 11,
+                                    fontSize: 13,
+                                    fontWeight: 600,
                                     color: operatorColorMap[resolveOperatorCode(b.operador)]?.text || "#374151",
                                     whiteSpace: "nowrap",
                                     textAlign: "center",
                                     overflow: "hidden",
                                     textOverflow: "ellipsis",
                                     width: "100%",
-                                    maxWidth: 136,
+                                    maxWidth: 164,
                                   }}
                                 >
                                   {b.operador}
@@ -1678,11 +1688,11 @@ export function VisualizadorFluxo({
                       </div>
 
                       {legenda.length > 0 && (
-                        <div className="mt-3 flex items-center gap-4 flex-wrap">
+                        <div className="mt-5 flex items-center gap-x-6 gap-y-3 flex-wrap">
                           {legenda.map((item) => (
                             <div key={`legend-${item.maquina}`} className="flex items-center gap-2">
-                              <span style={{ width: 12, height: 12, borderRadius: 3, background: item.color, display: "inline-block" }} />
-                              <span className="text-[12px] text-gray-600">{item.maquina}</span>
+                              <span style={{ width: 14, height: 14, borderRadius: 3, background: item.color, display: "inline-block" }} />
+                              <span className="text-[13px] font-medium text-gray-700">{item.maquina}</span>
                             </div>
                           ))}
                         </div>
@@ -1702,7 +1712,7 @@ export function VisualizadorFluxo({
       {layoutConfig && (
         <Card className="shadow-sm border border-gray-200 rounded-sm bg-white w-full">
           <CardHeader className="border-b border-gray-200 py-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <CardTitle className="flex items-center gap-2 text-gray-900">
                 <div className="w-7 h-7 bg-purple-100 rounded-sm flex items-center justify-center">
                   <Layout className="w-4 h-4 text-purple-600" />
@@ -1715,7 +1725,102 @@ export function VisualizadorFluxo({
                   </p>
                 </div>
               </CardTitle>
-              <div />
+              {onTipoLayoutChange || onLayoutConfigChange ? (
+                <div className="flex w-full flex-col items-center gap-2 lg:w-auto lg:items-end">
+                  <div className="flex flex-wrap items-center justify-center gap-2 lg:justify-end">
+                    {onTipoLayoutChange ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onTipoLayoutChange("linha")}
+                          className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${
+                            tipoLayout === "linha"
+                              ? "border-blue-600 bg-blue-50 text-blue-700"
+                              : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          Linha
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onTipoLayoutChange("espinha")}
+                          className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${
+                            tipoLayout === "espinha"
+                              ? "border-blue-600 bg-blue-50 text-blue-700"
+                              : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          Espinha
+                        </button>
+                      </div>
+                    ) : null}
+                    {onLayoutConfigChange ? (
+                      <div className="flex h-8 items-center gap-2 rounded-sm border border-blue-200 bg-blue-50 px-2">
+                        <Label htmlFor="vf-postos" className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                          Postos máximos
+                        </Label>
+                        <Input
+                          id="vf-postos"
+                          type="number"
+                          min={2}
+                          max={100}
+                          value={layoutConfig?.postosPorLado ?? 8}
+                          onChange={(e) => {
+                            const parsed = Number(e.currentTarget.value);
+                            if (!Number.isFinite(parsed)) return;
+                            onLayoutConfigChange({
+                              ...(layoutConfig as LayoutConfig),
+                              postosPorLado: Math.max(2, Math.round(parsed)),
+                            });
+                          }}
+                          className="h-7 w-20 rounded-sm bg-white text-[11px] font-mono"
+                        />
+                      </div>
+                    ) : null}
+                    {onLayoutConfigChange && agruparPorMaquina ? (
+                      <div className="flex h-8 items-center gap-2 rounded-sm border border-blue-200 bg-blue-50 px-2">
+                        <Label htmlFor="vf-distancia" className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                          Distância
+                        </Label>
+                        <Input
+                          id="vf-distancia"
+                          type="number"
+                          min={1}
+                          max={8}
+                          value={layoutConfig?.distanciaMaxima ?? 4}
+                          onChange={(e) => {
+                            const parsed = Number(e.currentTarget.value);
+                            if (!Number.isFinite(parsed)) return;
+                            onLayoutConfigChange({
+                              ...(layoutConfig as LayoutConfig),
+                              distanciaMaxima: Math.max(1, Math.min(8, Math.round(parsed))),
+                            });
+                          }}
+                          className="h-7 w-16 rounded-sm bg-white text-[11px] font-mono"
+                        />
+                      </div>
+                    ) : null}
+                    {onLayoutConfigChange && agruparPorMaquina ? (
+                      <div className="flex h-8 items-center gap-3 rounded-sm border border-blue-200 bg-blue-50 px-3">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                          Retroceder
+                        </span>
+                        <Switch
+                          checked={layoutConfig?.permitirRetrocesso ?? false}
+                          onCheckedChange={(checked) =>
+                            onLayoutConfigChange({
+                              ...(layoutConfig as LayoutConfig),
+                              permitirRetrocesso: checked,
+                            })
+                          }
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div />
+              )}
             </div>
           </CardHeader>
           <CardContent className="p-4">

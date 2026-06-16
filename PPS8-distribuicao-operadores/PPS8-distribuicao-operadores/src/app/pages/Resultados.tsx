@@ -122,6 +122,194 @@ export default function Resultados() {
   const normalizeToken = (value: unknown): string =>
     String(value ?? "").trim().toLowerCase().replace(/^0+(\d)/, "$1");
 
+  const resolveSharePerOperatorSeconds = (
+    operatorRef: string,
+    sharePerOperatorSeconds: Record<string, unknown> | null,
+    sharePerOperatorScalar: number | null,
+    fallbackSeconds: number
+  ): number => {
+    if (sharePerOperatorSeconds) {
+      const normalizedOperatorRef = normalizeToken(operatorRef);
+      for (const [rawKey, rawValue] of Object.entries(sharePerOperatorSeconds)) {
+        if (normalizeToken(rawKey) !== normalizedOperatorRef) continue;
+        const parsed = parseNumberLike(rawValue);
+        if (parsed != null && parsed > 0) return parsed;
+      }
+    }
+
+    if (sharePerOperatorScalar != null && sharePerOperatorScalar > 0) {
+      return sharePerOperatorScalar;
+    }
+
+    return fallbackSeconds;
+  };
+
+  const buildOccupancyPercentagesFromTimes = (
+    operatorTimes: Record<string, number>,
+    sharePerOperatorSeconds: Record<string, unknown> | null,
+    sharePerOperatorScalar: number | null,
+    fallbackSeconds: number
+  ): Record<string, number> => {
+    const percentages: Record<string, number> = {};
+    Object.entries(operatorTimes).forEach(([operatorRef, secondsRaw]) => {
+      const seconds = Math.max(0, parseNumberLike(secondsRaw) ?? 0);
+      if (!operatorRef || seconds <= 0) return;
+      const denominatorSeconds = resolveSharePerOperatorSeconds(
+        operatorRef,
+        sharePerOperatorSeconds,
+        sharePerOperatorScalar,
+        fallbackSeconds
+      );
+      if (denominatorSeconds <= 0) return;
+      percentages[operatorRef] = (seconds / denominatorSeconds) * 100;
+    });
+    return percentages;
+  };
+
+  const logAdjustPercentageTrace = (
+    editedRows: any[],
+    requestBody: any,
+    responseBody: any
+  ) => {
+    const requestRows = ensureArray(
+      requestBody?.operation_allocations ?? requestBody?.operationAllocations
+    );
+    const responseRows = ensureArray(
+      responseBody?.operation_allocations ?? responseBody?.operationAllocations
+    );
+
+    const buildRowKey = (row: any) => {
+      const seq = String(row?.seq ?? "").trim();
+      const op = normalizeToken(row?.operation_code || row?.operation_id || "");
+      return `${seq}::${op}`;
+    };
+
+    const resolvePercentMap = (row: any): Record<string, number> => {
+      const rawMap = row?.occupancy_percentages;
+      if (!rawMap || typeof rawMap !== "object") return {};
+      const normalized: Record<string, number> = {};
+      Object.entries(rawMap as Record<string, unknown>).forEach(([key, value]) => {
+        const parsed = parseNumberLike(value);
+        if (parsed == null) return;
+        normalized[normalizeToken(key)] = parsed;
+      });
+      return normalized;
+    };
+
+    const resolveTimeMap = (row: any): Record<string, number> => {
+      const rawMap = row?.operator_times;
+      if (!rawMap || typeof rawMap !== "object") return {};
+      const normalized: Record<string, number> = {};
+      Object.entries(rawMap as Record<string, unknown>).forEach(([key, value]) => {
+        const parsed = parseNumberLike(value);
+        if (parsed == null) return;
+        normalized[normalizeToken(key)] = parsed;
+      });
+      return normalized;
+    };
+
+    const resolveShareContext = (body: any) => {
+      const rawShare = body?.share_per_operator_seconds ?? body?.sharePerOperatorSeconds ?? null;
+      const shareMap =
+        rawShare && typeof rawShare === "object" ? (rawShare as Record<string, unknown>) : null;
+      const shareScalar =
+        typeof rawShare === "number"
+          ? rawShare
+          : typeof rawShare === "string"
+            ? parseNumberLike(rawShare)
+            : null;
+      const fallbackSeconds = Math.max(
+        0,
+        parseNumberLike(
+          body?.cycle_time_seconds ??
+          body?.real_cycle_time_seconds ??
+          body?.cycle_time ??
+          body?.tempo_ciclo_segundos ??
+          body?.kpis?.cycle_time_seconds
+        ) ?? 0
+      );
+
+      return { shareMap, shareScalar, fallbackSeconds };
+    };
+
+    const requestShareContext = resolveShareContext(requestBody);
+    const responseShareContext = resolveShareContext(responseBody);
+
+    const requestByKey = new Map<string, any>();
+    requestRows.forEach((row) => requestByKey.set(buildRowKey(row), row));
+    const responseByKey = new Map<string, any>();
+    responseRows.forEach((row) => responseByKey.set(buildRowKey(row), row));
+
+    console.groupCollapsed("[AJUSTE] Rasto percentagem -> segundos -> resposta");
+    editedRows.forEach((editedRow) => {
+      const rowKey = buildRowKey(editedRow);
+      const reqRow = requestByKey.get(rowKey);
+      const resRow = responseByKey.get(rowKey);
+      const editedPercents = resolvePercentMap(editedRow);
+      const requestPercents = resolvePercentMap(reqRow);
+      const responsePercents = resolvePercentMap(resRow);
+      const requestTimes = resolveTimeMap(reqRow);
+      const responseTimes = resolveTimeMap(resRow);
+
+      const operatorKeys = new Set<string>([
+        ...Object.keys(editedPercents),
+        ...Object.keys(requestPercents),
+        ...Object.keys(responsePercents),
+        ...Object.keys(requestTimes),
+        ...Object.keys(responseTimes),
+      ]);
+
+      operatorKeys.forEach((operatorKey) => {
+        const editedPercent = editedPercents[operatorKey];
+        const requestSeconds = requestTimes[operatorKey];
+        const requestPercent = requestPercents[operatorKey];
+        const responseSeconds = responseTimes[operatorKey];
+        const responsePercentExplicit = responsePercents[operatorKey];
+        const responseDenominator = resolveSharePerOperatorSeconds(
+          operatorKey,
+          responseShareContext.shareMap,
+          responseShareContext.shareScalar,
+          responseShareContext.fallbackSeconds
+        );
+        const requestDenominator = resolveSharePerOperatorSeconds(
+          operatorKey,
+          requestShareContext.shareMap,
+          requestShareContext.shareScalar,
+          requestShareContext.fallbackSeconds
+        );
+        const responsePercent =
+          responsePercentExplicit != null
+            ? responsePercentExplicit
+            : responseSeconds != null && responseDenominator > 0
+              ? (responseSeconds / responseDenominator) * 100
+              : null;
+
+        if (
+          editedPercent == null &&
+          requestSeconds == null &&
+          requestPercent == null &&
+          responsePercent == null &&
+          responseSeconds == null
+        ) {
+          return;
+        }
+
+        console.log({
+          row: rowKey,
+          operator: operatorKey,
+          typed_percent: editedPercent ?? null,
+          sent_seconds: requestSeconds ?? null,
+          sent_percent: requestPercent ?? null,
+          sent_denominator_seconds: requestDenominator > 0 ? requestDenominator : null,
+          returned_seconds: responseSeconds ?? null,
+          returned_denominator_seconds: responseDenominator > 0 ? responseDenominator : null,
+          returned_percent: responsePercent ?? null,
+        });
+      });
+    });
+    console.groupEnd();
+  };
+
   const buildDistribuicaoFromAllocations = (operationAllocations: any[], tempoCicloMin: number): any[] => {
     const byOperator: Record<string, { operacoes: Set<string>; segundos: number; temposOperacoes: Record<string, number> }> = {};
     const processOperatorTime = (operatorRef: unknown, opCode: string, secondsRaw: unknown) => {
@@ -184,6 +372,28 @@ export default function Resultados() {
     const clone = structuredClone(baseBody);
     const originalRows = ensureArray(clone?.operation_allocations);
     if (originalRows.length === 0) return clone;
+    const cycleTimeSecondsBase = Math.max(
+      0,
+      parseNumberLike(
+        clone?.cycle_time_seconds ??
+        clone?.real_cycle_time_seconds ??
+        clone?.cycle_time ??
+        clone?.tempo_ciclo_segundos ??
+        clone?.kpis?.cycle_time_seconds
+      ) ?? 0
+    );
+    const sharePerOperatorSecondsRaw =
+      clone?.share_per_operator_seconds ?? clone?.sharePerOperatorSeconds ?? null;
+    const sharePerOperatorSecondsMap =
+      sharePerOperatorSecondsRaw && typeof sharePerOperatorSecondsRaw === "object"
+        ? (sharePerOperatorSecondsRaw as Record<string, unknown>)
+        : null;
+    const sharePerOperatorSecondsScalar =
+      typeof sharePerOperatorSecondsRaw === "number"
+        ? sharePerOperatorSecondsRaw
+        : typeof sharePerOperatorSecondsRaw === "string"
+          ? parseNumberLike(sharePerOperatorSecondsRaw)
+          : null;
 
     const editedByKey = new Map<string, any>();
     const editedBySeq = new Map<string, any[]>();
@@ -243,9 +453,13 @@ export default function Resultados() {
       const nextTotal = editedTotal != null ? Math.max(0, editedTotal) : fromOperatorTimes;
       nextRow.total_time_seconds = nextTotal;
       nextRow.allocated_time_seconds = Math.max(0, parseNumberLike(edited?.allocated_time_seconds) ?? fromOperatorTimes);
-      nextRow.remaining_time_seconds = Math.max(
-        0,
-        Math.max(0, parseNumberLike(edited?.remaining_time_seconds) ?? nextTotal - nextRow.allocated_time_seconds)
+      nextRow.remaining_time_seconds =
+        parseNumberLike(edited?.remaining_time_seconds) ?? nextTotal - nextRow.allocated_time_seconds;
+      nextRow.occupancy_percentages = buildOccupancyPercentagesFromTimes(
+        nextRow.operator_times || {},
+        sharePerOperatorSecondsMap,
+        sharePerOperatorSecondsScalar,
+        cycleTimeSecondsBase > 0 ? cycleTimeSecondsBase : nextTotal
       );
 
       if (Array.isArray(edited?.operator_allocations)) {
@@ -375,6 +589,7 @@ export default function Resultados() {
           body
         );
         const novoRaw = resposta.data ?? {};
+        logAdjustPercentageTrace(editedRows, body, novoRaw);
         const novosResultados = buildResultadosFromApi(novoRaw);
         setResultadosAtuais(novosResultados);
         setAjusteBodyBase((prev: any) => ({
