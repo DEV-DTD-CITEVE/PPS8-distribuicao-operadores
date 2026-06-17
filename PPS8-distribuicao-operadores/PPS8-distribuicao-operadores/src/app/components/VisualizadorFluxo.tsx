@@ -1800,22 +1800,6 @@ export function VisualizadorFluxo({
                         />
                       </div>
                     ) : null}
-                    {onLayoutConfigChange && agruparPorMaquina ? (
-                      <div className="flex h-8 items-center gap-3 rounded-sm border border-blue-200 bg-blue-50 px-3">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-                          Retroceder
-                        </span>
-                        <Switch
-                          checked={layoutConfig?.permitirRetrocesso ?? false}
-                          onCheckedChange={(checked) =>
-                            onLayoutConfigChange({
-                              ...(layoutConfig as LayoutConfig),
-                              permitirRetrocesso: checked,
-                            })
-                          }
-                        />
-                      </div>
-                    ) : null}
                   </div>
                 </div>
               ) : (

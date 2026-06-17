@@ -71,11 +71,30 @@ function resolveOperatorCode(operadorId: string, operadores: any[]): string {
   return shortFromRaw || operadorId;
 }
 
+function interpolateHexColor(start: string, end: string, factor: number): string {
+  const safeFactor = Math.max(0, Math.min(1, factor));
+  const startValue = start.replace("#", "");
+  const endValue = end.replace("#", "");
+  const startRgb = [
+    Number.parseInt(startValue.slice(0, 2), 16),
+    Number.parseInt(startValue.slice(2, 4), 16),
+    Number.parseInt(startValue.slice(4, 6), 16),
+  ];
+  const endRgb = [
+    Number.parseInt(endValue.slice(0, 2), 16),
+    Number.parseInt(endValue.slice(2, 4), 16),
+    Number.parseInt(endValue.slice(4, 6), 16),
+  ];
+  const mixed = startRgb.map((channel, index) =>
+    Math.round(channel + (endRgb[index] - channel) * safeFactor)
+  );
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
 function getBatteryColor(ocupacao: number): string {
   if (ocupacao > 100.05) return "#DC2626";
-  if (ocupacao >= 90) return "#10B981";
-  if (ocupacao >= 70) return "#FBBF24";
-  return "#FBBF24";
+  const normalized = Math.max(0, Math.min(ocupacao, 100)) / 100;
+  return interpolateHexColor("#FACC15", "#10B981", normalized);
 }
 
 function normalizeOccupancyForDisplay(value: number): number {
@@ -467,12 +486,12 @@ export function DashboardResultados({
     const fallbackTotal = Number(dist?.cargaHoraria) * 60;
     const totalFromAllocations = totaisSegundosPorOperador.get(normalizedOperatorCode);
     const maxFromShare = maxSegundosPorOperador.get(normalizedOperatorCode);
-    const denominatorSeconds = Number.isFinite(sharePerOperatorSecondsScalar as number) && (sharePerOperatorSecondsScalar as number) > 0
-      ? (sharePerOperatorSecondsScalar as number)
-      : Number.isFinite(maxFromShare as number) && (maxFromShare as number) > 0
-        ? (maxFromShare as number)
-        : cycleTimeSeconds > 0
-          ? cycleTimeSeconds
+    const denominatorSeconds = cycleTimeSeconds > 0
+      ? cycleTimeSeconds
+      : Number.isFinite(sharePerOperatorSecondsScalar as number) && (sharePerOperatorSecondsScalar as number) > 0
+        ? (sharePerOperatorSecondsScalar as number)
+        : Number.isFinite(maxFromShare as number) && (maxFromShare as number) > 0
+          ? (maxFromShare as number)
           : 0;
     const ocupacaoFromDistribuicao = parseNumberLike(dist?.ocupacao);
     const ocupacaoFromTableData = occupancyByOperator.get(normalizedOperatorCode);
@@ -569,6 +588,7 @@ export function DashboardResultados({
               const batteryInnerTop = 18;
               const batteryInnerBottom = 176;
               const batteryInnerHeight = batteryInnerBottom - batteryInnerTop;
+              const fillStart = batteryInnerBottom - fillHeight;
               const segmentHeight = operationLabels.length > 0 ? batteryInnerHeight / operationLabels.length : 0;
               const operationSegments = operationLabels.map((label, idx) => ({
                 label,
@@ -637,7 +657,10 @@ export function DashboardResultados({
                       className="col-1 relative row-1 ml-[5px] w-[48px] flex items-center justify-center"
                       style={{ marginTop: `${segment.top}px`, height: `${segment.height}px` }}
                     >
-                      <p className="font-bold leading-none not-italic text-[#f2efef] text-[12px] text-center whitespace-nowrap">
+                      <p
+                        className="font-bold leading-none not-italic text-[12px] text-center whitespace-nowrap"
+                        style={{ color: "#6B7280" }}
+                      >
                         {segment.label}
                       </p>
                     </div>

@@ -23,6 +23,8 @@ interface ConfiguracaoDistribuicaoProps {
   onProdutividadeEstimadaChange: (value: number) => void;
   onQuantidadeObjetivoInputChange: (value: string) => void;
   onNumeroOperadoresInputChange: (value: string) => void;
+  permitirRetrocesso?: boolean;
+  onPermitirRetrocessoChange?: (value: boolean) => void;
 }
 
 export function ConfiguracaoDistribuicaoComponent({
@@ -41,6 +43,8 @@ export function ConfiguracaoDistribuicaoComponent({
   onProdutividadeEstimadaChange,
   onQuantidadeObjetivoInputChange,
   onNumeroOperadoresInputChange,
+  permitirRetrocesso = false,
+  onPermitirRetrocessoChange,
 }: ConfiguracaoDistribuicaoProps) {
   const [naoDividirMaiorInput, setNaoDividirMaiorInput] = useState(String(config.naoDividirMaiorQue));
   const [naoDividirMenorInput, setNaoDividirMenorInput] = useState(String(config.naoDividirMenorQue));
@@ -189,6 +193,27 @@ export function ConfiguracaoDistribuicaoComponent({
                   />
                 </div>
               </div>
+
+              {config.agruparMaquinas && onPermitirRetrocessoChange ? (
+                <div className="p-4 border border-gray-200 rounded-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <Label htmlFor="permitir-retrocesso" className="font-medium text-gray-900 text-sm cursor-pointer">
+                        Retroceder
+                      </Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Permite voltar atrás na sequência quando o agrupamento está ativo.
+                      </p>
+                    </div>
+                    <Switch
+                      id="permitir-retrocesso"
+                      checked={permitirRetrocesso}
+                      onCheckedChange={onPermitirRetrocessoChange}
+                      className="cursor-pointer"
+                    />
+                  </div>
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
                 <div>

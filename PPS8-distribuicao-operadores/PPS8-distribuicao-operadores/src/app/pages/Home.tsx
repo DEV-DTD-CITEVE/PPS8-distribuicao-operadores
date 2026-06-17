@@ -1505,15 +1505,32 @@ export default function Home() {
 
   // ─── Helpers para resultados inline (espelham Resultados.tsx) ──────────────
 
-  const resolveMachineLayoutInline = (raw: any): any[] => {
+  const resolveMachineLayoutInline = (raw: any, tipoPreferido?: "linha" | "espinha"): any[] => {
     const arr = raw?.machine_layout ?? raw?.machineLayout ?? raw?.layout_machines ?? raw?.machine_positions ?? raw?.machines_layout;
     if (Array.isArray(arr)) return arr;
     if (arr && typeof arr === "object") {
-      const nested = Object.values(arr as Record<string, unknown>).find((v) => Array.isArray(v));
+      const record = arr as Record<string, unknown>;
+      const layoutKeyAliases =
+        tipoPreferido === "espinha"
+          ? ["espinha", "spine", "fishbone", "herringbone"]
+          : ["linha", "line", "linear", "straight"];
+      for (const [rawKey, value] of Object.entries(record)) {
+        const normalizedKey = String(rawKey).trim().toLowerCase();
+        if (!layoutKeyAliases.some((alias) => normalizedKey.includes(alias))) continue;
+        if (Array.isArray(value)) return value as any[];
+        if (value && typeof value === "object") {
+          const nestedArray = Object.values(value as Record<string, unknown>).find((v) => Array.isArray(v));
+          if (Array.isArray(nestedArray)) return nestedArray as any[];
+        }
+      }
+      const nested = Object.values(record).find((v) => Array.isArray(v));
       if (Array.isArray(nested)) return nested as any[];
     }
     return [];
   };
+
+  const hasMachineLayoutForTipoInline = (raw: any, tipo: "linha" | "espinha"): boolean =>
+    resolveMachineLayoutInline(raw, tipo).length > 0;
 
   const parseNumberLikeInline = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -2069,9 +2086,9 @@ export default function Home() {
     taskCode?: string;
     ajusteBodyBase?: any;
   }) => {
-    const machineLayout = resolveMachineLayoutInline(data.resultados).length > 0
-      ? resolveMachineLayoutInline(data.resultados)
-      : resolveMachineLayoutInline(data.ajusteBodyBase);
+    const machineLayout = resolveMachineLayoutInline(data.resultados, data.layoutConfig.tipoLayout).length > 0
+      ? resolveMachineLayoutInline(data.resultados, data.layoutConfig.tipoLayout)
+      : resolveMachineLayoutInline(data.ajusteBodyBase, data.layoutConfig.tipoLayout);
     const resultadosComLayout = { ...(data.resultados as any), machine_layout: machineLayout };
     setResultadosInlineData(data);
     setResultadosAtuaisInline(resultadosComLayout);
@@ -2919,13 +2936,37 @@ export default function Home() {
     if (!autoRecalcularLayoutRef.current) return;
     autoRecalcularLayoutRef.current = false;
     if (!resultadosInlineData) return;
+    const tipoAtual = layoutConfig.tipoLayout;
+    const layoutExistenteNosResultados = hasMachineLayoutForTipoInline(resultadosAtuaisInline, tipoAtual);
+    const layoutExistenteNoAjuste = hasMachineLayoutForTipoInline(ajusteBodyBaseInline, tipoAtual);
+    if (layoutExistenteNosResultados || layoutExistenteNoAjuste) {
+      const machineLayout = layoutExistenteNosResultados
+        ? resolveMachineLayoutInline(resultadosAtuaisInline, tipoAtual)
+        : resolveMachineLayoutInline(ajusteBodyBaseInline, tipoAtual);
+      setResultadosAtuaisInline((prev) =>
+        prev ? ({ ...(prev as any), machine_layout: machineLayout }) : prev
+      );
+      setResultadosInlineData((prev) =>
+        prev
+          ? {
+              ...prev,
+              resultados: { ...(prev.resultados as any), machine_layout: machineLayout },
+              layoutConfig,
+            }
+          : prev
+      );
+      return;
+    }
     suppressResultadosScrollRef.current = true;
     void handleCalcular(true);
   }, [
+    ajusteBodyBaseInline,
     layoutConfig.tipoLayout,
     layoutConfig.postosPorLado,
     layoutConfig.distanciaMaxima,
     layoutConfig.permitirRetrocesso,
+    resultadosAtuaisInline,
+    resultadosInlineData,
   ]);
 
   const [seccoesExpandidas, setSeccoesExpandidas] = useState({
@@ -3129,6 +3170,10 @@ export default function Home() {
                   [unidadeAtiva]: { ...prev[unidadeAtiva], operadoresSelecionados: novos },
                 }));
               }}
+              permitirRetrocesso={layoutConfig.permitirRetrocesso}
+              onPermitirRetrocessoChange={(value) =>
+                setLayoutConfig((prev) => ({ ...prev, permitirRetrocesso: value }))
+              }
             />
           </div>
         )}
