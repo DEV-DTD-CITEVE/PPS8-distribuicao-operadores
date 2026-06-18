@@ -1132,6 +1132,7 @@ export default function Home() {
   const [viewModeInline, setViewModeInline] = useState<"tempo" | "percentagem">("tempo");
   const [ajusteBodyBaseInline, setAjusteBodyBaseInline] = useState<any>(null);
   const [taskCodeInline, setTaskCodeInline] = useState<string>("");
+  const [temAdjustInline, setTemAdjustInline] = useState(false);
   const autoRecalcularLayoutRef = useRef(false);
   const suppressResultadosScrollRef = useRef(false);
   const [isAjustando, setIsAjustando] = useState(false);
@@ -1505,32 +1506,112 @@ export default function Home() {
 
   // ─── Helpers para resultados inline (espelham Resultados.tsx) ──────────────
 
-  const resolveMachineLayoutInline = (raw: any, tipoPreferido?: "linha" | "espinha"): any[] => {
+  const resolveMachineLayoutInline = (raw: any): any[] => {
     const arr = raw?.machine_layout ?? raw?.machineLayout ?? raw?.layout_machines ?? raw?.machine_positions ?? raw?.machines_layout;
     if (Array.isArray(arr)) return arr;
     if (arr && typeof arr === "object") {
-      const record = arr as Record<string, unknown>;
-      const layoutKeyAliases =
-        tipoPreferido === "espinha"
-          ? ["espinha", "spine", "fishbone", "herringbone"]
-          : ["linha", "line", "linear", "straight"];
-      for (const [rawKey, value] of Object.entries(record)) {
-        const normalizedKey = String(rawKey).trim().toLowerCase();
-        if (!layoutKeyAliases.some((alias) => normalizedKey.includes(alias))) continue;
-        if (Array.isArray(value)) return value as any[];
-        if (value && typeof value === "object") {
-          const nestedArray = Object.values(value as Record<string, unknown>).find((v) => Array.isArray(v));
-          if (Array.isArray(nestedArray)) return nestedArray as any[];
-        }
-      }
-      const nested = Object.values(record).find((v) => Array.isArray(v));
+      const nested = Object.values(arr as Record<string, unknown>).find((v) => Array.isArray(v));
       if (Array.isArray(nested)) return nested as any[];
     }
     return [];
   };
 
-  const hasMachineLayoutForTipoInline = (raw: any, tipo: "linha" | "espinha"): boolean =>
-    resolveMachineLayoutInline(raw, tipo).length > 0;
+  const resolveMachineLayoutPorTipoInline = (raw: any, tipoLayout: "linha" | "espinha"): any[] => {
+    const source =
+      raw?.machine_layout ??
+      raw?.machineLayout ??
+      raw?.layout_machines ??
+      raw?.machine_positions ??
+      raw?.machines_layout;
+
+    if (Array.isArray(source)) return source;
+    if (!source || typeof source !== "object") return [];
+
+    const normalize = (value: unknown) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, "");
+
+    const preferredKeys = tipoLayout === "linha"
+      ? ["linha", "line", "linear", "row"]
+      : ["espinha", "spine", "fishbone", "backbone"];
+
+    const looksLikeEspinhaLayout = (rows: any[]): boolean =>
+      rows.some((row) => {
+        const side = String(row?.position_side ?? row?.side ?? "").trim().toUpperCase();
+        const label = String(row?.position_label ?? row?.primary_post_label ?? row?.position ?? "").trim().toUpperCase();
+        if (side === "B") return true;
+        if (label.startsWith("B")) return true;
+
+        const operators = Array.isArray(row?.operators)
+          ? row.operators
+          : Array.isArray(row?.operator_allocations)
+            ? row.operator_allocations
+            : [];
+
+        return operators.some((operator: any) => {
+          const primary = operator?.primary_position ?? operator?.main_position ?? operator?.position ?? operator?.position_label;
+          const primarySide = String(primary?.position_side ?? operator?.position_side ?? "").trim().toUpperCase();
+          const primaryLabel = String(primary?.position_label ?? primary ?? "").trim().toUpperCase();
+          if (primarySide === "B" || primaryLabel.startsWith("B")) return true;
+
+          const otherPositions = Array.isArray(operator?.other_positions)
+            ? operator.other_positions
+            : Array.isArray(operator?.secondary_positions)
+              ? operator.secondary_positions
+              : Array.isArray(operator?.positions)
+                ? operator.positions
+                : [];
+
+          return otherPositions.some((pos: any) => {
+            const posSide = String(pos?.position_side ?? pos?.side ?? "").trim().toUpperCase();
+            const posLabel = String(pos?.position_label ?? pos ?? "").trim().toUpperCase();
+            return posSide === "B" || posLabel.startsWith("B");
+          });
+        });
+      });
+
+    const collectArrayCandidates = (
+      value: unknown,
+      path: string[] = [],
+      acc: Array<{ path: string[]; rows: any[] }> = []
+    ) => {
+      if (Array.isArray(value)) {
+        acc.push({ path, rows: value });
+        return acc;
+      }
+      if (!value || typeof value !== "object") return acc;
+      Object.entries(value as Record<string, unknown>).forEach(([key, nested]) => {
+        collectArrayCandidates(nested, [...path, key], acc);
+      });
+      return acc;
+    };
+
+    const candidates = collectArrayCandidates(source);
+    const scored = candidates.map((candidate) => {
+      const pathScore = candidate.path.some((segment) => preferredKeys.includes(normalize(segment))) ? 2 : 0;
+      const espinhaScore = looksLikeEspinhaLayout(candidate.rows) ? 4 : 0;
+      return {
+        ...candidate,
+        score: pathScore + (tipoLayout === "espinha" ? espinhaScore : 0),
+      };
+    });
+
+    if (tipoLayout === "espinha") {
+      const espinha = scored
+        .filter((candidate) => looksLikeEspinhaLayout(candidate.rows))
+        .sort((a, b) => b.score - a.score)[0];
+      if (espinha) return espinha.rows;
+      return [];
+    }
+
+    const preferred = scored.sort((a, b) => b.score - a.score)[0];
+    if (preferred) return preferred.rows;
+    return resolveMachineLayoutInline(raw);
+  };
 
   const parseNumberLikeInline = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -1541,7 +1622,12 @@ export default function Home() {
     return null;
   };
 
-  const buildDistribuicaoFromAllocationsInline = useCallback((operationAllocations: any[], tempoCicloMin: number): any[] => {
+  const buildDistribuicaoFromAllocationsInline = useCallback((
+    operationAllocations: any[],
+    tempoCicloMin: number,
+    sharePerOperatorSeconds: Record<string, unknown> | null,
+    sharePerOperatorScalar: number | null
+  ): any[] => {
     const byOperator: Record<string, { operacoes: Set<string>; segundos: number; temposOperacoes: Record<string, number> }> = {};
     const processOperatorTime = (operatorRef: unknown, opCode: string, secondsRaw: unknown) => {
       const normalizedOperatorRef = String(operatorRef || "").trim();
@@ -1579,11 +1665,25 @@ export default function Home() {
     });
     return Object.entries(byOperator).map(([operadorId, dados]) => {
       const cargaHoraria = dados.segundos / 60;
+      let denominatorSeconds = tempoCicloMin > 0 ? tempoCicloMin * 60 : 0;
+      if (sharePerOperatorSeconds) {
+        const normalizedOperatorId = normalizeKey(String(operadorId || ""));
+        for (const [rawKey, rawValue] of Object.entries(sharePerOperatorSeconds)) {
+          if (normalizeKey(rawKey) !== normalizedOperatorId) continue;
+          const parsed = parseNumberLikeInline(rawValue);
+          if (parsed != null && parsed > 0) {
+            denominatorSeconds = parsed;
+            break;
+          }
+        }
+      } else if (sharePerOperatorScalar != null && sharePerOperatorScalar > 0) {
+        denominatorSeconds = sharePerOperatorScalar;
+      }
       return {
         operadorId,
         operacoes: Array.from(dados.operacoes),
         cargaHoraria,
-        ocupacao: tempoCicloMin > 0 ? (cargaHoraria / tempoCicloMin) * 100 : 0,
+        ocupacao: denominatorSeconds > 0 ? (dados.segundos / denominatorSeconds) * 100 : 0,
         ciclosPorHora: cargaHoraria > 0 ? 60 / cargaHoraria : 0,
         temposOperacoes: dados.temposOperacoes,
       };
@@ -1670,15 +1770,36 @@ export default function Home() {
       ) ?? (currentResultados.produtividade ?? 0);
     const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
     const distribuicaoFromApi = ensureArray(raw?.distribuicao ?? raw?.distribution);
+    const rawSharePerOperatorSeconds = raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds;
+    const rawSharePerOperatorSecondsMap =
+      rawSharePerOperatorSeconds && typeof rawSharePerOperatorSeconds === "object"
+        ? (rawSharePerOperatorSeconds as Record<string, unknown>)
+        : null;
+    const rawSharePerOperatorSecondsScalar =
+      typeof rawSharePerOperatorSeconds === "number"
+        ? rawSharePerOperatorSeconds
+        : typeof rawSharePerOperatorSeconds === "string"
+          ? parseNumberLikeInline(rawSharePerOperatorSeconds)
+          : null;
     const distribuicao =
-      operationAllocations.length > 0
-        ? buildDistribuicaoFromAllocationsInline(operationAllocations, tempoCiclo)
-        : distribuicaoFromApi.length > 0
-          ? distribuicaoFromApi
+      distribuicaoFromApi.length > 0
+        ? distribuicaoFromApi
+        : operationAllocations.length > 0
+          ? buildDistribuicaoFromAllocationsInline(
+              operationAllocations,
+              tempoCiclo,
+              rawSharePerOperatorSecondsMap,
+              rawSharePerOperatorSecondsScalar
+            )
           : currentResultados.distribuicao;
     const derivedTableData = buildTableDataFromDistribuicaoInline(distribuicao);
     const derivedSharePerOperatorSeconds = buildSharePerOperatorSecondsInline(distribuicao, cycleTimeSeconds);
-    const shouldPreferDerivedOperatorMetrics = operationAllocations.length > 0;
+    const rawTableData =
+      raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table;
+    const shouldPreferDerivedOperatorMetrics =
+      operationAllocations.length > 0 &&
+      rawTableData == null &&
+      rawSharePerOperatorSeconds == null;
     const numeroCiclosPorHora =
       pickKpiInline(
         raw,
@@ -1724,18 +1845,18 @@ export default function Home() {
       share_per_operator_seconds:
         ((shouldPreferDerivedOperatorMetrics
           ? derivedSharePerOperatorSeconds
-          : (raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds)) ??
+          : rawSharePerOperatorSeconds) ??
           (shouldPreferDerivedOperatorMetrics
-            ? (raw?.share_per_operator_seconds ?? raw?.sharePerOperatorSeconds)
+            ? rawSharePerOperatorSeconds
             : derivedSharePerOperatorSeconds) ??
           (currentResultados as any)?.share_per_operator_seconds ??
           null) as any,
       table_data:
         ((shouldPreferDerivedOperatorMetrics
           ? derivedTableData
-          : (raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table)) ??
+          : rawTableData) ??
           (shouldPreferDerivedOperatorMetrics
-            ? (raw?.table_data ?? raw?.tableData ?? raw?.operator_table ?? raw?.operatorTable ?? raw?.results_table)
+            ? rawTableData
             : derivedTableData) ??
           (currentResultados as any)?.table_data ??
           null) as any,
@@ -1983,18 +2104,6 @@ export default function Home() {
         clone?.kpis?.cycle_time_seconds
       ) ?? 0
     );
-    const sharePerOperatorSecondsRaw =
-      clone?.share_per_operator_seconds ?? clone?.sharePerOperatorSeconds ?? null;
-    const sharePerOperatorSecondsMap =
-      sharePerOperatorSecondsRaw && typeof sharePerOperatorSecondsRaw === "object"
-        ? (sharePerOperatorSecondsRaw as Record<string, unknown>)
-        : null;
-    const sharePerOperatorSecondsScalar =
-      typeof sharePerOperatorSecondsRaw === "number"
-        ? sharePerOperatorSecondsRaw
-        : typeof sharePerOperatorSecondsRaw === "string"
-          ? parseNumberLikeInline(sharePerOperatorSecondsRaw)
-          : null;
     const normalizeToken = (value: unknown): string => String(value ?? "").trim().toLowerCase().replace(/^0+(\d)/, "$1");
     const editedByKey = new Map<string, any>();
     const editedBySeq = new Map<string, any[]>();
@@ -2029,6 +2138,18 @@ export default function Home() {
         0,
         (parseNumberLikeInline(edited?.total_time_seconds) ?? parseNumberLikeInline(row?.total_time_seconds) ?? fromOperatorTimes) as number
       );
+      const sharePerOperatorSecondsRaw =
+        clone?.share_per_operator_seconds ?? clone?.sharePerOperatorSeconds ?? null;
+      const sharePerOperatorSecondsMap =
+        sharePerOperatorSecondsRaw && typeof sharePerOperatorSecondsRaw === "object"
+          ? (sharePerOperatorSecondsRaw as Record<string, unknown>)
+          : null;
+      const sharePerOperatorSecondsScalar =
+        typeof sharePerOperatorSecondsRaw === "number"
+          ? sharePerOperatorSecondsRaw
+          : typeof sharePerOperatorSecondsRaw === "string"
+            ? parseNumberLikeInline(sharePerOperatorSecondsRaw)
+            : null;
       const occupancyPercentages = buildOccupancyPercentagesInline(
         nextRow.operator_times || {},
         sharePerOperatorSecondsMap,
@@ -2086,16 +2207,18 @@ export default function Home() {
     taskCode?: string;
     ajusteBodyBase?: any;
   }) => {
-    const machineLayout = resolveMachineLayoutInline(data.resultados, data.layoutConfig.tipoLayout).length > 0
-      ? resolveMachineLayoutInline(data.resultados, data.layoutConfig.tipoLayout)
-      : resolveMachineLayoutInline(data.ajusteBodyBase, data.layoutConfig.tipoLayout);
-    const resultadosComLayout = { ...(data.resultados as any), machine_layout: machineLayout };
+    const machineLayout = resolveMachineLayoutPorTipoInline(data.resultados, data.layoutConfig.tipoLayout);
+    const resultadosComLayout = {
+      ...(data.resultados as any),
+      machine_layout: machineLayout,
+    };
     setResultadosInlineData(data);
     setResultadosAtuaisInline(resultadosComLayout);
     setConfigAtualInline(data.config);
     setViewModeInline("tempo");
     setTaskCodeInline(data.taskCode || "");
     setAjusteBodyBaseInline(data.ajusteBodyBase ?? null);
+    setTemAdjustInline(false);
     if (suppressResultadosScrollRef.current) {
       suppressResultadosScrollRef.current = false;
       return;
@@ -2125,7 +2248,11 @@ export default function Home() {
       const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
       const novoRaw = resposta.data ?? {};
       logAdjustPercentageTraceInline(editedRows, body, novoRaw);
-      const novosResultados = buildResultadosFromApiInline(novoRaw, resultadosAtuaisInline!);
+      const novosResultadosBase = buildResultadosFromApiInline(novoRaw, resultadosAtuaisInline!);
+      const novosResultados = {
+        ...(novosResultadosBase as any),
+        machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, layoutConfig.tipoLayout),
+      } as ResultadosBalanceamento;
       const proximoAjusteBodyBase = {
         ...(ajusteBodyBaseInline || {}),
         ...(novoRaw || {}),
@@ -2142,6 +2269,7 @@ export default function Home() {
           : prev
       );
       setAjusteBodyBaseInline(proximoAjusteBodyBase);
+      setTemAdjustInline(true);
     } catch (error) {
       const apiMessage = (error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.message || (error as any)?.message;
       setErroPopupInline(apiMessage || "Erro ao ajustar alocação. Verifica os valores editados e tenta novamente.");
@@ -2149,7 +2277,7 @@ export default function Home() {
     } finally {
       setIsAjustando(false);
     }
-  }, [taskCodeInline, ajusteBodyBaseInline, resultadosAtuaisInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline]);
+  }, [taskCodeInline, ajusteBodyBaseInline, resultadosAtuaisInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline, layoutConfig.tipoLayout]);
 
   const handleGuardarHistoricoInline = useCallback(async () => {
     if (isGuardandoHistorico) return;
@@ -2936,37 +3064,13 @@ export default function Home() {
     if (!autoRecalcularLayoutRef.current) return;
     autoRecalcularLayoutRef.current = false;
     if (!resultadosInlineData) return;
-    const tipoAtual = layoutConfig.tipoLayout;
-    const layoutExistenteNosResultados = hasMachineLayoutForTipoInline(resultadosAtuaisInline, tipoAtual);
-    const layoutExistenteNoAjuste = hasMachineLayoutForTipoInline(ajusteBodyBaseInline, tipoAtual);
-    if (layoutExistenteNosResultados || layoutExistenteNoAjuste) {
-      const machineLayout = layoutExistenteNosResultados
-        ? resolveMachineLayoutInline(resultadosAtuaisInline, tipoAtual)
-        : resolveMachineLayoutInline(ajusteBodyBaseInline, tipoAtual);
-      setResultadosAtuaisInline((prev) =>
-        prev ? ({ ...(prev as any), machine_layout: machineLayout }) : prev
-      );
-      setResultadosInlineData((prev) =>
-        prev
-          ? {
-              ...prev,
-              resultados: { ...(prev.resultados as any), machine_layout: machineLayout },
-              layoutConfig,
-            }
-          : prev
-      );
-      return;
-    }
     suppressResultadosScrollRef.current = true;
     void handleCalcular(true);
   }, [
-    ajusteBodyBaseInline,
     layoutConfig.tipoLayout,
     layoutConfig.postosPorLado,
     layoutConfig.distanciaMaxima,
     layoutConfig.permitirRetrocesso,
-    resultadosAtuaisInline,
-    resultadosInlineData,
   ]);
 
   const [seccoesExpandidas, setSeccoesExpandidas] = useState({
@@ -3347,7 +3451,17 @@ export default function Home() {
             agruparPorMaquina={configAtualInline.agruparMaquinas}
             onTipoLayoutChange={(tipo) => {
               if (layoutConfig.tipoLayout === tipo) return;
-              autoRecalcularLayoutRef.current = true;
+              const layoutSource = temAdjustInline
+                ? (ajusteBodyBaseInline ?? resultadosAtuaisInline)
+                : (resultadosInlineData?.resultados ?? resultadosAtuaisInline);
+              setResultadosAtuaisInline((prev) =>
+                prev
+                  ? {
+                      ...(prev as any),
+                      machine_layout: resolveMachineLayoutPorTipoInline(layoutSource, tipo),
+                    } as ResultadosBalanceamento
+                  : prev
+              );
               setLayoutConfig((prev) => ({
                 ...prev,
                 tipoLayout: tipo,

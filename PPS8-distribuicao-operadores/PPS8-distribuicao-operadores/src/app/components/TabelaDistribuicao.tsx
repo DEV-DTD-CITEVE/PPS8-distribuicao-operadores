@@ -121,6 +121,139 @@ const resolveOperatorLabel = (code: string, position: { operator_name?: string }
   return code;
 };
 
+const extractCodeInParens = (value: string): string => {
+  const match = String(value || "").match(/\(([^)]+)\)/);
+  return match?.[1]?.trim() || "";
+};
+
+const buildOperationCandidateKeys = (row: OperationAllocationRow): string[] =>
+  [
+    row.operation_code,
+    row.operation_id,
+    row.operation_name,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .map((value) => normalizeKey(value));
+
+const resolveTableDataPercentageForCell = (
+  tableDataRaw: unknown,
+  row: OperationAllocationRow,
+  column: OperatorColumn,
+  operadores: any[]
+): number | null => {
+  const tableData = Array.isArray(tableDataRaw) ? tableDataRaw : [];
+  if (tableData.length === 0) return null;
+
+  const operatorName = resolveOperatorNameFromCode(column.code, operadores) || column.label;
+  const operatorCandidates = new Set(
+    [
+      column.code,
+      column.label,
+      operatorName,
+      extractCodeInParens(column.label),
+      extractCodeInParens(operatorName),
+    ]
+      .map((value) => normalizeKey(String(value || "").trim()))
+      .filter(Boolean)
+  );
+  const operationCandidates = new Set(buildOperationCandidateKeys(row));
+
+  for (const item of tableData) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const operatorRef = String(record.operator ?? record.operator_id ?? record.operador ?? "").trim();
+    const operatorTokens = new Set(
+      [
+        operatorRef,
+        extractCodeInParens(operatorRef),
+      ]
+        .map((value) => normalizeKey(String(value || "").trim()))
+        .filter(Boolean)
+    );
+    const operatorMatches = Array.from(operatorTokens).some((token) => operatorCandidates.has(token));
+    if (!operatorMatches) continue;
+
+    const operations = Array.isArray(record.operations) ? record.operations : [];
+    for (const operation of operations) {
+      if (!operation || typeof operation !== "object") continue;
+      const opRecord = operation as Record<string, unknown>;
+      const operationRef = String(
+        opRecord.op ??
+          opRecord.operation ??
+          opRecord.operation_code ??
+          opRecord.operation_name ??
+          opRecord.operacao ??
+          ""
+      ).trim();
+      const operationKey = normalizeKey(operationRef);
+      const operationMatches =
+        operationCandidates.has(operationKey) ||
+        Array.from(operationCandidates).some((candidate) => operationKey.includes(candidate) || candidate.includes(operationKey));
+      if (!operationMatches) continue;
+
+      const parsed = parseNumberLike(
+        opRecord.percentage ??
+          opRecord.percent ??
+          opRecord.occupancy_percentage ??
+          opRecord.occupancy_percent
+      );
+      if (parsed != null) return normalizePercentageValue(parsed);
+    }
+  }
+
+  return null;
+};
+
+const resolveTableDataTotalPercentageForOperator = (
+  tableDataRaw: unknown,
+  column: OperatorColumn,
+  operadores: any[]
+): number | null => {
+  const tableData = Array.isArray(tableDataRaw) ? tableDataRaw : [];
+  if (tableData.length === 0) return null;
+
+  const operatorName = resolveOperatorNameFromCode(column.code, operadores) || column.label;
+  const operatorCandidates = new Set(
+    [
+      column.code,
+      column.label,
+      operatorName,
+      extractCodeInParens(column.label),
+      extractCodeInParens(operatorName),
+    ]
+      .map((value) => normalizeKey(String(value || "").trim()))
+      .filter(Boolean)
+  );
+
+  for (const item of tableData) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const operatorRef = String(record.operator ?? record.operator_id ?? record.operador ?? "").trim();
+    const operatorTokens = new Set(
+      [
+        operatorRef,
+        extractCodeInParens(operatorRef),
+      ]
+        .map((value) => normalizeKey(String(value || "").trim()))
+        .filter(Boolean)
+    );
+    const operatorMatches = Array.from(operatorTokens).some((token) => operatorCandidates.has(token));
+    if (!operatorMatches) continue;
+
+    const parsed = parseNumberLike(
+      record.occupancy ??
+      record.occupancy_percent ??
+      record.operator_occupancy ??
+      record.worker_occupancy ??
+      record.ocupacao
+    );
+    if (parsed != null) return normalizePercentageValue(parsed);
+  }
+
+  return null;
+};
+
 const buildOperatorColumns = (
   rows: OperationAllocationRow[],
   operadores: any[],
@@ -511,6 +644,13 @@ function TabelaAllocacoes({
   const operatorSlots = Array.isArray((resultados as any)?.operator_slots)
     ? ((resultados as any).operator_slots as OperatorSlot[])
     : [];
+  const tableDataRaw =
+    (resultados as any)?.table_data ??
+    (resultados as any)?.tableData ??
+    (resultados as any)?.operator_table ??
+    (resultados as any)?.operatorTable ??
+    (resultados as any)?.results_table ??
+    null;
 
   const operatorColumns = useMemo(
     () => buildOperatorColumns(rows, operadores, operatorSlots),
@@ -557,21 +697,54 @@ function TabelaAllocacoes({
     if (count >= 10) return 96;
     return 110;
   }, [operatorColumns.length]);
+  const getDisplayedPercentageValue = (row: OperationAllocationRow, column: OperatorColumn): number | null => {
+    const secondsValue = getOperatorTime(row, column);
+    if (secondsValue == null) return null;
+
+    const tableDataPercentage = resolveTableDataPercentageForCell(
+      tableDataRaw,
+      row,
+      column,
+      operadores
+    );
+    if (tableDataPercentage != null) return tableDataPercentage;
+
+    const operatorTotalPercentage = resolveTableDataTotalPercentageForOperator(
+      tableDataRaw,
+      column,
+      operadores
+    );
+    const operatorTotalSeconds = totalsByOperator[column.key] ?? 0;
+    if (operatorTotalPercentage != null && operatorTotalSeconds > 0) {
+      return (secondsValue / operatorTotalSeconds) * operatorTotalPercentage;
+    }
+
+    const percentageBaseSeconds = resolveOperatorShareSeconds(
+      column,
+      sharePerOperatorSecondsMap,
+      sharePerOperatorSecondsScalar,
+      cycleTimeSeconds
+    );
+    return getOperatorPercentage(row, column, percentageBaseSeconds);
+  };
+
   const totalsByOperatorPercent = useMemo(() => {
     const percentages: Record<string, number> = {};
     operatorColumns.forEach((column) => {
-      const totalSeconds = totalsByOperator[column.key] ?? 0;
-      const percentageBaseSeconds = resolveOperatorShareSeconds(
+      const totalFromTableData = resolveTableDataTotalPercentageForOperator(
+        tableDataRaw,
         column,
-        sharePerOperatorSecondsMap,
-        sharePerOperatorSecondsScalar,
-        cycleTimeSeconds
+        operadores
       );
       percentages[column.key] =
-        percentageBaseSeconds > 0 ? (totalSeconds / percentageBaseSeconds) * 100 : 0;
+        totalFromTableData ??
+        rows.reduce((sum, row) => {
+          const value = getDisplayedPercentageValue(row, column);
+          return sum + (value ?? 0);
+        }, 0);
     });
     return percentages;
-  }, [cycleTimeSeconds, operatorColumns, sharePerOperatorSecondsMap, sharePerOperatorSecondsScalar, totalsByOperator]);
+  }, [operatorColumns, rows, tableDataRaw, operadores, sharePerOperatorSecondsMap, sharePerOperatorSecondsScalar, cycleTimeSeconds]);
 
   const formatMetric = (value: number | null | undefined): string => {
     if (value == null) return "-";
@@ -813,6 +986,7 @@ function TabelaAllocacoes({
         >
           <colgroup>
             <col style={{ width: 60 }} />
+            <col style={{ width: 110 }} />
             <col style={{ width: 140 }} />
             <col style={{ width: 220 }} />
             <col style={{ width: 110 }} />
@@ -824,6 +998,7 @@ function TabelaAllocacoes({
           <thead style={{ position: "sticky", top: 0, zIndex: 30 }}>
             <tr style={{ height: 32 }}>
               <th style={thBase({ textAlign: "center" })}>SEQ</th>
+              <th style={thBase({ textAlign: "center" })}>ID Operação</th>
               <th style={thBase()}>Operação</th>
               <th style={thBase()}>Máquina</th>
               <th style={thBase({ textAlign: "center" })}>Total (s)</th>
@@ -856,6 +1031,12 @@ function TabelaAllocacoes({
               return (
                 <tr key={`${row.operation_code || row.operation_id || seq}-${index}`} style={{ height: 26 }}>
                   <td style={tdBase(bg, { textAlign: "center", fontFamily: "monospace", fontWeight: 600 })}>{String(seq)}</td>
+                  <td
+                    style={tdBase(bg, { textAlign: "center", fontFamily: "monospace", fontWeight: 600, color: "#4b5563" })}
+                    title={String(row.operation_code || row.operation_id || "-")}
+                  >
+                    {String(row.operation_code || row.operation_id || "-")}
+                  </td>
                   <td style={tdBase(bg, { fontWeight: 600 })} title={operationLabel}>
                     {operationLabel}
                   </td>
@@ -866,15 +1047,9 @@ function TabelaAllocacoes({
                     {formatDisplayDecimal(row.total_time_seconds)}
                   </td>
                   {operatorColumns.map((column) => {
-                    const percentageBaseSeconds = resolveOperatorShareSeconds(
-                      column,
-                      sharePerOperatorSecondsMap,
-                      sharePerOperatorSecondsScalar,
-                      cycleTimeSeconds
-                    );
                     const value =
                       viewMode === "percentagem"
-                        ? getOperatorPercentage(row, column, percentageBaseSeconds)
+                        ? getDisplayedPercentageValue(row, column)
                         : getOperatorTime(row, column);
                     const editable = isEditing;
                     return (
@@ -945,6 +1120,7 @@ function TabelaAllocacoes({
             <tr style={{ height: 30, background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
               <td style={tdBase("#f9fafb", { textAlign: "center", color: "#9ca3af", fontSize: 10, fontWeight: 700 })}>S</td>
               <td style={tdBase("#f9fafb", { color: "#6b7280", fontSize: 10, fontWeight: 600 })}>Total</td>
+              <td style={tdBase("#f9fafb")} />
               <td style={tdBase("#f9fafb")} />
               <td style={tdBase("#f9fafb", { textAlign: "center", fontFamily: "monospace", fontWeight: 700, color: "#2563eb" })}>
                 {formatDisplayDecimal(totalTime)}

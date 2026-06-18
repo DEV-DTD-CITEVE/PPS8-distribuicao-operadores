@@ -49,9 +49,7 @@ function EspinhaLayout({
   estacoes, ladoA, ladoB, maxCols, flowByOperator,
   estacoesMapeadas, operatorColorMap, permitirCruzamento,
 }: EspinhaLayoutProps) {
-  const MIN_COL_W = 150;
-  const colStyle = { flex: 1, minWidth: MIN_COL_W, flexShrink: 0 } as const;
-  const totalW = maxCols > 8 ? maxCols * MIN_COL_W : undefined;
+  const colStyle = { flex: 1, minWidth: 110 } as const;
 
   const [arrows, setArrows] = useState<ArrowDef[]>([]);
   const [activeOperator, setActiveOperator] = useState<string>("ALL");
@@ -203,15 +201,19 @@ function EspinhaLayout({
     const maq = estacoesMapeadas[est]?.maquina || "";
     const operador = estacoesMapeadas[est]?.operador || "";
     const hasMaq = maq !== "";
-    const postoNumero = Number(String(est).replace(/^[A-Z]/i, ""));
+    const postoNumeroBase = Number(String(est).replace(/^[A-Z]/i, ""));
     const isA = est.startsWith("A");
+    const postoNumero = Number.isFinite(postoNumeroBase)
+      ? postoNumeroBase
+      : NaN;
+    const postoLabel = Number.isFinite(postoNumero) ? `${isA ? "A" : "B"}${postoNumero}` : est;
     const c = operatorColorMap[operador];
     return (
       <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[90px] flex flex-col items-center justify-between relative">
         <div className={`absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white z-10 ${
           permitirCruzamento ? "bg-blue-700" : isA ? "bg-blue-600" : "bg-green-600"
         }`}>{Number.isFinite(postoNumero) ? postoNumero : ""}</div>
-        <div className="text-[11px] font-bold text-gray-900">{est}</div>
+        <div className="text-[11px] font-bold text-gray-900">{postoLabel}</div>
         <div className="w-full text-[8px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
           {maq || "--"}
         </div>
@@ -228,8 +230,8 @@ function EspinhaLayout({
   const rowStyle = { minHeight: "132px" };
 
   return (
-    <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm relative overflow-x-auto">
-      <div ref={layoutRef} style={{ ...(totalW ? { minWidth: totalW } : {}), position: "relative" }}>
+    <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm relative overflow-x-hidden">
+      <div ref={layoutRef} style={{ position: "relative", width: "100%" }}>
         {/* Arrow overlay — pixel coords, no viewBox */}
         <svg
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 40, overflow: "visible" }}
@@ -347,15 +349,14 @@ function EspinhaLayout({
               ))}
             </div>
           )}
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-[8px] font-semibold text-gray-500 uppercase">Fluxo:</span>
-            <div className="ml-auto flex items-center gap-1 flex-wrap">
+          <div className="flex w-full items-start justify-end">
+            <div className="flex max-w-[84%] flex-wrap items-center justify-end gap-2 text-right">
               {Object.entries(flowByOperator)
                 .filter(([opId]) => activeOperator === "ALL" || activeOperator === opId)
                 .map(([opId, seq]) => (
-                <span key={`flow-${opId}`} className="flex items-center gap-0.5">
+                <span key={`flow-${opId}`} className="flex items-center gap-1">
                   <span
-                    className="text-[7px] font-semibold px-1 rounded-sm"
+                    className="text-[12px] font-semibold px-1.5 py-0.5 rounded-sm leading-none"
                     style={{ background: operatorColorMap[opId]?.bg || "#e5e7eb", color: operatorColorMap[opId]?.text || "#374151" }}
                   >
                     {opId}
@@ -366,9 +367,9 @@ function EspinhaLayout({
                     const isCross = nextEst && nextEst.charAt(0) !== est.charAt(0);
                     return (
                       <span key={`flow-${opId}-${i}-${est}`} className="flex items-center gap-0.5">
-                        <span className={`text-[7px] font-mono font-bold px-0.5 rounded-sm ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
+                        <span className={`text-[12px] font-mono font-bold px-1 py-0.5 rounded-sm leading-none ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
                         {i < seq.length - 1 && (
-                          <span className={`text-[7px] ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
+                          <span className={`text-[12px] font-semibold leading-none ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
                         )}
                       </span>
                     );
@@ -669,7 +670,7 @@ export function VisualizadorFluxo({
     });
 
     return out;
-  }, [resultados, estacoesSet]);
+  }, [resultados, estacoesSet, tipoLayout]);
 
   const estacoesMapeadas = useMemo(() => {
     const mapped: Record<string, { maquina: string; operador: string }> = {};
@@ -778,7 +779,7 @@ export function VisualizadorFluxo({
         };
       })
       .filter(Boolean) as Array<{ label: string; machines_needed: number; avg_time_seconds: number }>;
-  }, [resultados]);
+  }, [resultados, tipoLayout]);
 
   const machineCountsByType = useMemo(() => {
     const counts = new Map<string, { label: string; count: number }>();
@@ -1413,7 +1414,7 @@ export function VisualizadorFluxo({
           <CardContent className="p-4">
             {/* Gráfico Donut Custom - 100% SVG, sem recharts */}
             <div>
-              <div className="bg-white border border-gray-200 rounded-sm p-3">
+              <div className="bg-white border border-gray-200 rounded-sm p-4">
                 {(() => {
                   const R = 68;
                   const CX = 88;
@@ -1431,10 +1432,10 @@ export function VisualizadorFluxo({
                     return { d, i, dash, gap, startOff, color: pieColors[i % pieColors.length] };
                   });
 
-                  const SZ = 180; const CR = 66; const CSW = 26; const CC = 2 * Math.PI * CR;
+                  const SZ = 208; const CR = 76; const CSW = 30; const CC = 2 * Math.PI * CR;
 
                   return (
-                    <div className="flex gap-5 items-center">
+                    <div className="flex gap-7 items-center">
                       <svg width={SZ} height={SZ} style={{ flexShrink: 0 }}>
                         {/* track */}
                         <circle cx={SZ/2} cy={SZ/2} r={CR} fill="none" stroke="#f3f4f6" strokeWidth={CSW} />
@@ -1456,20 +1457,20 @@ export function VisualizadorFluxo({
                           );
                         })}
                         {/* centro */}
-                        <text x={SZ/2} y={SZ/2 - 8} textAnchor="middle" fontSize={15} fill="#111827" fontWeight="700">
+                        <text x={SZ/2} y={SZ/2 - 10} textAnchor="middle" fontSize={18} fill="#111827" fontWeight="700">
                           {dadosGrafico.length}
                         </text>
-                        <text x={SZ/2} y={SZ/2 + 9} textAnchor="middle" fontSize={10} fill="#6b7280">
+                        <text x={SZ/2} y={SZ/2 + 12} textAnchor="middle" fontSize={12} fill="#6b7280">
                           tipos
                         </text>
                       </svg>
 
-                      <div className="flex flex-col gap-1.5 pt-1">
+                      <div className="flex flex-col gap-2 pt-1">
                         {dadosGrafico.map((d: any, i: number) => (
-                          <div key={d.uid} className="flex items-center gap-1.5">
-                            <div style={{ width: 10, height: 10, borderRadius: 2, background: pieColors[i % pieColors.length], flexShrink: 0 }} />
-                            <span className="text-[12px] text-gray-700 whitespace-nowrap">{d.label}</span>
-                            <span className="text-[12px] font-semibold text-gray-900">{d.ocupacao}%</span>
+                          <div key={d.uid} className="flex items-center gap-2">
+                            <div style={{ width: 12, height: 12, borderRadius: 2, background: pieColors[i % pieColors.length], flexShrink: 0 }} />
+                            <span className="text-[13px] text-gray-700 whitespace-nowrap">{d.label}</span>
+                            <span className="text-[13px] font-semibold text-gray-900">{d.ocupacao}%</span>
                           </div>
                         ))}
                       </div>
@@ -1477,7 +1478,7 @@ export function VisualizadorFluxo({
                   );
                 })()}
                 {(overallAvgTimeSeconds != null || requiredMachineMetrics.length > 0) && (
-                  <div className="mt-3 border-t border-gray-100 pt-2 text-[12px] text-gray-600 space-y-1">
+                  <div className="mt-4 border-t border-gray-100 pt-3 text-[13px] text-gray-600 space-y-1.5">
                     {overallAvgTimeSeconds != null && (
                       <div>
                         Tempo médio global: <span className="font-semibold text-gray-900">{overallAvgTimeSeconds.toFixed(1)}s</span>
@@ -1493,7 +1494,7 @@ export function VisualizadorFluxo({
                     ))}
                   </div>
                 )}
-                <div className="mt-3 border-t border-gray-100 pt-2 text-[12px] text-gray-600">
+                <div className="mt-4 border-t border-gray-100 pt-3 text-[13px] text-gray-600">
                   <div>
                     Máquinas existentes: <span className="font-semibold text-gray-900">{totalMachineCount}</span>
                   </div>

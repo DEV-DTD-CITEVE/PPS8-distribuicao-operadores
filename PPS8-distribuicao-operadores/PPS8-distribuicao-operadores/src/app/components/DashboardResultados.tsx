@@ -486,42 +486,45 @@ export function DashboardResultados({
     const fallbackTotal = Number(dist?.cargaHoraria) * 60;
     const totalFromAllocations = totaisSegundosPorOperador.get(normalizedOperatorCode);
     const maxFromShare = maxSegundosPorOperador.get(normalizedOperatorCode);
-    const denominatorSeconds = cycleTimeSeconds > 0
-      ? cycleTimeSeconds
+    const denominatorSeconds = Number.isFinite(maxFromShare as number) && (maxFromShare as number) > 0
+      ? (maxFromShare as number)
       : Number.isFinite(sharePerOperatorSecondsScalar as number) && (sharePerOperatorSecondsScalar as number) > 0
         ? (sharePerOperatorSecondsScalar as number)
-        : Number.isFinite(maxFromShare as number) && (maxFromShare as number) > 0
-          ? (maxFromShare as number)
+        : cycleTimeSeconds > 0
+          ? cycleTimeSeconds
           : 0;
     const ocupacaoFromDistribuicao = parseNumberLike(dist?.ocupacao);
     const ocupacaoFromTableData = occupancyByOperator.get(normalizedOperatorCode);
     const ocupacaoFromAllocations = occupancyPercentByOperator.get(normalizedOperatorCode);
-    const totalTimeFromFallback = Number.isFinite(fallbackTotal) && fallbackTotal > 0
-      ? fallbackTotal
-      : Number.isFinite(totalFromAllocations as number) && (totalFromAllocations as number) > 0
-        ? (totalFromAllocations as number)
+    const totalTimeFromFallback = Number.isFinite(totalFromAllocations as number) && (totalFromAllocations as number) > 0
+      ? (totalFromAllocations as number)
+      : Number.isFinite(fallbackTotal) && fallbackTotal > 0
+        ? fallbackTotal
         : Number(totalFromAllocations || 0);
-    const ocupacaoAuthoritative =
-      Number.isFinite(ocupacaoFromTableData as number)
-        ? (ocupacaoFromTableData as number)
-        : Number.isFinite(ocupacaoFromAllocations as number)
-          ? (ocupacaoFromAllocations as number)
-          : Number.isFinite(ocupacaoFromDistribuicao as number)
-            ? (ocupacaoFromDistribuicao as number)
-            : null;
     const totalTimeSeconds =
-      Number.isFinite(ocupacaoAuthoritative as number) && denominatorSeconds > 0
-        ? ((ocupacaoAuthoritative as number) / 100) * denominatorSeconds
-        : totalTimeFromFallback;
-    const ocupacaoFromTotal = denominatorSeconds > 0
-      ? (totalTimeSeconds / denominatorSeconds) * 100
-      : null;
+      totalTimeFromFallback > 0
+        ? totalTimeFromFallback
+        : Number.isFinite(ocupacaoFromDistribuicao as number) && denominatorSeconds > 0
+          ? ((ocupacaoFromDistribuicao as number) / 100) * denominatorSeconds
+          : Number.isFinite(ocupacaoFromAllocations as number) && denominatorSeconds > 0
+            ? ((ocupacaoFromAllocations as number) / 100) * denominatorSeconds
+            : Number.isFinite(ocupacaoFromTableData as number) && denominatorSeconds > 0
+              ? ((ocupacaoFromTableData as number) / 100) * denominatorSeconds
+              : 0;
+    const ocupacaoAuthoritative =
+      totalTimeSeconds > 0 && denominatorSeconds > 0
+        ? (totalTimeSeconds / denominatorSeconds) * 100
+        : Number.isFinite(ocupacaoFromDistribuicao as number)
+          ? (ocupacaoFromDistribuicao as number)
+          : Number.isFinite(ocupacaoFromAllocations as number)
+            ? (ocupacaoFromAllocations as number)
+            : Number.isFinite(ocupacaoFromTableData as number)
+              ? (ocupacaoFromTableData as number)
+          : 0;
     const ocupacaoExactRaw =
       Number.isFinite(ocupacaoAuthoritative as number)
         ? (ocupacaoAuthoritative as number)
-        : Number.isFinite(ocupacaoFromTotal as number)
-          ? (ocupacaoFromTotal as number)
-          : Number(dist?.ocupacao || 0);
+        : Number(dist?.ocupacao || 0);
     const ocupacaoExact = normalizeOccupancyForDisplay(ocupacaoExactRaw);
 
     return {
@@ -550,19 +553,19 @@ export function DashboardResultados({
   return (
     <div className="flex flex-col gap-4 items-start w-full">
       {showOccupacaoCard && (
-        <div className="bg-white content-stretch flex flex-col gap-7 items-center pb-[24px] pt-px px-px relative rounded-[6px] w-full min-w-0">
+        <div className="bg-white content-stretch flex flex-col gap-8 items-center pb-[28px] pt-px px-px relative rounded-[6px] w-full min-w-0">
         <div aria-hidden="true" className="absolute border border-[#e5e7eb] border-solid inset-0 pointer-events-none rounded-[6px] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_0px_rgba(0,0,0,0.1)]" />
 
         <div className="relative shrink-0 w-full">
           <div aria-hidden="true" className="absolute border-[#e5e7eb] border-b border-solid inset-0 pointer-events-none" />
-          <div className="content-stretch flex flex-col gap-[6px] items-start p-[24px] relative w-full">
-            <div className="h-[20px] relative shrink-0 w-full">
-              <p className="absolute font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[20px] left-0 not-italic text-[#101828] text-[14px] top-0 tracking-[-0.1504px] whitespace-nowrap">
+          <div className="content-stretch flex flex-col gap-[8px] items-start p-[26px] relative w-full">
+            <div className="h-[24px] relative shrink-0 w-full">
+              <p className="absolute font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[24px] left-0 not-italic text-[#101828] text-[16px] top-0 tracking-[-0.1504px] whitespace-nowrap">
                 Ocupação por Trabalhador
               </p>
             </div>
-            <div className="content-stretch flex h-[16px] items-start relative shrink-0 w-full">
-              <p className="flex-[1_0_0] font-['Inter:Regular',sans-serif] font-normal leading-[16px] min-h-px min-w-px not-italic relative text-[#717182] text-[12px]">
+            <div className="content-stretch flex h-[18px] items-start relative shrink-0 w-full">
+              <p className="flex-[1_0_0] font-['Inter:Regular',sans-serif] font-normal leading-[18px] min-h-px min-w-px not-italic relative text-[#717182] text-[13px]">
                 Percentagem de carga horaria atribuida
               </p>
             </div>
@@ -570,14 +573,11 @@ export function DashboardResultados({
         </div>
 
         <div className="relative shrink-0 w-full overflow-x-auto">
-          <div className="content-stretch flex gap-2 items-start justify-center px-4 md:px-5 min-w-full w-full relative">
+          <div className="content-stretch flex gap-4 items-start justify-center px-5 md:px-6 min-w-full w-full relative">
             {dadosCarga.map((d) => {
               const cappedOccupancy = Math.min(d.ocupacao, 100);
-              const overflowOccupancy = Math.max(0, d.ocupacao - 100);
               const fillHeight = (cappedOccupancy / 100) * BATTERY_TOTAL_HEIGHT;
               const fillMT = BATTERY_START_MT + (BATTERY_TOTAL_HEIGHT - fillHeight);
-              const overflowHeight = overflowOccupancy > 0 ? (overflowOccupancy / 100) * BATTERY_TOTAL_HEIGHT : 0;
-              const overflowVisualHeight = overflowHeight > 0 ? Math.min(overflowHeight, 44) : 0;
               const color = getBatteryColor(d.ocupacao);
               const fillPath = generateFillPath(fillHeight);
               const maxVisibleOperations = 8;
@@ -603,7 +603,7 @@ export function DashboardResultados({
                     });
 
               return (
-                <div key={d.idx} className="content-stretch flex flex-col gap-1 items-center relative shrink-0 w-[96px] md:w-[102px]">
+                <div key={d.idx} className="content-stretch flex flex-col gap-2 items-center relative shrink-0 w-[110px] md:w-[118px]">
                   <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
                     <div className="col-1 h-[7px] ml-[18px] mt-0 relative row-1 w-[22px]">
                       <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 17.4545 6.54545">
@@ -630,17 +630,6 @@ export function DashboardResultados({
                     </div>
                   )}
 
-                  {overflowVisualHeight > 0 && (
-                    <div
-                      className="col-1 ml-[3px] relative row-1 w-[52px] overflow-hidden rounded-t-sm border border-red-300 bg-red-500/85"
-                      style={{
-                        height: `${overflowVisualHeight}px`,
-                        marginTop: `${BATTERY_START_MT - overflowVisualHeight}px`,
-                      }}
-                      title={`${d.ocupacao.toFixed(1)}%`}
-                    />
-                  )}
-
                   {separatorTops.map((mt, idx) => (
                     <div key={idx} className="col-1 h-0 ml-[5px] relative row-1 w-[48px]" style={{ marginTop: `${mt}px` }}>
                       <div className="absolute inset-[-0.27px_0]">
@@ -658,7 +647,7 @@ export function DashboardResultados({
                       style={{ marginTop: `${segment.top}px`, height: `${segment.height}px` }}
                     >
                       <p
-                        className="font-bold leading-none not-italic text-[12px] text-center whitespace-nowrap"
+                        className="font-bold leading-none not-italic text-[13px] text-center whitespace-nowrap"
                         style={{ color: "#6B7280" }}
                       >
                         {segment.label}
@@ -668,7 +657,7 @@ export function DashboardResultados({
                   {shouldCollapseOperations && (
                     <button
                       type="button"
-                      className="col-1 relative row-1 ml-[9px] mt-[8px] rounded-sm bg-white/85 px-1.5 py-[2px] text-[10px] font-semibold text-blue-600 shadow-sm hover:bg-white"
+                      className="col-1 relative row-1 ml-[9px] mt-[8px] rounded-sm bg-white/85 px-1.5 py-[2px] text-[11px] font-semibold text-blue-600 shadow-sm hover:bg-white"
                       onClick={() =>
                         setOperadorDetalheAberto({
                           codigo: d.codigo,
@@ -685,15 +674,15 @@ export function DashboardResultados({
                   <div className="relative shrink-0 w-full">
                     <div className="flex flex-col items-center justify-center size-full">
                       <div className="content-stretch flex flex-col gap-[8px] items-center justify-center p-[2px] relative w-full">
-                        <p title={d.codigo} className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[12px] text-center whitespace-nowrap cursor-help">
+                        <p title={d.codigo} className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[13px] text-center whitespace-nowrap cursor-help">
                           {d.colaboradorLabel}
                         </p>
-                        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[18px] w-[102px]">
-                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[12px] text-right whitespace-nowrap pr-[4px]">{d.totalTimeSeconds.toFixed(1)}s</p>
-                          <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[12px] text-center whitespace-nowrap">|</p>
-                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[12px] text-left whitespace-nowrap pl-[4px]">{d.ocupacaoDisplay}%</p>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[20px] w-[116px]">
+                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[13px] text-right whitespace-nowrap pr-[4px]">{d.totalTimeSeconds.toFixed(1)}s</p>
+                          <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[13px] text-center whitespace-nowrap">|</p>
+                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[13px] text-left whitespace-nowrap pl-[4px]">{d.ocupacaoDisplay}%</p>
                         </div>
-                        <p className="text-[11px] font-medium text-gray-400 text-center whitespace-nowrap">
+                        <p className="text-[12px] font-medium text-gray-400 text-center whitespace-nowrap">
                           {d.operacoesAtribuidas.length} {d.operacoesAtribuidas.length === 1 ? "operação" : "operações"}
                         </p>
                       </div>
