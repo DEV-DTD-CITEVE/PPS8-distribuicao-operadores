@@ -1119,18 +1119,22 @@ export default function Home() {
   const [erroCalculoModal, setErroCalculoModal] = useState<string | null>(null);
   const [resultadosInlineData, setResultadosInlineData] = useState<{
     resultados: ResultadosBalanceamento;
+    resultadosPorTipo?: Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
     operadores: Operador[];
     operacoes: Operacao[];
     config: ConfiguracaoDistribuicao;
     layoutConfig: LayoutConfig;
     taskCode?: string;
     ajusteBodyBase?: any;
+    ajusteBodyBasePorTipo?: Partial<Record<"linha" | "espinha", any>>;
   } | null>(null);
   const resultadosRef = useRef<HTMLDivElement | null>(null);
   const [resultadosAtuaisInline, setResultadosAtuaisInline] = useState<ResultadosBalanceamento | null>(null);
+  const [resultadosPorTipoInline, setResultadosPorTipoInline] = useState<Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>>({});
   const [configAtualInline, setConfigAtualInline] = useState<ConfiguracaoDistribuicao | null>(null);
   const [viewModeInline, setViewModeInline] = useState<"tempo" | "percentagem">("tempo");
   const [ajusteBodyBaseInline, setAjusteBodyBaseInline] = useState<any>(null);
+  const [ajusteBodyBasePorTipoInline, setAjusteBodyBasePorTipoInline] = useState<Partial<Record<"linha" | "espinha", any>>>({});
   const [taskCodeInline, setTaskCodeInline] = useState<string>("");
   const [temAdjustInline, setTemAdjustInline] = useState(false);
   const autoRecalcularLayoutRef = useRef(false);
@@ -1139,6 +1143,17 @@ export default function Home() {
   const [isGuardandoHistorico, setIsGuardandoHistorico] = useState(false);
   const [erroPopupInline, setErroPopupInline] = useState<string | null>(null);
   const [sucessoPopupInline, setSucessoPopupInline] = useState<string | null>(null);
+
+  const getMaxPostsPayloadInline = useCallback((nextLayoutConfig: LayoutConfig) => {
+    const postosInputEl = document.getElementById("lc-postos") as HTMLInputElement | null;
+    const postosInputRaw = postosInputEl?.value?.trim() || "";
+    const postosInputNum = postosInputRaw ? Number(postosInputRaw.replace(",", ".")) : Number.NaN;
+    const postosBase = Number.isFinite(postosInputNum)
+      ? postosInputNum
+      : Number(nextLayoutConfig.postosPorLado);
+    const postosPorLado = Math.max(1, Math.round(postosBase || 0));
+    return nextLayoutConfig.tipoLayout === "espinha" ? postosPorLado * 2 : postosPorLado;
+  }, []);
 
   useEffect(() => {
     if (sincronizado) return;
@@ -2200,25 +2215,38 @@ export default function Home() {
 
   const mostrarResultadosNaPagina = (data: {
     resultados: ResultadosBalanceamento;
+    resultadosPorTipo?: Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
     operadores: Operador[];
     operacoes: Operacao[];
     config: ConfiguracaoDistribuicao;
     layoutConfig: LayoutConfig;
     taskCode?: string;
     ajusteBodyBase?: any;
+    ajusteBodyBasePorTipo?: Partial<Record<"linha" | "espinha", any>>;
   }) => {
     const machineLayout = resolveMachineLayoutPorTipoInline(data.resultados, data.layoutConfig.tipoLayout);
     const resultadosComLayout = {
       ...(data.resultados as any),
       machine_layout: machineLayout,
     };
+    const resultadosPorTipo = data.resultadosPorTipo ?? {
+      [data.layoutConfig.tipoLayout]: resultadosComLayout,
+    };
+    const resultadoAtual =
+      resultadosPorTipo[data.layoutConfig.tipoLayout] ??
+      resultadosComLayout;
+    const ajusteBodyBasePorTipo = data.ajusteBodyBasePorTipo ?? {
+      [data.layoutConfig.tipoLayout]: data.ajusteBodyBase ?? null,
+    };
     setResultadosInlineData(data);
-    setResultadosAtuaisInline(resultadosComLayout);
+    setResultadosPorTipoInline(resultadosPorTipo);
+    setResultadosAtuaisInline(resultadoAtual);
     setConfigAtualInline(data.config);
     setViewModeInline("tempo");
     setTaskCodeInline(data.taskCode || "");
-    setAjusteBodyBaseInline(data.ajusteBodyBase ?? null);
-    setTemAdjustInline(false);
+    setAjusteBodyBasePorTipoInline(ajusteBodyBasePorTipo);
+    setAjusteBodyBaseInline(ajusteBodyBasePorTipo[data.layoutConfig.tipoLayout] ?? data.ajusteBodyBase ?? null);
+    setTemAdjustInline(Boolean(data.ajusteBodyBase || data.ajusteBodyBasePorTipo));
     if (suppressResultadosScrollRef.current) {
       suppressResultadosScrollRef.current = false;
       return;
@@ -2237,38 +2265,147 @@ export default function Home() {
     setConfigAtualInline(novaConfig);
   }, []);
 
+  const handleRecalcularLayoutComAdjustInline = useCallback(async (nextLayoutConfig: LayoutConfig) => {
+    if (!taskCodeInline || !resultadosAtuaisInline) return;
+    setIsAjustando(true);
+    try {
+      const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
+      const respostas = await Promise.all(
+        tipos.map(async (tipo) => {
+          const bodyBase = ajusteBodyBasePorTipoInline[tipo] ?? ajusteBodyBaseInline;
+          if (!bodyBase) return [tipo, null, null] as const;
+          const layoutVariant = { ...nextLayoutConfig, tipoLayout: tipo };
+          const maxPosts = getMaxPostsPayloadInline(layoutVariant);
+          const body = {
+            ...(structuredClone(bodyBase) || {}),
+            line_type: tipo,
+            max_posts: maxPosts,
+            max_position_deviation: Math.max(1, Number(layoutVariant.distanciaMaxima) || 1),
+            position_deviation_mode: layoutVariant.permitirRetrocesso ? "both" : "forward",
+          };
+          const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
+          return [tipo, body, resposta.data ?? {}] as const;
+        })
+      );
+      const proximosResultadosPorTipo: Partial<Record<"linha" | "espinha", ResultadosBalanceamento>> = {};
+      const proximoAjusteBodyBasePorTipo: Partial<Record<"linha" | "espinha", any>> = {};
+      respostas.forEach(([tipo, bodyEnviado, novoRaw]) => {
+        if (!bodyEnviado || !novoRaw) return;
+        const resultadosBase = buildResultadosFromApiInline(
+          novoRaw,
+          resultadosPorTipoInline[tipo] ?? resultadosAtuaisInline
+        );
+        proximosResultadosPorTipo[tipo] = {
+          ...(resultadosBase as any),
+          machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, tipo),
+        } as ResultadosBalanceamento;
+        proximoAjusteBodyBasePorTipo[tipo] = {
+          ...((ajusteBodyBasePorTipoInline[tipo] ?? ajusteBodyBaseInline) || {}),
+          ...(novoRaw || {}),
+          ...(bodyEnviado || {}),
+          operation_allocations: ensureArray(
+            (novoRaw as any)?.operation_allocations ??
+            (novoRaw as any)?.operationAllocations ??
+            (bodyEnviado as any)?.operation_allocations
+          ),
+        };
+      });
+      const resultadoAtual = proximosResultadosPorTipo[nextLayoutConfig.tipoLayout];
+      if (resultadoAtual) setResultadosAtuaisInline(resultadoAtual);
+      setResultadosPorTipoInline((prev) => ({ ...prev, ...proximosResultadosPorTipo }));
+      setResultadosInlineData((prev) =>
+        prev
+          ? {
+              ...prev,
+              resultados: resultadoAtual ?? prev.resultados,
+              resultadosPorTipo: {
+                ...(prev.resultadosPorTipo || {}),
+                ...proximosResultadosPorTipo,
+              },
+              layoutConfig: nextLayoutConfig,
+              ajusteBodyBase: proximoAjusteBodyBasePorTipo[nextLayoutConfig.tipoLayout] ?? prev.ajusteBodyBase,
+              ajusteBodyBasePorTipo: {
+                ...(prev.ajusteBodyBasePorTipo || {}),
+                ...proximoAjusteBodyBasePorTipo,
+              },
+            }
+          : prev
+      );
+      setAjusteBodyBasePorTipoInline((prev) => ({ ...prev, ...proximoAjusteBodyBasePorTipo }));
+      setAjusteBodyBaseInline(proximoAjusteBodyBasePorTipo[nextLayoutConfig.tipoLayout] ?? null);
+      setTemAdjustInline(true);
+    } catch (error) {
+      const apiMessage = (error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.message || (error as any)?.message;
+      setErroPopupInline(apiMessage || "Erro ao recalcular layout ajustado.");
+      throw error;
+    } finally {
+      setIsAjustando(false);
+    }
+  }, [taskCodeInline, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, getMaxPostsPayloadInline, buildResultadosFromApiInline]);
+
   const handleConfirmarEdicaoInline = useCallback(async (editedRows: any[]) => {
-    if (!taskCodeInline || !ajusteBodyBaseInline) {
+    if (!taskCodeInline || (!ajusteBodyBaseInline && !ajusteBodyBasePorTipoInline.linha && !ajusteBodyBasePorTipoInline.espinha)) {
       setErroPopupInline("Não foi possível ajustar: faltam dados base da chamada inicial.");
       return;
     }
     setIsAjustando(true);
     try {
-      const body = mergeRowsIntoAdjustBodyInline(ajusteBodyBaseInline, editedRows);
-      const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
-      const novoRaw = resposta.data ?? {};
-      logAdjustPercentageTraceInline(editedRows, body, novoRaw);
-      const novosResultadosBase = buildResultadosFromApiInline(novoRaw, resultadosAtuaisInline!);
-      const novosResultados = {
-        ...(novosResultadosBase as any),
-        machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, layoutConfig.tipoLayout),
-      } as ResultadosBalanceamento;
-      const proximoAjusteBodyBase = {
-        ...(ajusteBodyBaseInline || {}),
-        ...(novoRaw || {}),
-        operation_allocations: ensureArray(novoRaw?.operation_allocations ?? novoRaw?.operationAllocations ?? ajusteBodyBaseInline?.operation_allocations),
-      };
+      const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
+      const respostas = await Promise.all(
+        tipos.map(async (tipo) => {
+          const bodyBase = ajusteBodyBasePorTipoInline[tipo] ?? ajusteBodyBaseInline;
+          if (!bodyBase) return [tipo, null, null] as const;
+          const body = mergeRowsIntoAdjustBodyInline(bodyBase, editedRows);
+          body.line_type = tipo;
+          const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
+          return [tipo, body, resposta.data ?? {}] as const;
+        })
+      );
+      const proximosResultadosPorTipo: Partial<Record<"linha" | "espinha", ResultadosBalanceamento>> = {};
+      const proximoAjusteBodyBasePorTipo: Partial<Record<"linha" | "espinha", any>> = {};
+      respostas.forEach(([tipo, bodyEnviado, novoRaw]) => {
+        if (!bodyEnviado || !novoRaw) return;
+        logAdjustPercentageTraceInline(editedRows, bodyEnviado, novoRaw);
+        const novosResultadosBase = buildResultadosFromApiInline(
+          novoRaw,
+          resultadosPorTipoInline[tipo] ?? resultadosAtuaisInline!
+        );
+        proximosResultadosPorTipo[tipo] = {
+          ...(novosResultadosBase as any),
+          machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, tipo),
+        } as ResultadosBalanceamento;
+        proximoAjusteBodyBasePorTipo[tipo] = {
+          ...((ajusteBodyBasePorTipoInline[tipo] ?? ajusteBodyBaseInline) || {}),
+          ...(novoRaw || {}),
+          operation_allocations: ensureArray(
+            (novoRaw as any)?.operation_allocations ??
+            (novoRaw as any)?.operationAllocations ??
+            (bodyEnviado as any)?.operation_allocations
+          ),
+        };
+      });
+      const novosResultados = proximosResultadosPorTipo[layoutConfig.tipoLayout] ?? resultadosAtuaisInline!;
       setResultadosAtuaisInline(novosResultados);
+      setResultadosPorTipoInline((prev) => ({ ...prev, ...proximosResultadosPorTipo }));
       setResultadosInlineData((prev) =>
         prev
           ? {
               ...prev,
               resultados: novosResultados,
-              ajusteBodyBase: proximoAjusteBodyBase,
+              resultadosPorTipo: {
+                ...(prev.resultadosPorTipo || {}),
+                ...proximosResultadosPorTipo,
+              },
+              ajusteBodyBase: proximoAjusteBodyBasePorTipo[layoutConfig.tipoLayout] ?? prev.ajusteBodyBase,
+              ajusteBodyBasePorTipo: {
+                ...(prev.ajusteBodyBasePorTipo || {}),
+                ...proximoAjusteBodyBasePorTipo,
+              },
             }
           : prev
       );
-      setAjusteBodyBaseInline(proximoAjusteBodyBase);
+      setAjusteBodyBasePorTipoInline((prev) => ({ ...prev, ...proximoAjusteBodyBasePorTipo }));
+      setAjusteBodyBaseInline(proximoAjusteBodyBasePorTipo[layoutConfig.tipoLayout] ?? null);
       setTemAdjustInline(true);
     } catch (error) {
       const apiMessage = (error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.message || (error as any)?.message;
@@ -2277,7 +2414,7 @@ export default function Home() {
     } finally {
       setIsAjustando(false);
     }
-  }, [taskCodeInline, ajusteBodyBaseInline, resultadosAtuaisInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline, layoutConfig.tipoLayout]);
+  }, [taskCodeInline, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline, layoutConfig.tipoLayout]);
 
   const handleGuardarHistoricoInline = useCallback(async () => {
     if (isGuardandoHistorico) return;
@@ -2375,14 +2512,20 @@ export default function Home() {
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
-        const payload = payloadBase;
         const endpointModo1 = config.agruparMaquinas ? "allocate-grouped" : "allocate";
 
-        const resposta = await axios.post(
-          `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo1}`,
-          payload
+        const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
+        const respostas = await Promise.all(
+          tipos.map(async (tipo) => {
+            const resposta = await axios.post(
+              `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo1}`,
+              { ...payloadBase, line_type: tipo }
+            );
+            return [tipo, ensureRecord(resposta.data) ?? {}] as const;
+          })
         );
-        const r = ensureRecord(resposta.data) ?? {};
+        const rawsPorTipo = Object.fromEntries(respostas) as Record<"linha" | "espinha", any>;
+        const r = rawsPorTipo[layoutConfig.tipoLayout] ?? {};
 
         const taktTime = (pickNumber(r, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0) / 60;
         const tempoCicloApi = pickNumber(r, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]);
@@ -2498,15 +2641,30 @@ export default function Home() {
           numeroOperadores,
           ocupacaoTotal,
         };
+        const tipoAlternativo = layoutConfig.tipoLayout === "espinha" ? "linha" : "espinha";
+        const rawAlternativo = rawsPorTipo[tipoAlternativo] ?? {};
+        const resultadosAlternativosBase = buildResultadosFromApiInline(rawAlternativo, resultadosApi as ResultadosBalanceamento);
+        const resultadosPorTipo = {
+          [layoutConfig.tipoLayout]: {
+            ...(resultadosApi as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, layoutConfig.tipoLayout),
+          } as ResultadosBalanceamento,
+          [tipoAlternativo]: {
+            ...(resultadosAlternativosBase as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(rawAlternativo, tipoAlternativo),
+          } as ResultadosBalanceamento,
+        } as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
 
         const dataToPass = {
-          resultados: resultadosApi,
+          resultados: resultadosPorTipo[layoutConfig.tipoLayout] ?? resultadosApi,
+          resultadosPorTipo,
           operadores: operadoresDisponiveis,
           operacoes,
           config,
           layoutConfig,
           taskCode: taskCodeSelecionado,
-          ajusteBodyBase: r,
+          ajusteBodyBase: rawsPorTipo[layoutConfig.tipoLayout],
+          ajusteBodyBasePorTipo: rawsPorTipo,
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
@@ -2546,16 +2704,22 @@ export default function Home() {
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
-        const payload = payloadBase;
         const endpointModo2 = config.agruparMaquinas
           ? "allocate-grouped-objective"
           : "allocate-objective";
 
-        const resposta = await axios.post(
-          `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo2}`,
-          payload
+        const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
+        const respostas = await Promise.all(
+          tipos.map(async (tipo) => {
+            const resposta = await axios.post(
+              `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo2}`,
+              { ...payloadBase, line_type: tipo }
+            );
+            return [tipo, ensureRecord(resposta.data) ?? {}] as const;
+          })
         );
-        const r = ensureRecord(resposta.data) ?? {};
+        const rawsPorTipo = Object.fromEntries(respostas) as Record<"linha" | "espinha", any>;
+        const r = rawsPorTipo[layoutConfig.tipoLayout] ?? {};
 
         const taktTime = (pickNumber(r, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0) / 60;
         const tempoCicloApi = pickNumber(r, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]);
@@ -2671,15 +2835,30 @@ export default function Home() {
           numeroOperadores,
           ocupacaoTotal,
         };
+        const tipoAlternativo = layoutConfig.tipoLayout === "espinha" ? "linha" : "espinha";
+        const rawAlternativo = rawsPorTipo[tipoAlternativo] ?? {};
+        const resultadosAlternativosBase = buildResultadosFromApiInline(rawAlternativo, resultadosApi as ResultadosBalanceamento);
+        const resultadosPorTipo = {
+          [layoutConfig.tipoLayout]: {
+            ...(resultadosApi as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, layoutConfig.tipoLayout),
+          } as ResultadosBalanceamento,
+          [tipoAlternativo]: {
+            ...(resultadosAlternativosBase as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(rawAlternativo, tipoAlternativo),
+          } as ResultadosBalanceamento,
+        } as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
 
         const dataToPass = {
-          resultados: resultadosApi,
+          resultados: resultadosPorTipo[layoutConfig.tipoLayout] ?? resultadosApi,
+          resultadosPorTipo,
           operadores,
           operacoes,
           config,
           layoutConfig,
           taskCode: taskCodeSelecionado,
-          ajusteBodyBase: r,
+          ajusteBodyBase: rawsPorTipo[layoutConfig.tipoLayout],
+          ajusteBodyBasePorTipo: rawsPorTipo,
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
@@ -2720,16 +2899,22 @@ export default function Home() {
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
-        const payload = payloadBase;
         const endpointModo3 = config.agruparMaquinas
           ? "allocate-grouped-manual"
           : "allocate-manual";
 
-        const resposta = await axios.post(
-          `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo3}`,
-          payload
+        const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
+        const respostas = await Promise.all(
+          tipos.map(async (tipo) => {
+            const resposta = await axios.post(
+              `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo3}`,
+              { ...payloadBase, line_type: tipo }
+            );
+            return [tipo, ensureRecord(resposta.data) ?? {}] as const;
+          })
         );
-        const r = ensureRecord(resposta.data) ?? {};
+        const rawsPorTipo = Object.fromEntries(respostas) as Record<"linha" | "espinha", any>;
+        const r = rawsPorTipo[layoutConfig.tipoLayout] ?? {};
 
         const taktTime = (pickNumber(r, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0) / 60;
         const tempoCicloApi = pickNumber(r, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]);
@@ -2845,15 +3030,30 @@ export default function Home() {
           numeroOperadores,
           ocupacaoTotal,
         };
+        const tipoAlternativo = layoutConfig.tipoLayout === "espinha" ? "linha" : "espinha";
+        const rawAlternativo = rawsPorTipo[tipoAlternativo] ?? {};
+        const resultadosAlternativosBase = buildResultadosFromApiInline(rawAlternativo, resultadosApi as ResultadosBalanceamento);
+        const resultadosPorTipo = {
+          [layoutConfig.tipoLayout]: {
+            ...(resultadosApi as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, layoutConfig.tipoLayout),
+          } as ResultadosBalanceamento,
+          [tipoAlternativo]: {
+            ...(resultadosAlternativosBase as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(rawAlternativo, tipoAlternativo),
+          } as ResultadosBalanceamento,
+        } as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
 
         const dataToPass = {
-          resultados: resultadosApi,
+          resultados: resultadosPorTipo[layoutConfig.tipoLayout] ?? resultadosApi,
+          resultadosPorTipo,
           operadores,
           operacoes,
           config,
           layoutConfig,
           taskCode: taskCodeSelecionado,
-          ajusteBodyBase: r,
+          ajusteBodyBase: rawsPorTipo[layoutConfig.tipoLayout],
+          ajusteBodyBasePorTipo: rawsPorTipo,
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
@@ -3065,12 +3265,20 @@ export default function Home() {
     autoRecalcularLayoutRef.current = false;
     if (!resultadosInlineData) return;
     suppressResultadosScrollRef.current = true;
+    if (temAdjustInline && ajusteBodyBaseInline && taskCodeInline) {
+      void handleRecalcularLayoutComAdjustInline(layoutConfig);
+      return;
+    }
     void handleCalcular(true);
   }, [
+    ajusteBodyBaseInline,
+    handleRecalcularLayoutComAdjustInline,
     layoutConfig.tipoLayout,
     layoutConfig.postosPorLado,
     layoutConfig.distanciaMaxima,
     layoutConfig.permitirRetrocesso,
+    taskCodeInline,
+    temAdjustInline,
   ]);
 
   const [seccoesExpandidas, setSeccoesExpandidas] = useState({
@@ -3252,6 +3460,8 @@ export default function Home() {
               onProdutividadeEstimadaChange={(value) => handleConfigChange({ ...config, produtividadeEstimada: value })}
               onQuantidadeObjetivoInputChange={(raw) => {
                 setQuantidadeObjetivoInput(raw);
+              }}
+              onQuantidadeObjetivoCommit={(raw) => {
                 if (!raw) {
                   handleConfigChange({ ...config, quantidadeObjetivo: undefined });
                   return;
@@ -3263,16 +3473,17 @@ export default function Home() {
               }}
               onNumeroOperadoresInputChange={(raw) => {
                 setNumeroOperadoresInput(raw);
-                if (!raw) return;
+              }}
+              onNumeroOperadoresCommit={(raw) => {
+                if (!raw) {
+                  handleConfigChange({ ...config, numeroOperadores: undefined });
+                  return;
+                }
                 const typed = Number(raw);
                 if (!Number.isFinite(typed)) return;
-                const num = Math.max(1, Math.min(typed, operadores.length));
+                const num = Math.max(1, Math.trunc(typed));
+                setNumeroOperadoresInput(String(num));
                 handleConfigChange({ ...config, numeroOperadores: num });
-                const novos = operadores.slice(0, num).map((op) => op.id);
-                setDadosUnidades((prev) => ({
-                  ...prev,
-                  [unidadeAtiva]: { ...prev[unidadeAtiva], operadoresSelecionados: novos },
-                }));
               }}
               permitirRetrocesso={layoutConfig.permitirRetrocesso}
               onPermitirRetrocessoChange={(value) =>
@@ -3451,17 +3662,10 @@ export default function Home() {
             agruparPorMaquina={configAtualInline.agruparMaquinas}
             onTipoLayoutChange={(tipo) => {
               if (layoutConfig.tipoLayout === tipo) return;
-              const layoutSource = temAdjustInline
-                ? (ajusteBodyBaseInline ?? resultadosAtuaisInline)
-                : (resultadosInlineData?.resultados ?? resultadosAtuaisInline);
-              setResultadosAtuaisInline((prev) =>
-                prev
-                  ? {
-                      ...(prev as any),
-                      machine_layout: resolveMachineLayoutPorTipoInline(layoutSource, tipo),
-                    } as ResultadosBalanceamento
-                  : prev
-              );
+              const resultadoTipo = resultadosPorTipoInline[tipo];
+              const ajusteTipo = ajusteBodyBasePorTipoInline[tipo];
+              if (resultadoTipo) setResultadosAtuaisInline(resultadoTipo);
+              if (ajusteTipo) setAjusteBodyBaseInline(ajusteTipo);
               setLayoutConfig((prev) => ({
                 ...prev,
                 tipoLayout: tipo,

@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
-import { UserCheck, AlertTriangle, Trash2, RotateCcw, CheckCircle2, Users } from "lucide-react";
+import { Input } from "./ui/input";
+import { UserCheck, AlertTriangle, Trash2, RotateCcw, CheckCircle2, Users, Search } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -150,6 +151,9 @@ export function AtribuicaoManual({
   const [erroOperadoresCapazes, setErroOperadoresCapazes] = useState<Record<string, string | null>>({});
   const [savingAtribuicao, setSavingAtribuicao] = useState(false);
   const [erroAtribuicao, setErroAtribuicao] = useState<string | null>(null);
+  const [pesquisaOperacao, setPesquisaOperacao] = useState("");
+  const [showPesquisaOperacao, setShowPesquisaOperacao] = useState(false);
+  const [pesquisaOperador, setPesquisaOperador] = useState("");
 
   const carregarOperadoresCapazes = async (operacao: Operacao) => {
     const operationIds = Array.from(
@@ -212,6 +216,7 @@ export function AtribuicaoManual({
     setOperacaoEmEdicao(operacao.id);
     setOperadoresSelecionados(atribuicoesManual[operacao.id] || []);
     setErroAtribuicao(null);
+    setPesquisaOperador("");
     void carregarOperadoresCapazes(operacao);
   };
 
@@ -263,6 +268,7 @@ export function AtribuicaoManual({
     setOperacaoEmEdicao(null);
     setOperadoresSelecionados([]);
     setErroAtribuicao(null);
+    setPesquisaOperador("");
   };
 
   const calcularOcupacaoSimulada = (
@@ -290,6 +296,21 @@ export function AtribuicaoManual({
   const totalAtribuidas = Object.values(atribuicoesManual).filter((v) => v.length > 0).length;
   const totalOperacoes = operacoes.length;
   const percentagemConcluida = totalOperacoes > 0 ? (totalAtribuidas / totalOperacoes) * 100 : 0;
+  const pesquisaOperacaoNormalizada = pesquisaOperacao.trim().toLowerCase();
+  const operacoesFiltradas = operacoes.filter((operacao) => {
+    if (!pesquisaOperacaoNormalizada) return true;
+    const operadoresAtribuidos = atribuicoesManual[operacao.id] || [];
+    return [
+      operacao.id,
+      operacao.nome,
+      operacao.tipoMaquina || "",
+      String(operacao.sequencia),
+      ...operadoresAtribuidos,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(pesquisaOperacaoNormalizada);
+  });
 
   return (
     <div className="space-y-6">
@@ -327,27 +348,59 @@ export function AtribuicaoManual({
         <div className="space-y-4">
           <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
             <CardHeader className="border-b border-gray-200">
-              <CardTitle className="flex items-center gap-3 text-gray-900">
-                <div className="w-8 h-8 bg-purple-100 rounded-sm flex items-center justify-center">
-                  <UserCheck className="w-5 h-5 text-purple-600" />
+              <CardTitle className="flex items-center justify-between gap-3 text-gray-900">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-purple-100 rounded-sm flex items-center justify-center">
+                    <UserCheck className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <div className="text-base font-semibold">Atribuicao Manual de Operacoes</div>
+                    <CardDescription className="text-gray-500 mt-0.5 text-xs">
+                      Selecione um ou mais operadores para cada operacao
+                    </CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-base font-semibold">Atribuicao Manual de Operacoes</div>
-                  <CardDescription className="text-gray-500 mt-0.5 text-xs">
-                    Selecione um ou mais operadores para cada operacao
-                  </CardDescription>
-                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 rounded-sm p-0 hover:bg-gray-100"
+                  onClick={() => setShowPesquisaOperacao((current) => !current)}
+                >
+                  <Search className="w-4 h-4" />
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
+              {showPesquisaOperacao && <div className="mb-4">
+                <Input
+                  value={pesquisaOperacao}
+                  onChange={(e) => setPesquisaOperacao(e.target.value)}
+                  placeholder="Pesquisar operações por ID, descrição, máquina ou operador..."
+                  className="rounded-sm text-sm"
+                  disabled={operacoes.length === 0}
+                />
+              </div>}
               <div className="space-y-3">
-                {operacoes.map((operacao) => {
+                {operacoesFiltradas.map((operacao) => {
                   const operadoresAtribuidos = atribuicoesManual[operacao.id] || [];
                   const tempoPorOperador =
                     operadoresAtribuidos.length > 0
                       ? operacao.tempo / operadoresAtribuidos.length
                       : operacao.tempo;
                   const operadoresDisponiveis = operadoresCapazesPorOperacao[operacao.id] || operadores;
+                  const pesquisaNormalizada = pesquisaOperador.trim().toLowerCase();
+                  const operadoresFiltrados = operadoresDisponiveis.filter((op) => {
+                    if (!pesquisaNormalizada) return true;
+                    const nome = op.nome?.toLowerCase() || "";
+                    const id = op.id.toLowerCase();
+                    const ole = String(op.oleHistorico).toLowerCase();
+                    return (
+                      id.includes(pesquisaNormalizada) ||
+                      nome.includes(pesquisaNormalizada) ||
+                      ole.includes(pesquisaNormalizada)
+                    );
+                  });
 
                   return (
                     <div
@@ -430,6 +483,16 @@ export function AtribuicaoManual({
                                   </div>
                                 </div>
 
+                                <div>
+                                  <Input
+                                    value={pesquisaOperador}
+                                    onChange={(e) => setPesquisaOperador(e.target.value)}
+                                    placeholder="Pesquisar operador por ID ou nome..."
+                                    className="rounded-sm text-sm"
+                                    disabled={loadingOperadoresCapazes[operacao.id] || savingAtribuicao}
+                                  />
+                                </div>
+
                                 {loadingOperadoresCapazes[operacao.id] && (
                                   <div className="text-xs text-gray-500">A carregar operadores capazes...</div>
                                 )}
@@ -445,8 +508,8 @@ export function AtribuicaoManual({
                                   </div>
                                 )}
 
-                                <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                                  {operadoresDisponiveis.map((op) => {
+                                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+                                  {operadoresFiltrados.map((op) => {
                                     const ocupacaoSimulada = calcularOcupacaoSimulada(op.id, operadoresSelecionados, operacao);
                                     const selecionado = operadoresSelecionados.includes(op.id);
                                     const ultrapassaLimite = ocupacaoSimulada > 100;
@@ -507,6 +570,14 @@ export function AtribuicaoManual({
                                 {!loadingOperadoresCapazes[operacao.id] && operadoresDisponiveis.length === 0 && (
                                   <div className="text-xs text-gray-500">Sem operadores capazes para esta operacao.</div>
                                 )}
+
+                                {!loadingOperadoresCapazes[operacao.id] &&
+                                  operadoresDisponiveis.length > 0 &&
+                                  operadoresFiltrados.length === 0 && (
+                                    <div className="text-xs text-gray-500">
+                                      Nenhum operador corresponde à pesquisa.
+                                    </div>
+                                  )}
 
                                 {operadoresSelecionados.some(
                                   (opId) => calcularOcupacaoSimulada(opId, operadoresSelecionados, operacao) > 100
@@ -583,6 +654,11 @@ export function AtribuicaoManual({
                     </div>
                   );
                 })}
+                {operacoes.length > 0 && operacoesFiltradas.length === 0 && (
+                  <div className="rounded-sm border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
+                    Nenhuma operação corresponde à pesquisa.
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

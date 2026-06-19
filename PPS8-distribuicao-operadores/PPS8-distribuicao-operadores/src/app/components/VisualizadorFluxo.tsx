@@ -63,6 +63,7 @@ function EspinhaLayout({
     const PORT_MARGIN = 8;
     const PORT_SPLIT = 10;
     const OPERATOR_PORT_STEP = 12;
+    const SEGMENT_LANE_STEP = 12;
 
     type SegmentInfo = {
       operatorId: string;
@@ -144,6 +145,12 @@ function EspinhaLayout({
       operatorLaneY.set(operatorId, laneY);
     });
 
+    const operatorSegmentCounts = new Map<string, number>();
+    segments.forEach(({ operatorId }) => {
+      operatorSegmentCounts.set(operatorId, (operatorSegmentCounts.get(operatorId) || 0) + 1);
+    });
+    const operatorSegmentIndex = new Map<string, number>();
+
     segments.forEach((segment) => {
       const { operatorId, est, next, idx, fromEl, toEl, startIsA, endIsA } = segment;
       const fr = fromEl.getBoundingClientRect();
@@ -155,7 +162,13 @@ function EspinhaLayout({
       const endX = isNearSameColumn ? toCenterX : toCenterX - PORT_SPLIT;
       const startY = (startIsA ? fr.bottom + PORT_MARGIN : fr.top - PORT_MARGIN) - cr.top;
       const endY = (endIsA ? tr.bottom + PORT_MARGIN : tr.top - PORT_MARGIN) - cr.top;
-      const laneY = operatorLaneY.get(operatorId) ?? (corridorTop + corridorBottom) / 2;
+      const currentSegmentIndex = operatorSegmentIndex.get(operatorId) || 0;
+      operatorSegmentIndex.set(operatorId, currentSegmentIndex + 1);
+      const totalSegments = operatorSegmentCounts.get(operatorId) || 1;
+      const segmentCenter = (totalSegments - 1) / 2;
+      const segmentOffset = (currentSegmentIndex - segmentCenter) * SEGMENT_LANE_STEP;
+      const baseLaneY = operatorLaneY.get(operatorId) ?? (corridorTop + corridorBottom) / 2;
+      const laneY = Math.max(laneStartY, Math.min(laneEndY, baseLaneY + segmentOffset));
       const isDirectVertical = Math.abs(endX - startX) < 2;
       const d = isDirectVertical
         ? `M ${startX} ${startY} L ${endX} ${endY}`
@@ -227,10 +240,10 @@ function EspinhaLayout({
     );
   };
 
-  const rowStyle = { minHeight: "132px" };
+  const rowStyle = { minHeight: "184px" };
 
   return (
-    <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm relative overflow-x-hidden">
+    <div className="bg-gray-50 p-5 border border-gray-200 rounded-sm relative overflow-x-hidden">
       <div ref={layoutRef} style={{ position: "relative", width: "100%" }}>
         {/* Arrow overlay — pixel coords, no viewBox */}
         <svg
@@ -289,7 +302,7 @@ function EspinhaLayout({
             ))}
           </div>
 
-          <div className="h-14 relative">
+          <div className="h-24 relative">
             <div className="absolute inset-x-4 top-1/2 border-t-2 border-dashed border-gray-300" />
             <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 bg-gray-50 px-3 py-0.5 text-gray-400 text-[8px] font-semibold whitespace-nowrap">
               CORREDOR {permitirCruzamento ? "- CRUZAMENTO" : ""}
@@ -316,11 +329,15 @@ function EspinhaLayout({
 
         <div className="mt-3 pt-2 border-t border-gray-200 relative z-10">
           {operatorList.length > 0 && (
-            <div className="mb-2 flex items-center gap-1.5 flex-wrap">
+            <div className="mb-3 flex w-full items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setActiveOperator("ALL")}
-                className={`text-[9px] px-2 py-0.5 rounded border ${activeOperator === "ALL" ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300"}`}
+                className={`min-h-8 min-w-[58px] rounded-sm border px-3 py-1 text-[11px] font-semibold leading-none transition-colors ${
+                  activeOperator === "ALL"
+                    ? "bg-gray-800 text-white border-gray-800"
+                    : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                }`}
               >
                 Todos
               </button>
@@ -329,7 +346,7 @@ function EspinhaLayout({
                   key={`op-filter-${opId}`}
                   type="button"
                   onClick={() => setActiveOperator(opId)}
-                  className="text-[9px] px-2 py-0.5 rounded border"
+                  className="min-h-8 min-w-[74px] rounded-sm border px-3 py-1 text-[11px] font-semibold leading-none transition-colors"
                   style={
                     activeOperator === opId
                       ? {
@@ -350,13 +367,13 @@ function EspinhaLayout({
             </div>
           )}
           <div className="flex w-full items-start justify-end">
-            <div className="flex max-w-[84%] flex-wrap items-center justify-end gap-2 text-right">
+            <div className="flex w-full flex-wrap items-center justify-end gap-x-4 gap-y-3 text-right">
               {Object.entries(flowByOperator)
                 .filter(([opId]) => activeOperator === "ALL" || activeOperator === opId)
                 .map(([opId, seq]) => (
-                <span key={`flow-${opId}`} className="flex items-center gap-1">
+                <span key={`flow-${opId}`} className="flex items-center gap-1.5">
                   <span
-                    className="text-[12px] font-semibold px-1.5 py-0.5 rounded-sm leading-none"
+                    className="text-[13px] font-semibold px-2 py-1 rounded-sm leading-none"
                     style={{ background: operatorColorMap[opId]?.bg || "#e5e7eb", color: operatorColorMap[opId]?.text || "#374151" }}
                   >
                     {opId}
@@ -366,10 +383,10 @@ function EspinhaLayout({
                     const nextEst = seq[i + 1];
                     const isCross = nextEst && nextEst.charAt(0) !== est.charAt(0);
                     return (
-                      <span key={`flow-${opId}-${i}-${est}`} className="flex items-center gap-0.5">
-                        <span className={`text-[12px] font-mono font-bold px-1 py-0.5 rounded-sm leading-none ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
+                      <span key={`flow-${opId}-${i}-${est}`} className="flex items-center gap-1">
+                        <span className={`text-[13px] font-mono font-bold px-1.5 py-1 rounded-sm leading-none ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
                         {i < seq.length - 1 && (
-                          <span className={`text-[12px] font-semibold leading-none ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
+                          <span className={`text-[13px] font-semibold leading-none ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
                         )}
                       </span>
                     );

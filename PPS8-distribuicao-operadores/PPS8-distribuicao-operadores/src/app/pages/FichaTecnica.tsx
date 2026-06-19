@@ -7,13 +7,6 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -38,9 +31,11 @@ import {
   CheckCircle2,
   Copy,
   FileSpreadsheet,
+  Search,
   X,
 } from "lucide-react";
 import { AtribuicaoManual } from "../components/AtribuicaoManual";
+import { SearchableCombobox } from "../components/SearchableCombobox";
 import * as XLSX from "xlsx";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
@@ -504,6 +499,12 @@ export default function FichaTecnica() {
   const [importMetadata, setImportMetadata] = useState<ExcelImportMetadata | null>(null);
   const [importingGamas, setImportingGamas] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showPesquisaFichas, setShowPesquisaFichas] = useState(false);
+  const [pesquisaGama, setPesquisaGama] = useState("");
+  const [pesquisaFichas, setPesquisaFichas] = useState("");
+  const [showPesquisaGama, setShowPesquisaGama] = useState(false);
+  const [pesquisaImportacao, setPesquisaImportacao] = useState("");
+  const [showPesquisaImportacao, setShowPesquisaImportacao] = useState(false);
   const [familias, setFamilias] = useState<FamilyOption[]>([]);
   const [grupoArtigoSelecionado, setGrupoArtigoSelecionado] = useState<string>("");
   const [loadingFamilias, setLoadingFamilias] = useState(false);
@@ -528,6 +529,29 @@ export default function FichaTecnica() {
   };
 
   const operadores = operadoresMock;
+  const familiaOptions = familias.map((familia) => ({
+    value: familia.id,
+    label: familia.label,
+    keywords: [familia.id, familia.label],
+  }));
+  const produtoOptions = produtos.map((prod) => ({
+    value: prod.id,
+    label: `${prod.referencia} ${prod.nome} (${prod.operacoes.length} ops)`,
+    keywords: [prod.id, prod.referencia, prod.nome, String(prod.operacoes.length)],
+    renderLabel: (
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="font-mono text-xs text-gray-500 shrink-0">{prod.referencia}</span>
+        <span className="truncate">{prod.nome}</span>
+        <span className="text-gray-400 shrink-0">({prod.operacoes.length} ops)</span>
+      </span>
+    ),
+    renderSelectedLabel: (
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="font-mono text-xs text-gray-500 shrink-0">{prod.referencia}</span>
+        <span className="truncate">{prod.nome}</span>
+      </span>
+    ),
+  }));
 
   const [novoProduto, setNovoProduto] = useState({
     nome: "",
@@ -1530,9 +1554,52 @@ export default function FichaTecnica() {
   const numMaquinas = produto
     ? new Set(produto.operacoes.map((op) => op.tipoMaquina).filter(Boolean)).size
     : 0;
-  const operacoesTabela = produto
+  const operacoesTabelaBase = produto
     ? [...produto.operacoes].sort((a, b) => a.sequencia - b.sequencia)
     : [];
+  const pesquisaGamaNormalizada = pesquisaGama.trim().toLowerCase();
+  const operacoesTabela = operacoesTabelaBase.filter((operacao) => {
+    if (!pesquisaGamaNormalizada) return true;
+    return [
+      operacao.id,
+      operacao.nome,
+      operacao.tipoMaquina || "",
+      String(operacao.sequencia),
+      String(operacao.tempo),
+      operacao.critica ? "critica" : "",
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(pesquisaGamaNormalizada);
+  });
+  const pesquisaImportacaoNormalizada = pesquisaImportacao.trim().toLowerCase();
+  const pesquisaFichasNormalizada = pesquisaFichas.trim().toLowerCase();
+  const importPreviewFiltrado = (importPreview || []).filter((operacao) => {
+    if (!pesquisaImportacaoNormalizada) return true;
+    return [
+      operacao.id,
+      operacao.nome,
+      operacao.tipoMaquina || "",
+      String(operacao.sequencia),
+      String(operacao.tempo),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(pesquisaImportacaoNormalizada);
+  });
+  const produtosFiltrados = produtos.filter((prod) => {
+    if (!pesquisaFichasNormalizada) return true;
+    return [
+      prod.id,
+      prod.nome,
+      prod.referencia,
+      prod.cliente || "",
+      String(prod.operacoes.length),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(pesquisaFichasNormalizada);
+  });
 
   return (
     <main className="w-full px-6 py-8 space-y-6">
@@ -1649,56 +1716,38 @@ export default function FichaTecnica() {
               <Label className="text-xs font-semibold uppercase text-gray-600">
                 Grupo de Artigo
               </Label>
-              <Select
+              <SearchableCombobox
                 value={grupoArtigoSelecionado || undefined}
                 onValueChange={setGrupoArtigoSelecionado}
+                options={familiaOptions}
+                placeholder={loadingFamilias ? "A carregar grupos..." : "Selecione um grupo"}
+                searchPlaceholder="Pesquisar grupo..."
+                emptyText="Nenhum grupo encontrado."
                 disabled={loadingFamilias || familias.length === 0}
-              >
-                <SelectTrigger className="rounded-sm text-sm cursor-pointer">
-                  <SelectValue
-                    placeholder={loadingFamilias ? "A carregar grupos..." : "Selecione um grupo"}
-                  />
-                </SelectTrigger>
-                <SelectContent className="rounded-sm">
-                  {familias.map((familia) => (
-                    <SelectItem key={familia.id} value={familia.id} className="text-sm cursor-pointer">
-                      {familia.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                triggerClassName="rounded-sm text-sm"
+              />
             </div>
 
             <div className="space-y-2">
               <Label className="text-xs font-semibold uppercase text-gray-600">
                 Ficha Tecnica
               </Label>
-              <Select
+              <SearchableCombobox
                 value={produtoSelecionado || undefined}
                 onValueChange={handleSelecionarFicha}
+                options={produtoOptions}
+                placeholder={
+                  loadingFichas
+                    ? "A carregar fichas..."
+                    : loadingFichaPorCodigo
+                      ? "A carregar detalhes..."
+                      : "Selecione uma ficha tecnica"
+                }
+                searchPlaceholder="Pesquisar ficha..."
+                emptyText="Nenhuma ficha encontrada."
                 disabled={loadingFichas || loadingFichaPorCodigo || produtos.length === 0}
-              >
-                <SelectTrigger className="rounded-sm text-sm cursor-pointer">
-                  <SelectValue
-                    placeholder={
-                      loadingFichas
-                        ? "A carregar fichas..."
-                        : loadingFichaPorCodigo
-                          ? "A carregar detalhes..."
-                        : "Selecione uma ficha tecnica"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent className="rounded-sm">
-                  {produtos.map((prod) => (
-                    <SelectItem key={prod.id} value={prod.id} className="text-sm cursor-pointer">
-                      <span className="font-mono text-xs text-gray-500 mr-2">{prod.referencia}</span>
-                      {prod.nome}
-                      <span className="text-gray-400 ml-2">({prod.operacoes.length} ops)</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                triggerClassName="rounded-sm text-sm"
+              />
             </div>
           </div>
         </CardContent>
@@ -1709,13 +1758,32 @@ export default function FichaTecnica() {
         <div className="lg:col-span-1 space-y-3">
           <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
             <CardHeader className="border-b border-gray-200 pb-3">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                <Package className="w-4 h-4 text-blue-600" />
-                Fichas Tecnicas ({produtos.length})
+              <CardTitle className="flex items-center justify-between gap-2 text-sm font-semibold text-gray-900">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-blue-600" />
+                  Fichas Tecnicas ({produtos.length})
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 rounded-sm p-0 hover:bg-gray-100"
+                  onClick={() => setShowPesquisaFichas((current) => !current)}
+                >
+                  <Search className="w-4 h-4" />
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 space-y-2">
-              {produtos.map((prod) => (
+              {showPesquisaFichas && (
+                <Input
+                  value={pesquisaFichas}
+                  onChange={(e) => setPesquisaFichas(e.target.value)}
+                  placeholder="Pesquisar fichas..."
+                  className="rounded-sm text-sm"
+                />
+              )}
+              {produtosFiltrados.map((prod) => (
                 <div
                   key={prod.id}
                   className={`p-3 rounded-sm border-2 cursor-pointer transition-all ${
@@ -1751,6 +1819,11 @@ export default function FichaTecnica() {
                   </div>
                 </div>
               ))}
+              {produtos.length > 0 && produtosFiltrados.length === 0 && (
+                <div className="rounded-sm border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
+                  Nenhuma ficha corresponde à pesquisa.
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1869,6 +1942,15 @@ export default function FichaTecnica() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-auto">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 rounded-sm p-0 hover:bg-gray-100"
+                      onClick={() => setShowPesquisaGama((current) => !current)}
+                    >
+                      <Search className="w-4 h-4" />
+                    </Button>
                     <Dialog open={showNovaOperacao} onOpenChange={setShowNovaOperacao}>
                       <DialogTrigger asChild>
                         <Button
@@ -1995,6 +2077,17 @@ export default function FichaTecnica() {
                       {importingGamas ? "A importar..." : "Importar Gamas Operatórias"}
                     </Button>
                   </div>
+                  {showPesquisaGama && (
+                    <div className="border-b border-gray-200 px-3 py-2">
+                      <Input
+                        value={pesquisaGama}
+                        onChange={(e) => setPesquisaGama(e.target.value)}
+                        placeholder="Pesquisar operações por ID, descrição, máquina..."
+                        className="text-sm"
+                        disabled={!produto || produto.operacoes.length === 0}
+                      />
+                    </div>
+                  )}
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse">
                       <thead>
@@ -2023,7 +2116,9 @@ export default function FichaTecnica() {
                         </tr>
                       </thead>
                       <tbody>
-                        {operacoesTabela.map((operacao, index) => (
+                        {operacoesTabela.map((operacao) => {
+                          const index = operacoesTabelaBase.findIndex((item) => item.id === operacao.id);
+                          return (
                           <tr
                             key={operacao.id}
                             className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
@@ -2124,7 +2219,7 @@ export default function FichaTecnica() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleReorder(index, "up")}
-                                  disabled={index === 0}
+                                  disabled={index <= 0}
                                   className="h-7 w-7 p-0 rounded-sm hover:bg-gray-100"
                                 >
                                   <ArrowUp className="w-3 h-3" />
@@ -2133,7 +2228,7 @@ export default function FichaTecnica() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleReorder(index, "down")}
-                                  disabled={index === operacoesTabela.length - 1}
+                                  disabled={index === operacoesTabelaBase.length - 1 || index < 0}
                                   className="h-7 w-7 p-0 rounded-sm hover:bg-gray-100"
                                 >
                                   <ArrowDown className="w-3 h-3" />
@@ -2150,7 +2245,7 @@ export default function FichaTecnica() {
                               </div>
                             </td>
                           </tr>
-                        ))}
+                        )})}
                       </tbody>
                       <tfoot>
                         <tr className="bg-gray-50 border-t-2 border-gray-300">
@@ -2169,6 +2264,11 @@ export default function FichaTecnica() {
                   {produto.operacoes.length === 0 && (
                     <div className="p-12 text-center text-gray-400 text-sm">
                       Nenhuma operação adicionada. Clique em "Nova Operação" para começar.
+                    </div>
+                  )}
+                  {produto.operacoes.length > 0 && operacoesTabela.length === 0 && (
+                    <div className="p-12 text-center text-gray-400 text-sm">
+                      Nenhuma operação corresponde à pesquisa.
                     </div>
                   )}
                 </CardContent>
@@ -2274,15 +2374,28 @@ export default function FichaTecnica() {
           setShowImportDialog(open);
           if (!open && !importingGamas) {
             setImportError(null);
+            setPesquisaImportacao("");
+            setShowPesquisaImportacao(false);
           }
         }}
       >
         <DialogContent className="rounded-sm max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-              <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-              Pré-visualização da Importação
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-3">
+              <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+                <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                Pré-visualização da Importação
+              </DialogTitle>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 rounded-sm p-0 hover:bg-gray-100"
+                onClick={() => setShowPesquisaImportacao((current) => !current)}
+              >
+                <Search className="w-4 h-4" />
+              </Button>
+            </div>
             <DialogDescription className="text-xs">
               {importPreview?.length} operações detectadas — será criada uma nova ficha técnica e as
               gamas operatórias serão importadas para essa ficha.
@@ -2301,6 +2414,15 @@ export default function FichaTecnica() {
               {importError}
             </div>
           )}
+          {showPesquisaImportacao && (
+            <Input
+              value={pesquisaImportacao}
+              onChange={(e) => setPesquisaImportacao(e.target.value)}
+              placeholder="Pesquisar operações importadas..."
+              className="rounded-sm text-sm"
+              disabled={!importPreview?.length}
+            />
+          )}
           <div className="overflow-x-auto border border-gray-200 rounded-sm">
             <table className="w-full border-collapse text-xs">
               <thead>
@@ -2313,7 +2435,7 @@ export default function FichaTecnica() {
                 </tr>
               </thead>
               <tbody>
-                {importPreview?.map((op) => (
+                {importPreviewFiltrado.map((op) => (
                   <tr key={op.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-1.5 text-gray-500 font-mono">{op.sequencia}</td>
                     <td className="px-3 py-1.5">
@@ -2331,13 +2453,18 @@ export default function FichaTecnica() {
                 <tr className="bg-gray-50 border-t-2 border-gray-300">
                   <td colSpan={3} className="px-3 py-2 text-xs font-semibold text-gray-700 uppercase">Total</td>
                   <td className="px-3 py-2 font-mono font-bold text-right text-gray-900">
-                    {importPreview?.reduce((s, o) => s + o.tempo, 0).toFixed(2)} min
+                    {importPreviewFiltrado.reduce((s, o) => s + o.tempo, 0).toFixed(2)} min
                   </td>
                   <td />
                 </tr>
               </tfoot>
             </table>
           </div>
+          {importPreview?.length && importPreviewFiltrado.length === 0 && (
+            <div className="text-center text-xs text-gray-500">
+              Nenhuma operação importada corresponde à pesquisa.
+            </div>
+          )}
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
