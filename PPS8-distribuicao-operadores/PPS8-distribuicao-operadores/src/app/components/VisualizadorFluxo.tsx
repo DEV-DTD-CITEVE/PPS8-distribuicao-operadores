@@ -1,7 +1,8 @@
 ﻿import { ResultadosBalanceamento } from "../types";
 import { LayoutConfig } from "./LayoutConfigurador";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { ArrowRight, Factory, Layout, BarChart2 } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, BarChart2, Check, Factory, Layout, X } from "lucide-react";
+import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
@@ -23,6 +24,7 @@ interface VisualizadorFluxoProps {
   viewMode?: "tempo" | "percentagem";
   onTipoLayoutChange?: (tipo: "linha" | "espinha") => void;
   onLayoutConfigChange?: (config: LayoutConfig) => void;
+  onSwapPositions?: (positionA: string, positionB: string) => Promise<void> | void;
   agruparPorMaquina?: boolean;
 }
 
@@ -43,11 +45,15 @@ interface EspinhaLayoutProps {
   estacoesMapeadas: Record<string, { maquina: string; operador: string }>;
   operatorColorMap: Record<string, { bg: string; border: string; text: string }>;
   permitirCruzamento: boolean;
+  swapMode: boolean;
+  swapSource: string | null;
+  swapTarget: string | null;
+  onStationClick: (station: string) => void;
 }
 
 function EspinhaLayout({
   estacoes, ladoA, ladoB, maxCols, flowByOperator,
-  estacoesMapeadas, operatorColorMap, permitirCruzamento,
+  estacoesMapeadas, operatorColorMap, permitirCruzamento, swapMode, swapSource, swapTarget, onStationClick,
 }: EspinhaLayoutProps) {
   const colStyle = { flex: 1, minWidth: 110 } as const;
 
@@ -221,11 +227,33 @@ function EspinhaLayout({
       : NaN;
     const postoLabel = Number.isFinite(postoNumero) ? `${isA ? "A" : "B"}${postoNumero}` : est;
     const c = operatorColorMap[operador];
+    const isSource = swapSource === est;
+    const isTarget = swapTarget === est;
+    const isSelectableTarget = swapMode && Boolean(swapSource) && swapSource !== est;
     return (
-      <div key={`card-${est}`} className="rounded border border-gray-300 bg-white p-2 w-[110px] min-h-[90px] flex flex-col items-center justify-between relative">
+      <button
+        type="button"
+        key={`card-${est}`}
+        onClick={() => onStationClick(est)}
+        className={`rounded border p-2 w-[110px] min-h-[90px] flex flex-col items-center justify-between relative text-left transition-all ${
+          isSource
+            ? "border-blue-500 bg-blue-50 shadow-sm ring-2 ring-blue-200"
+            : isTarget
+              ? "border-emerald-500 bg-emerald-50 shadow-sm ring-2 ring-emerald-200"
+              : isSelectableTarget
+                ? "border-gray-300 bg-white hover:border-emerald-300 hover:bg-emerald-50/40"
+                : "border-gray-300 bg-white"
+        }`}
+        disabled={!swapMode}
+      >
         <div className={`absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white z-10 ${
           permitirCruzamento ? "bg-blue-700" : isA ? "bg-blue-600" : "bg-green-600"
         }`}>{Number.isFinite(postoNumero) ? postoNumero : ""}</div>
+        {swapMode && (
+          <div className="absolute -top-2 -right-2 rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[8px] font-semibold text-gray-600">
+            {isSource ? "Origem" : isTarget ? "Destino" : "Trocar"}
+          </div>
+        )}
         <div className="text-[11px] font-bold text-gray-900">{postoLabel}</div>
         <div className="w-full text-[8px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
           {maq || "--"}
@@ -236,7 +264,7 @@ function EspinhaLayout({
         >
           {operador || "--"}
         </div>
-      </div>
+      </button>
     );
   };
 
@@ -409,11 +437,16 @@ export function VisualizadorFluxo({
   viewMode = "tempo",
   onTipoLayoutChange,
   onLayoutConfigChange,
+  onSwapPositions,
   agruparPorMaquina = false,
 }: VisualizadorFluxoProps) {
   const tipoLayout = layoutConfig?.tipoLayout || "linha";
   const postosPorLado = layoutConfig?.postosPorLado || 8;
   const permitirCruzamento = layoutConfig?.permitirCruzamento ?? true;
+  const [swapMode, setSwapMode] = useState(false);
+  const [swapSource, setSwapSource] = useState<string | null>(null);
+  const [swapTarget, setSwapTarget] = useState<string | null>(null);
+  const [operadoresPorEstacaoEditaveis, setOperadoresPorEstacaoEditaveis] = useState<Record<string, string>>({});
 
   const normalizeKey = (value: unknown): string =>
     String(value || "")
@@ -593,8 +626,31 @@ export function VisualizadorFluxo({
     const rows = Array.isArray(rawLayout) ? rawLayout : [];
     const out: Array<{ estacao: string; maquina: string; operador: string; prioridade: number }> = [];
 
-    const pushPos = (pos: any, maquina: string, operadorRaw: string, prioridade: number) => {
-      const estacao = extrairCodigoEstacao(pos);
+    const pushPos = (
+      pos: any,
+      maquina: string,
+      operadorRaw: string,
+      prioridade: number,
+      fallback?: any
+    ) => {
+      const candidate =
+        pos && typeof pos === "object"
+          ? pos
+          : {
+              position: pos,
+              position_label: typeof pos === "string" ? pos : undefined,
+              position_side:
+                fallback?.position_side ??
+                fallback?.side ??
+                fallback?.primary_position?.position_side ??
+                fallback?.main_position?.position_side,
+              position_number:
+                fallback?.position_number ??
+                fallback?.primary_position?.position_number ??
+                fallback?.main_position?.position_number,
+            };
+
+      const estacao = extrairCodigoEstacao(candidate);
       if (!estacao) return;
       out.push({
         estacao,
@@ -646,7 +702,7 @@ export function VisualizadorFluxo({
         const maquina = String(row?.machine_name ?? row?.machine_type ?? row?.machine ?? "").trim();
         const pos = row?.position_label ?? row?.primary_post_label ?? row?.position;
         if (operadorRaw && pos) {
-          pushPos(pos, maquina, operadorRaw, isPrimary ? 0 : 10);
+          pushPos(pos, maquina, operadorRaw, isPrimary ? 0 : 10, row);
         }
         return;
       }
@@ -664,7 +720,7 @@ export function VisualizadorFluxo({
       const rowPrimaryPos =
         row?.primary_position ?? row?.main_position ?? row?.position ?? row?.position_label ?? row?.station;
       if (rowPrimaryOperator) {
-        pushPos(rowPrimaryPos, maquinaRow, rowPrimaryOperator, 0);
+        pushPos(rowPrimaryPos, maquinaRow, rowPrimaryOperator, 0, row);
       }
 
       operadorRows.forEach((op: any) => {
@@ -673,7 +729,7 @@ export function VisualizadorFluxo({
         const maquina = resolveMachine(row, op) || maquinaRow;
         const isPrimary = Boolean(op?.is_primary_post ?? op?.isPrimaryPost);
 
-        pushPos(resolvePrimaryPos(op), maquina, operadorRaw, isPrimary ? 0 : 10);
+        pushPos(resolvePrimaryPos(op), maquina, operadorRaw, isPrimary ? 0 : 10, op);
 
         const outras = Array.isArray(op?.other_positions)
           ? op.other_positions
@@ -682,7 +738,7 @@ export function VisualizadorFluxo({
             : Array.isArray(op?.positions)
               ? op.positions
               : [];
-        outras.forEach((pos: any, idx: number) => pushPos(pos, maquina, operadorRaw, idx + 1));
+        outras.forEach((pos: any, idx: number) => pushPos(pos, maquina, operadorRaw, idx + 1, op));
       });
     });
 
@@ -737,6 +793,38 @@ export function VisualizadorFluxo({
     return mapped;
   }, [machineLayoutAssignments, resultados.operation_allocations, estacoesBase, estacoesSet]);
 
+  useEffect(() => {
+    setOperadoresPorEstacaoEditaveis(
+      Object.fromEntries(
+        Object.entries(estacoesMapeadas).map(([estacao, data]) => [estacao, String(data?.operador || "")])
+      )
+    );
+    setSwapMode(false);
+    setSwapSource(null);
+    setSwapTarget(null);
+  }, [estacoesMapeadas]);
+
+  const operadoresPorEstacaoPreview = useMemo(() => {
+    const current = { ...operadoresPorEstacaoEditaveis };
+    if (swapSource && swapTarget) {
+      const sourceOperator = current[swapSource] || "";
+      current[swapSource] = current[swapTarget] || "";
+      current[swapTarget] = sourceOperator;
+    }
+    return current;
+  }, [operadoresPorEstacaoEditaveis, swapSource, swapTarget]);
+
+  const estacoesMapeadasVisuais = useMemo(() => {
+    const mapped: Record<string, { maquina: string; operador: string }> = {};
+    Object.entries(estacoesMapeadas).forEach(([estacao, data]) => {
+      mapped[estacao] = {
+        ...data,
+        operador: operadoresPorEstacaoPreview[estacao] ?? data.operador ?? "",
+      };
+    });
+    return mapped;
+  }, [estacoesMapeadas, operadoresPorEstacaoPreview]);
+
   const flowByOperatorFromApi = useMemo(() => {
     const rawFlow = (resultados as any)?.operator_flow ?? (resultados as any)?.operatorFlow;
     if (!rawFlow || typeof rawFlow !== "object") return {} as Record<string, string[]>;
@@ -767,13 +855,67 @@ export function VisualizadorFluxo({
     return out;
   }, [resultados, extrairCodigoEstacao, resolveOperatorCode]);
 
+  const flowByOperatorVisual = useMemo(() => {
+    const grouped: Record<string, string[]> = {};
+    estacoesBase.forEach((estacao) => {
+      const operador = String(estacoesMapeadasVisuais[estacao]?.operador || "").trim();
+      if (!operador) return;
+      if (!grouped[operador]) grouped[operador] = [];
+      grouped[operador].push(estacao);
+    });
+    return grouped;
+  }, [estacoesBase, estacoesMapeadasVisuais]);
+
+  const handleStationClick = useCallback((station: string) => {
+    if (!swapMode) return;
+    if (!swapSource) {
+      setSwapSource(station);
+      setSwapTarget(null);
+      return;
+    }
+    if (swapSource === station) {
+      setSwapSource(null);
+      setSwapTarget(null);
+      return;
+    }
+    setSwapTarget(station);
+  }, [swapMode, swapSource]);
+
+  const handleCancelSwap = useCallback(() => {
+    setSwapSource(null);
+    setSwapTarget(null);
+    setSwapMode(false);
+  }, []);
+
+  const handleConfirmSwap = useCallback(async () => {
+    if (!swapSource || !swapTarget) return;
+    try {
+      if (onSwapPositions) {
+        await onSwapPositions(swapSource, swapTarget);
+      } else {
+        setOperadoresPorEstacaoEditaveis((prev) => {
+          const next = { ...prev };
+          const sourceOperator = next[swapSource] || "";
+          next[swapSource] = next[swapTarget] || "";
+          next[swapTarget] = sourceOperator;
+          return next;
+        });
+      }
+      setSwapSource(null);
+      setSwapTarget(null);
+      setSwapMode(false);
+    } catch {
+      return;
+    }
+  }, [swapSource, swapTarget, onSwapPositions]);
+
   const estacoesAtivas = useMemo(() => {
-    const fromMap = Object.entries(estacoesMapeadas)
+    const fromMap = Object.entries(estacoesMapeadasVisuais)
       .filter(([, data]) => Boolean(String(data?.operador || "").trim()))
       .map(([est]) => est);
-    const fromFlow = Object.values(flowByOperatorFromApi).flat();
+    const fromFlow = Object.values(flowByOperatorVisual).flat();
     return [...new Set([...fromMap, ...fromFlow])];
-  }, [estacoesMapeadas, flowByOperatorFromApi]);
+  }, [estacoesMapeadasVisuais, flowByOperatorVisual]);
 
   const requiredMachineMetrics = useMemo(() => {
     const raw = (resultados as any)?.machines_used?.required ?? (resultados as any)?.required;
@@ -938,10 +1080,10 @@ export function VisualizadorFluxo({
       : {}).forEach(appendOperator);
 
     (resultados.distribuicao || []).forEach((dist: any) => appendOperator(String(dist?.operadorId ?? dist?.operator_id ?? dist?.operator ?? "")));
-    Object.values(estacoesMapeadas).forEach((entry) => appendOperator(entry?.operador || ""));
+    Object.values(estacoesMapeadasVisuais).forEach((entry) => appendOperator(entry?.operador || ""));
 
     return Array.from(ordered.values());
-  }, [resultados, estacoesMapeadas, operadores]);
+  }, [resultados, estacoesMapeadasVisuais, operadores]);
 
   const operatorColorMap = useMemo(() => {
     const map: Record<string, { bg: string; border: string; text: string }> = {};
@@ -1743,9 +1885,29 @@ export function VisualizadorFluxo({
                   </p>
                 </div>
               </CardTitle>
-              {onTipoLayoutChange || onLayoutConfigChange ? (
-                <div className="flex w-full flex-col items-center gap-2 lg:w-auto lg:items-end">
+              <div className="flex w-full flex-col items-center gap-2 lg:w-auto lg:items-end">
                   <div className="flex flex-wrap items-center justify-center gap-2 lg:justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        if (swapMode) {
+                          handleCancelSwap();
+                          return;
+                        }
+                        setSwapMode(true);
+                        setSwapSource(null);
+                        setSwapTarget(null);
+                      }}
+                      className={`h-8 rounded-sm px-3 text-[11px] font-semibold ${
+                        swapMode
+                          ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      <ArrowLeftRight className="mr-1.5 h-3.5 w-3.5" />
+                      {swapMode ? "Cancelar troca" : "Trocar posições"}
+                    </Button>
                     {onTipoLayoutChange ? (
                       <div className="flex items-center gap-2">
                         <button
@@ -1795,37 +1957,56 @@ export function VisualizadorFluxo({
                         />
                       </div>
                     ) : null}
-                    {onLayoutConfigChange && agruparPorMaquina ? (
-                      <div className="flex h-8 items-center gap-2 rounded-sm border border-blue-200 bg-blue-50 px-2">
-                        <Label htmlFor="vf-distancia" className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-                          Distância
-                        </Label>
-                        <Input
-                          id="vf-distancia"
-                          type="number"
-                          min={1}
-                          max={8}
-                          value={layoutConfig?.distanciaMaxima ?? 4}
-                          onChange={(e) => {
-                            const parsed = Number(e.currentTarget.value);
-                            if (!Number.isFinite(parsed)) return;
-                            onLayoutConfigChange({
-                              ...(layoutConfig as LayoutConfig),
-                              distanciaMaxima: Math.max(1, Math.min(8, Math.round(parsed))),
-                            });
-                          }}
-                          className="h-7 w-16 rounded-sm bg-white text-[11px] font-mono"
-                        />
-                      </div>
-                    ) : null}
                   </div>
                 </div>
-              ) : (
-                <div />
-              )}
             </div>
           </CardHeader>
           <CardContent className="p-4">
+            {swapMode && (
+              <div className="mb-4 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="text-xs text-amber-800">
+                    <span className="font-semibold">Modo de troca ativo.</span>{" "}
+                    Selecione o posto de origem e depois o posto de destino para ver a pré-visualização.
+                    {swapSource ? (
+                      <span className="ml-2">
+                        Origem: <span className="font-mono font-semibold">{swapSource}</span>
+                        {swapTarget ? (
+                          <>
+                            {" "}→ Destino: <span className="font-mono font-semibold">{swapTarget}</span>
+                          </>
+                        ) : null}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSwapSource(null);
+                        setSwapTarget(null);
+                      }}
+                      className="h-8 rounded-sm border-amber-200 bg-white px-3 text-[11px] text-amber-700 hover:bg-amber-100"
+                    >
+                      <X className="mr-1.5 h-3.5 w-3.5" />
+                      Limpar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleConfirmSwap}
+                      disabled={!swapSource || !swapTarget}
+                      className="h-8 rounded-sm bg-emerald-600 px-3 text-[11px] hover:bg-emerald-700"
+                    >
+                      <Check className="mr-1.5 h-3.5 w-3.5" />
+                      Confirmar troca
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
             {(() => {
               const estacoes = estacoesAtivas.length > 0 ? estacoesAtivas : estacoesBase;
 
@@ -1834,12 +2015,33 @@ export function VisualizadorFluxo({
                   <div className="bg-gray-50 p-4 border border-gray-200 rounded-sm">
                     <div className="flex gap-2 justify-center items-center flex-wrap">
                       {estacoes.map((est, idx) => {
-                        const maq = estacoesMapeadas[est]?.maquina || "";
-                        const operador = estacoesMapeadas[est]?.operador || "";
+                        const maq = estacoesMapeadasVisuais[est]?.maquina || "";
+                        const operador = estacoesMapeadasVisuais[est]?.operador || "";
                         const hasMaq = maq && maq !== "";
+                        const isSource = swapSource === est;
+                        const isTarget = swapTarget === est;
+                        const isSelectableTarget = swapMode && Boolean(swapSource) && swapSource !== est;
                         return (
                           <div key={`est-linha-${est}`} className="flex items-center gap-2">
-                            <div className="rounded border border-gray-300 bg-white p-3 w-[120px] min-h-[90px] flex flex-col items-center gap-2 justify-between">
+                            <button
+                              type="button"
+                              onClick={() => handleStationClick(est)}
+                              disabled={!swapMode}
+                              className={`rounded border p-3 w-[120px] min-h-[90px] flex flex-col items-center gap-2 justify-between relative transition-all ${
+                                isSource
+                                  ? "border-blue-500 bg-blue-50 shadow-sm ring-2 ring-blue-200"
+                                  : isTarget
+                                    ? "border-emerald-500 bg-emerald-50 shadow-sm ring-2 ring-emerald-200"
+                                    : isSelectableTarget
+                                      ? "border-gray-300 bg-white hover:border-emerald-300 hover:bg-emerald-50/40"
+                                      : "border-gray-300 bg-white"
+                              }`}
+                            >
+                              {swapMode && (
+                                <div className="absolute -top-2 right-2 rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[8px] font-semibold text-gray-600">
+                                  {isSource ? "Origem" : isTarget ? "Destino" : "Trocar"}
+                                </div>
+                              )}
                               <div className="text-xs font-bold text-gray-900">{est}</div>
                               <div className="w-full text-[9px] text-center rounded-sm border border-purple-200 bg-purple-50 text-purple-700 px-1 py-0.5 truncate">
                                 {maq || "--"}
@@ -1855,7 +2057,7 @@ export function VisualizadorFluxo({
                                   </div>
                                 );
                               })()}
-                            </div>
+                            </button>
                             {idx < estacoes.length - 1 && <ArrowRight className="w-4 h-4 text-blue-400 flex-shrink-0" />}
                           </div>
                         );
@@ -1876,10 +2078,14 @@ export function VisualizadorFluxo({
                     ladoA={ladoA}
                     ladoB={ladoB}
                     maxCols={maxCols}
-                   flowByOperator={flowByOperatorFromApi}
-                    estacoesMapeadas={estacoesMapeadas}
+                   flowByOperator={flowByOperatorVisual}
+                    estacoesMapeadas={estacoesMapeadasVisuais}
                     operatorColorMap={operatorColorMap}
                     permitirCruzamento={permitirCruzamento}
+                    swapMode={swapMode}
+                    swapSource={swapSource}
+                    swapTarget={swapTarget}
+                    onStationClick={handleStationClick}
                   />
                 );
             })()}
@@ -1889,5 +2095,3 @@ export function VisualizadorFluxo({
     </div>
   );
 }
-
-

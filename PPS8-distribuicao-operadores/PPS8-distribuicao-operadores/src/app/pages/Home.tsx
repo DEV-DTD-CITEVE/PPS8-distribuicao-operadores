@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Operador, Operacao, ConfiguracaoDistribuicao, Produto, ResultadosBalanceamento } from "../types";
 import { Button } from "../components/ui/button";
-import { Calculator, Users, Package, Factory, ChevronDown, Edit3, AlertTriangle, Download, Printer } from "lucide-react";
+import { Calculator, Users, Package, Factory, ChevronDown, Edit3, AlertTriangle, Download, FileDown } from "lucide-react";
 import { ConfiguracaoDistribuicaoComponent } from "../components/ConfiguracaoDistribuicao";
 import { LayoutConfig } from "../components/LayoutConfigurador";
 import { TabelaOperacoesManual } from "../components/TabelaOperacoesManual";
@@ -35,7 +35,7 @@ import {
 const configPadrao: ConfiguracaoDistribuicao = {
   possibilidade: 1,
   agruparMaquinas: false,
-  cargaMaximaOperador: 95,
+  cargaMaximaOperador: 100,
   naoDividirMaiorQue: 1.1,
   naoDividirMenorQue: 0.9,
   horasTurno: 8,
@@ -1127,6 +1127,8 @@ export default function Home() {
     taskCode?: string;
     ajusteBodyBase?: any;
     ajusteBodyBasePorTipo?: Partial<Record<"linha" | "espinha", any>>;
+    swapBaseRaw?: any;
+    swapBaseRawPorTipo?: Partial<Record<"linha" | "espinha", any>>;
   } | null>(null);
   const resultadosRef = useRef<HTMLDivElement | null>(null);
   const [resultadosAtuaisInline, setResultadosAtuaisInline] = useState<ResultadosBalanceamento | null>(null);
@@ -1135,6 +1137,9 @@ export default function Home() {
   const [viewModeInline, setViewModeInline] = useState<"tempo" | "percentagem">("tempo");
   const [ajusteBodyBaseInline, setAjusteBodyBaseInline] = useState<any>(null);
   const [ajusteBodyBasePorTipoInline, setAjusteBodyBasePorTipoInline] = useState<Partial<Record<"linha" | "espinha", any>>>({});
+  const [swapBaseRawInline, setSwapBaseRawInline] = useState<any>(null);
+  const [swapBaseRawPorTipoInline, setSwapBaseRawPorTipoInline] = useState<Partial<Record<"linha" | "espinha", any>>>({});
+  const [exportPdfBodyInline, setExportPdfBodyInline] = useState<any>(null);
   const [taskCodeInline, setTaskCodeInline] = useState<string>("");
   const [temAdjustInline, setTemAdjustInline] = useState(false);
   const autoRecalcularLayoutRef = useRef(false);
@@ -1522,7 +1527,14 @@ export default function Home() {
   // ─── Helpers para resultados inline (espelham Resultados.tsx) ──────────────
 
   const resolveMachineLayoutInline = (raw: any): any[] => {
-    const arr = raw?.machine_layout ?? raw?.machineLayout ?? raw?.layout_machines ?? raw?.machine_positions ?? raw?.machines_layout;
+    const arr =
+      raw?.machine_layout ??
+      raw?.machineLayout ??
+      raw?.layouts?.linha ??
+      raw?.layouts?.espinha ??
+      raw?.layout_machines ??
+      raw?.machine_positions ??
+      raw?.machines_layout;
     if (Array.isArray(arr)) return arr;
     if (arr && typeof arr === "object") {
       const nested = Object.values(arr as Record<string, unknown>).find((v) => Array.isArray(v));
@@ -1531,8 +1543,138 @@ export default function Home() {
     return [];
   };
 
+  const normalizeLayoutSideInline = (value: unknown): "A" | "B" | "" => {
+    const key = String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+
+    if (!key) return "";
+    if (["a", "ladoa", "sidea", "top", "upper"].includes(key)) return "A";
+    if (["b", "ladob", "sideb", "bottom", "lower"].includes(key)) return "B";
+    return "";
+  };
+
+  const enrichLayoutPositionInline = (value: any, sideHint: "A" | "B" | ""): any => {
+    if (!sideHint || value == null) return value;
+    if (Array.isArray(value)) return value.map((entry) => enrichLayoutPositionInline(entry, sideHint));
+    if (typeof value !== "object") return value;
+
+    const currentSide = normalizeLayoutSideInline(
+      (value as any)?.position_side ??
+      (value as any)?.side
+    );
+
+    const enriched: any = {
+      ...value,
+      ...(currentSide ? {} : { position_side: sideHint }),
+    };
+
+    if (enriched.primary_position) {
+      enriched.primary_position = enrichLayoutPositionInline(enriched.primary_position, sideHint);
+    }
+    if (enriched.main_position) {
+      enriched.main_position = enrichLayoutPositionInline(enriched.main_position, sideHint);
+    }
+    if (Array.isArray(enriched.other_positions)) {
+      enriched.other_positions = enriched.other_positions.map((pos: any) => enrichLayoutPositionInline(pos, sideHint));
+    }
+    if (Array.isArray(enriched.secondary_positions)) {
+      enriched.secondary_positions = enriched.secondary_positions.map((pos: any) => enrichLayoutPositionInline(pos, sideHint));
+    }
+    if (Array.isArray(enriched.positions)) {
+      enriched.positions = enriched.positions.map((pos: any) => enrichLayoutPositionInline(pos, sideHint));
+    }
+    if (Array.isArray(enriched.operators)) {
+      enriched.operators = enriched.operators.map((operator: any) => enrichLayoutPositionInline(operator, sideHint));
+    }
+    if (Array.isArray(enriched.operator_allocations)) {
+      enriched.operator_allocations = enriched.operator_allocations.map((operator: any) => enrichLayoutPositionInline(operator, sideHint));
+    }
+    if (enriched.operator_positions && typeof enriched.operator_positions === "object") {
+      enriched.operator_positions = Object.fromEntries(
+        Object.entries(enriched.operator_positions).map(([key, pos]) => [key, enrichLayoutPositionInline(pos, sideHint)])
+      );
+    }
+
+    return enriched;
+  };
+
+  const flattenLayoutRowsInline = (value: unknown, sideHint: "A" | "B" | "" = ""): any[] => {
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => flattenLayoutRowsInline(entry, sideHint));
+    }
+
+    if (!value || typeof value !== "object") return [];
+
+    const record = value as Record<string, unknown>;
+    const looksLikeLayoutRow = [
+      "position_label",
+      "position_number",
+      "primary_post_label",
+      "machine_name",
+      "machine_type",
+      "machine",
+      "operators",
+      "operator_allocations",
+      "operator_positions",
+    ].some((key) => key in record);
+
+    if (looksLikeLayoutRow) {
+      return [enrichLayoutPositionInline(record, sideHint)];
+    }
+
+    const entries = Object.entries(record);
+    const nestedArrays = entries.filter(([, nested]) => Array.isArray(nested));
+
+    if (nestedArrays.length > 0) {
+      return nestedArrays.flatMap(([key, nested]) =>
+        flattenLayoutRowsInline(nested, normalizeLayoutSideInline(key) || sideHint)
+      );
+    }
+
+    const nestedObjects = entries.filter(([, nested]) => nested && typeof nested === "object");
+    if (nestedObjects.length > 0) {
+      return nestedObjects.flatMap(([key, nested]) =>
+        flattenLayoutRowsInline(nested, normalizeLayoutSideInline(key) || sideHint)
+      );
+    }
+
+    return [enrichLayoutPositionInline(record, sideHint)];
+  };
+
   const resolveMachineLayoutPorTipoInline = (raw: any, tipoLayout: "linha" | "espinha"): any[] => {
+    const layoutsRoot =
+      raw?.layouts ??
+      raw?.machine_layouts ??
+      raw?.machineLayouts ??
+      raw?.layouts_by_type;
+
+    if (layoutsRoot && typeof layoutsRoot === "object" && !Array.isArray(layoutsRoot)) {
+      const typedLayout =
+        (layoutsRoot as Record<string, unknown>)[tipoLayout] ??
+        (tipoLayout === "linha"
+          ? (layoutsRoot as Record<string, unknown>)["line"] ?? (layoutsRoot as Record<string, unknown>)["linear"] ?? (layoutsRoot as Record<string, unknown>)["row"]
+          : (layoutsRoot as Record<string, unknown>)["spine"] ?? (layoutsRoot as Record<string, unknown>)["fishbone"] ?? (layoutsRoot as Record<string, unknown>)["backbone"]);
+
+      const directKeys = tipoLayout === "linha"
+        ? ["linha", "line", "linear", "row"]
+        : ["espinha", "spine", "fishbone", "backbone"];
+
+      const directFlattened = flattenLayoutRowsInline(typedLayout, "");
+      if (directFlattened.length > 0) return directFlattened;
+
+      for (const key of directKeys) {
+        const direct = (layoutsRoot as Record<string, unknown>)[key];
+        const flattened = flattenLayoutRowsInline(direct, tipoLayout === "espinha" ? normalizeLayoutSideInline(key) : "");
+        if (flattened.length > 0) return flattened;
+      }
+    }
+
     const source =
+      layoutsRoot ??
       raw?.machine_layout ??
       raw?.machineLayout ??
       raw?.layout_machines ??
@@ -2223,6 +2365,8 @@ export default function Home() {
     taskCode?: string;
     ajusteBodyBase?: any;
     ajusteBodyBasePorTipo?: Partial<Record<"linha" | "espinha", any>>;
+    swapBaseRaw?: any;
+    swapBaseRawPorTipo?: Partial<Record<"linha" | "espinha", any>>;
   }) => {
     const machineLayout = resolveMachineLayoutPorTipoInline(data.resultados, data.layoutConfig.tipoLayout);
     const resultadosComLayout = {
@@ -2243,9 +2387,12 @@ export default function Home() {
     setResultadosAtuaisInline(resultadoAtual);
     setConfigAtualInline(data.config);
     setViewModeInline("tempo");
-    setTaskCodeInline(data.taskCode || "");
+    setTaskCodeInline(data.taskCode || taskCodeSelecionado || "");
     setAjusteBodyBasePorTipoInline(ajusteBodyBasePorTipo);
     setAjusteBodyBaseInline(ajusteBodyBasePorTipo[data.layoutConfig.tipoLayout] ?? data.ajusteBodyBase ?? null);
+    setExportPdfBodyInline(data.ajusteBodyBase ?? data.swapBaseRaw ?? null);
+    setSwapBaseRawPorTipoInline(data.swapBaseRawPorTipo ?? {});
+    setSwapBaseRawInline(data.swapBaseRaw ?? null);
     setTemAdjustInline(Boolean(data.ajusteBodyBase || data.ajusteBodyBasePorTipo));
     if (suppressResultadosScrollRef.current) {
       suppressResultadosScrollRef.current = false;
@@ -2266,50 +2413,38 @@ export default function Home() {
   }, []);
 
   const handleRecalcularLayoutComAdjustInline = useCallback(async (nextLayoutConfig: LayoutConfig) => {
-    if (!taskCodeInline || !resultadosAtuaisInline) return;
+    const codigoFicha = taskCodeInline || taskCodeSelecionado;
+    if (!codigoFicha || !resultadosAtuaisInline) return;
     setIsAjustando(true);
     try {
+      const maxPosts = getMaxPostsPayloadInline(nextLayoutConfig);
+      const bodyBase = ajusteBodyBaseInline ?? ajusteBodyBasePorTipoInline[nextLayoutConfig.tipoLayout];
+      if (!bodyBase) return;
+      const body = {
+        ...(structuredClone(bodyBase) || {}),
+        max_posts: maxPosts,
+        max_position_deviation: Math.max(1, Number(nextLayoutConfig.distanciaMaxima) || 1),
+        position_deviation_mode: nextLayoutConfig.permitirRetrocesso ? "both" : "forward",
+      };
+      const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/adjust`, body);
+      const novoRaw = resposta.data ?? {};
       const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
-      const respostas = await Promise.all(
-        tipos.map(async (tipo) => {
-          const bodyBase = ajusteBodyBasePorTipoInline[tipo] ?? ajusteBodyBaseInline;
-          if (!bodyBase) return [tipo, null, null] as const;
-          const layoutVariant = { ...nextLayoutConfig, tipoLayout: tipo };
-          const maxPosts = getMaxPostsPayloadInline(layoutVariant);
-          const body = {
-            ...(structuredClone(bodyBase) || {}),
-            line_type: tipo,
-            max_posts: maxPosts,
-            max_position_deviation: Math.max(1, Number(layoutVariant.distanciaMaxima) || 1),
-            position_deviation_mode: layoutVariant.permitirRetrocesso ? "both" : "forward",
-          };
-          const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
-          return [tipo, body, resposta.data ?? {}] as const;
+      const proximosResultadosPorTipo = Object.fromEntries(
+        tipos.map((tipo) => {
+          const resultadosBase = buildResultadosFromApiInline(novoRaw, resultadosAtuaisInline);
+          return [
+            tipo,
+            {
+              ...(resultadosBase as any),
+              machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, tipo),
+            } as ResultadosBalanceamento,
+          ];
         })
-      );
-      const proximosResultadosPorTipo: Partial<Record<"linha" | "espinha", ResultadosBalanceamento>> = {};
-      const proximoAjusteBodyBasePorTipo: Partial<Record<"linha" | "espinha", any>> = {};
-      respostas.forEach(([tipo, bodyEnviado, novoRaw]) => {
-        if (!bodyEnviado || !novoRaw) return;
-        const resultadosBase = buildResultadosFromApiInline(
-          novoRaw,
-          resultadosPorTipoInline[tipo] ?? resultadosAtuaisInline
-        );
-        proximosResultadosPorTipo[tipo] = {
-          ...(resultadosBase as any),
-          machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, tipo),
-        } as ResultadosBalanceamento;
-        proximoAjusteBodyBasePorTipo[tipo] = {
-          ...((ajusteBodyBasePorTipoInline[tipo] ?? ajusteBodyBaseInline) || {}),
-          ...(novoRaw || {}),
-          ...(bodyEnviado || {}),
-          operation_allocations: ensureArray(
-            (novoRaw as any)?.operation_allocations ??
-            (novoRaw as any)?.operationAllocations ??
-            (bodyEnviado as any)?.operation_allocations
-          ),
-        };
-      });
+      ) as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
+      const proximoAjusteBodyBasePorTipo = {
+        linha: { ...(body || {}), ...(novoRaw || {}) },
+        espinha: { ...(body || {}), ...(novoRaw || {}) },
+      } as Partial<Record<"linha" | "espinha", any>>;
       const resultadoAtual = proximosResultadosPorTipo[nextLayoutConfig.tipoLayout];
       if (resultadoAtual) setResultadosAtuaisInline(resultadoAtual);
       setResultadosPorTipoInline((prev) => ({ ...prev, ...proximosResultadosPorTipo }));
@@ -2328,11 +2463,20 @@ export default function Home() {
                 ...(prev.ajusteBodyBasePorTipo || {}),
                 ...proximoAjusteBodyBasePorTipo,
               },
+              swapBaseRaw: novoRaw,
+              swapBaseRawPorTipo: {
+                ...(prev.swapBaseRawPorTipo || {}),
+                linha: novoRaw,
+                espinha: novoRaw,
+              },
             }
           : prev
       );
       setAjusteBodyBasePorTipoInline((prev) => ({ ...prev, ...proximoAjusteBodyBasePorTipo }));
       setAjusteBodyBaseInline(proximoAjusteBodyBasePorTipo[nextLayoutConfig.tipoLayout] ?? null);
+      setSwapBaseRawInline(novoRaw);
+      setSwapBaseRawPorTipoInline((prev) => ({ ...prev, linha: novoRaw, espinha: novoRaw }));
+      setExportPdfBodyInline(novoRaw);
       setTemAdjustInline(true);
     } catch (error) {
       const apiMessage = (error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.message || (error as any)?.message;
@@ -2341,49 +2485,42 @@ export default function Home() {
     } finally {
       setIsAjustando(false);
     }
-  }, [taskCodeInline, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, getMaxPostsPayloadInline, buildResultadosFromApiInline]);
+  }, [taskCodeInline, taskCodeSelecionado, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, getMaxPostsPayloadInline, buildResultadosFromApiInline]);
 
   const handleConfirmarEdicaoInline = useCallback(async (editedRows: any[]) => {
-    if (!taskCodeInline || (!ajusteBodyBaseInline && !ajusteBodyBasePorTipoInline.linha && !ajusteBodyBasePorTipoInline.espinha)) {
+    const codigoFicha = taskCodeInline || taskCodeSelecionado;
+    if (!codigoFicha || (!ajusteBodyBaseInline && !ajusteBodyBasePorTipoInline.linha && !ajusteBodyBasePorTipoInline.espinha)) {
       setErroPopupInline("Não foi possível ajustar: faltam dados base da chamada inicial.");
       return;
     }
     setIsAjustando(true);
     try {
+      const bodyBase = ajusteBodyBaseInline ?? ajusteBodyBasePorTipoInline[layoutConfig.tipoLayout];
+      if (!bodyBase) return;
+      const body = mergeRowsIntoAdjustBodyInline(bodyBase, editedRows);
+      const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/adjust`, body);
+      const novoRaw = resposta.data ?? {};
+      logAdjustPercentageTraceInline(editedRows, body, novoRaw);
       const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
-      const respostas = await Promise.all(
-        tipos.map(async (tipo) => {
-          const bodyBase = ajusteBodyBasePorTipoInline[tipo] ?? ajusteBodyBaseInline;
-          if (!bodyBase) return [tipo, null, null] as const;
-          const body = mergeRowsIntoAdjustBodyInline(bodyBase, editedRows);
-          body.line_type = tipo;
-          const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeInline)}/adjust`, body);
-          return [tipo, body, resposta.data ?? {}] as const;
+      const proximosResultadosPorTipo = Object.fromEntries(
+        tipos.map((tipo) => {
+          const novosResultadosBase = buildResultadosFromApiInline(
+            novoRaw,
+            resultadosAtuaisInline!
+          );
+          return [
+            tipo,
+            {
+              ...(novosResultadosBase as any),
+              machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, tipo),
+            } as ResultadosBalanceamento,
+          ];
         })
-      );
-      const proximosResultadosPorTipo: Partial<Record<"linha" | "espinha", ResultadosBalanceamento>> = {};
-      const proximoAjusteBodyBasePorTipo: Partial<Record<"linha" | "espinha", any>> = {};
-      respostas.forEach(([tipo, bodyEnviado, novoRaw]) => {
-        if (!bodyEnviado || !novoRaw) return;
-        logAdjustPercentageTraceInline(editedRows, bodyEnviado, novoRaw);
-        const novosResultadosBase = buildResultadosFromApiInline(
-          novoRaw,
-          resultadosPorTipoInline[tipo] ?? resultadosAtuaisInline!
-        );
-        proximosResultadosPorTipo[tipo] = {
-          ...(novosResultadosBase as any),
-          machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, tipo),
-        } as ResultadosBalanceamento;
-        proximoAjusteBodyBasePorTipo[tipo] = {
-          ...((ajusteBodyBasePorTipoInline[tipo] ?? ajusteBodyBaseInline) || {}),
-          ...(novoRaw || {}),
-          operation_allocations: ensureArray(
-            (novoRaw as any)?.operation_allocations ??
-            (novoRaw as any)?.operationAllocations ??
-            (bodyEnviado as any)?.operation_allocations
-          ),
-        };
-      });
+      ) as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
+      const proximoAjusteBodyBasePorTipo = {
+        linha: { ...(body || {}), ...(novoRaw || {}) },
+        espinha: { ...(body || {}), ...(novoRaw || {}) },
+      } as Partial<Record<"linha" | "espinha", any>>;
       const novosResultados = proximosResultadosPorTipo[layoutConfig.tipoLayout] ?? resultadosAtuaisInline!;
       setResultadosAtuaisInline(novosResultados);
       setResultadosPorTipoInline((prev) => ({ ...prev, ...proximosResultadosPorTipo }));
@@ -2401,11 +2538,20 @@ export default function Home() {
                 ...(prev.ajusteBodyBasePorTipo || {}),
                 ...proximoAjusteBodyBasePorTipo,
               },
+              swapBaseRaw: novoRaw,
+              swapBaseRawPorTipo: {
+                ...(prev.swapBaseRawPorTipo || {}),
+                linha: novoRaw,
+                espinha: novoRaw,
+              },
             }
           : prev
       );
       setAjusteBodyBasePorTipoInline((prev) => ({ ...prev, ...proximoAjusteBodyBasePorTipo }));
       setAjusteBodyBaseInline(proximoAjusteBodyBasePorTipo[layoutConfig.tipoLayout] ?? null);
+      setSwapBaseRawInline(novoRaw);
+      setSwapBaseRawPorTipoInline((prev) => ({ ...prev, linha: novoRaw, espinha: novoRaw }));
+      setExportPdfBodyInline(novoRaw);
       setTemAdjustInline(true);
     } catch (error) {
       const apiMessage = (error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.message || (error as any)?.message;
@@ -2414,7 +2560,109 @@ export default function Home() {
     } finally {
       setIsAjustando(false);
     }
-  }, [taskCodeInline, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline, layoutConfig.tipoLayout]);
+  }, [taskCodeInline, taskCodeSelecionado, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline, layoutConfig.tipoLayout]);
+
+  const handleSwapPositionsInline = useCallback(async (positionA: string, positionB: string) => {
+    const codigoFicha = taskCodeInline || taskCodeSelecionado || resultadosInlineData?.taskCode;
+    if (!codigoFicha || !resultadosAtuaisInline) return;
+    const rawBase =
+      swapBaseRawPorTipoInline[layoutConfig.tipoLayout] ??
+      swapBaseRawInline ??
+      resultadosInlineData?.swapBaseRawPorTipo?.[layoutConfig.tipoLayout] ??
+      resultadosInlineData?.swapBaseRaw ??
+      null;
+
+    if (!rawBase) {
+      setErroPopupInline("Nao foi possivel trocar as posicoes: faltam dados base do layout.");
+      return;
+    }
+
+    const layouts = rawBase?.layouts ?? null;
+    const operationAllocations =
+      ensureArray(rawBase?.operation_allocations ?? rawBase?.operationAllocations).length > 0
+        ? ensureArray(rawBase?.operation_allocations ?? rawBase?.operationAllocations)
+        : ensureArray(resultadosAtuaisInline?.operation_allocations);
+
+    if (!layouts || operationAllocations.length === 0) {
+      setErroPopupInline("Nao foi possivel trocar as posicoes: faltam layouts ou operation_allocations.");
+      return;
+    }
+
+    setIsAjustando(true);
+    try {
+      const resposta = await axios.post(
+        `${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/layout/swap-positions`,
+        {
+          line_type: layoutConfig.tipoLayout,
+          position_a: positionA,
+          position_b: positionB,
+          layouts,
+          operation_allocations: operationAllocations,
+        },
+        {
+          params: {
+            _code: codigoFicha,
+          },
+        }
+      );
+      const novoRaw = resposta.data ?? {};
+      const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
+      const proximosResultadosPorTipo = Object.fromEntries(
+        tipos.map((tipo) => {
+          const resultadosBase = buildResultadosFromApiInline(novoRaw, resultadosAtuaisInline);
+          return [
+            tipo,
+            {
+              ...(resultadosBase as any),
+              machine_layout: resolveMachineLayoutPorTipoInline(novoRaw, tipo),
+            } as ResultadosBalanceamento,
+          ];
+        })
+      ) as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
+      const proximoAjusteBodyBasePorTipo = {
+        linha: novoRaw,
+        espinha: novoRaw,
+      } as Partial<Record<"linha" | "espinha", any>>;
+      const novosResultados = proximosResultadosPorTipo[layoutConfig.tipoLayout] ?? resultadosAtuaisInline;
+      if (novosResultados) setResultadosAtuaisInline(novosResultados);
+      setResultadosPorTipoInline((prev) => ({ ...prev, ...proximosResultadosPorTipo }));
+      setResultadosInlineData((prev) =>
+        prev
+          ? {
+              ...prev,
+              resultados: novosResultados ?? prev.resultados,
+              resultadosPorTipo: {
+                ...(prev.resultadosPorTipo || {}),
+                ...proximosResultadosPorTipo,
+              },
+              ajusteBodyBase: proximoAjusteBodyBasePorTipo[layoutConfig.tipoLayout] ?? prev.ajusteBodyBase,
+              ajusteBodyBasePorTipo: {
+                ...(prev.ajusteBodyBasePorTipo || {}),
+                ...proximoAjusteBodyBasePorTipo,
+              },
+              swapBaseRaw: novoRaw,
+              swapBaseRawPorTipo: {
+                ...(prev.swapBaseRawPorTipo || {}),
+                linha: novoRaw,
+                espinha: novoRaw,
+              },
+            }
+          : prev
+      );
+      setAjusteBodyBasePorTipoInline((prev) => ({ ...prev, ...proximoAjusteBodyBasePorTipo }));
+      setAjusteBodyBaseInline(proximoAjusteBodyBasePorTipo[layoutConfig.tipoLayout] ?? null);
+      setSwapBaseRawInline(novoRaw);
+      setSwapBaseRawPorTipoInline((prev) => ({ ...prev, linha: novoRaw, espinha: novoRaw }));
+      setExportPdfBodyInline(novoRaw);
+      setTemAdjustInline(true);
+    } catch (error) {
+      const apiMessage = (error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.message || (error as any)?.message;
+      setErroPopupInline(apiMessage || "Erro ao trocar posicoes no layout.");
+      throw error;
+    } finally {
+      setIsAjustando(false);
+    }
+  }, [taskCodeInline, taskCodeSelecionado, resultadosAtuaisInline, resultadosInlineData, swapBaseRawInline, swapBaseRawPorTipoInline, layoutConfig.tipoLayout, buildResultadosFromApiInline]);
 
   const handleGuardarHistoricoInline = useCallback(async () => {
     if (isGuardandoHistorico) return;
@@ -2454,6 +2702,74 @@ export default function Home() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportPdfInline = () => {
+    const codigoFicha = taskCodeInline || taskCodeSelecionado;
+    if (!codigoFicha) {
+      setErroPopupInline("Nao foi possivel exportar PDF: falta o codigo da tarefa.");
+      return;
+    }
+
+    void (async () => {
+      try {
+        const exportPayload =
+          exportPdfBodyInline ??
+          resultadosInlineData?.ajusteBodyBase ??
+          resultadosInlineData?.swapBaseRaw ??
+          null;
+
+        if (!exportPayload) {
+          setErroPopupInline("Nao foi possivel exportar PDF: faltam dados base da resposta da API.");
+          return;
+        }
+
+        const payloadComLinha = {
+          ...(structuredClone(exportPayload) || {}),
+          line_type: layoutConfig.tipoLayout,
+        };
+
+        const resposta = await axios.post(
+          `${API_BASE_URL}/v2/tasks/${encodeURIComponent(codigoFicha)}/export-pdf`,
+          payloadComLinha,
+          {
+            responseType: "blob",
+            headers: {
+              Accept: "application/pdf",
+            },
+          }
+        );
+
+        const blob = new Blob([resposta.data], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `balanceamento_${new Date().toISOString().split("T")[0]}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        const responseBlob = (error as any)?.response?.data;
+        if (responseBlob instanceof Blob && responseBlob.type.includes("application/json")) {
+          try {
+            const text = await responseBlob.text();
+            const parsed = JSON.parse(text);
+            const message = parsed?.detail?.message || parsed?.message || "Erro ao exportar PDF.";
+            setErroPopupInline(message);
+            return;
+          } catch {
+            // fall through to generic error
+          }
+        }
+
+        const apiMessage =
+          (error as any)?.response?.data?.detail?.message ||
+          (error as any)?.response?.data?.message ||
+          (error as any)?.message;
+        setErroPopupInline(apiMessage || "Erro ao exportar PDF.");
+      }
+    })();
   };
   const handleCalcular = async (confirmado = false) => {
     try {
@@ -2507,26 +2823,16 @@ export default function Home() {
           limit_not_assign: normalizarRatio(config.cargaMaximaOperador),
           limit_not_divide_upper: limitNotDivideUpper,
           limit_not_divide_lower: limitNotDivideLower,
-          line_type: layoutConfig.tipoLayout,
           max_posts: maxPosts,
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
         const endpointModo1 = config.agruparMaquinas ? "allocate-grouped" : "allocate";
-
-        const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
-        const respostas = await Promise.all(
-          tipos.map(async (tipo) => {
-            const resposta = await axios.post(
-              `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo1}`,
-              { ...payloadBase, line_type: tipo }
-            );
-            return [tipo, ensureRecord(resposta.data) ?? {}] as const;
-          })
+        const resposta = await axios.post(
+          `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo1}`,
+          payloadBase
         );
-        const rawsPorTipo = Object.fromEntries(respostas) as Record<"linha" | "espinha", any>;
-        const r = rawsPorTipo[layoutConfig.tipoLayout] ?? {};
-
+        const r = ensureRecord(resposta.data) ?? {};
         const taktTime = (pickNumber(r, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0) / 60;
         const tempoCicloApi = pickNumber(r, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]);
         const tempoCiclo = tempoCicloApi != null
@@ -2641,17 +2947,15 @@ export default function Home() {
           numeroOperadores,
           ocupacaoTotal,
         };
-        const tipoAlternativo = layoutConfig.tipoLayout === "espinha" ? "linha" : "espinha";
-        const rawAlternativo = rawsPorTipo[tipoAlternativo] ?? {};
-        const resultadosAlternativosBase = buildResultadosFromApiInline(rawAlternativo, resultadosApi as ResultadosBalanceamento);
+        const resultadosBaseComum = resultadosApi as ResultadosBalanceamento;
         const resultadosPorTipo = {
-          [layoutConfig.tipoLayout]: {
-            ...(resultadosApi as any),
-            machine_layout: resolveMachineLayoutPorTipoInline(r, layoutConfig.tipoLayout),
+          linha: {
+            ...(resultadosBaseComum as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, "linha"),
           } as ResultadosBalanceamento,
-          [tipoAlternativo]: {
-            ...(resultadosAlternativosBase as any),
-            machine_layout: resolveMachineLayoutPorTipoInline(rawAlternativo, tipoAlternativo),
+          espinha: {
+            ...(resultadosBaseComum as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, "espinha"),
           } as ResultadosBalanceamento,
         } as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
 
@@ -2663,8 +2967,10 @@ export default function Home() {
           config,
           layoutConfig,
           taskCode: taskCodeSelecionado,
-          ajusteBodyBase: rawsPorTipo[layoutConfig.tipoLayout],
-          ajusteBodyBasePorTipo: rawsPorTipo,
+          ajusteBodyBase: r,
+          ajusteBodyBasePorTipo: { linha: r, espinha: r },
+          swapBaseRaw: r,
+          swapBaseRawPorTipo: { linha: r, espinha: r },
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
@@ -2698,7 +3004,6 @@ export default function Home() {
           limit_not_assign: normalizarRatio(config.cargaMaximaOperador),
           limit_not_divide_upper: limitNotDivideUpper,
           limit_not_divide_lower: limitNotDivideLower,
-          line_type: layoutConfig.tipoLayout,
           max_posts: maxPosts,
           objective_pieces: quantidadeObjetivo,
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
@@ -2707,20 +3012,11 @@ export default function Home() {
         const endpointModo2 = config.agruparMaquinas
           ? "allocate-grouped-objective"
           : "allocate-objective";
-
-        const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
-        const respostas = await Promise.all(
-          tipos.map(async (tipo) => {
-            const resposta = await axios.post(
-              `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo2}`,
-              { ...payloadBase, line_type: tipo }
-            );
-            return [tipo, ensureRecord(resposta.data) ?? {}] as const;
-          })
+        const resposta = await axios.post(
+          `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo2}`,
+          payloadBase
         );
-        const rawsPorTipo = Object.fromEntries(respostas) as Record<"linha" | "espinha", any>;
-        const r = rawsPorTipo[layoutConfig.tipoLayout] ?? {};
-
+        const r = ensureRecord(resposta.data) ?? {};
         const taktTime = (pickNumber(r, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0) / 60;
         const tempoCicloApi = pickNumber(r, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]);
         const tempoCiclo = tempoCicloApi != null
@@ -2835,17 +3131,15 @@ export default function Home() {
           numeroOperadores,
           ocupacaoTotal,
         };
-        const tipoAlternativo = layoutConfig.tipoLayout === "espinha" ? "linha" : "espinha";
-        const rawAlternativo = rawsPorTipo[tipoAlternativo] ?? {};
-        const resultadosAlternativosBase = buildResultadosFromApiInline(rawAlternativo, resultadosApi as ResultadosBalanceamento);
+        const resultadosBaseComum = resultadosApi as ResultadosBalanceamento;
         const resultadosPorTipo = {
-          [layoutConfig.tipoLayout]: {
-            ...(resultadosApi as any),
-            machine_layout: resolveMachineLayoutPorTipoInline(r, layoutConfig.tipoLayout),
+          linha: {
+            ...(resultadosBaseComum as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, "linha"),
           } as ResultadosBalanceamento,
-          [tipoAlternativo]: {
-            ...(resultadosAlternativosBase as any),
-            machine_layout: resolveMachineLayoutPorTipoInline(rawAlternativo, tipoAlternativo),
+          espinha: {
+            ...(resultadosBaseComum as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, "espinha"),
           } as ResultadosBalanceamento,
         } as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
 
@@ -2857,8 +3151,10 @@ export default function Home() {
           config,
           layoutConfig,
           taskCode: taskCodeSelecionado,
-          ajusteBodyBase: rawsPorTipo[layoutConfig.tipoLayout],
-          ajusteBodyBasePorTipo: rawsPorTipo,
+          ajusteBodyBase: r,
+          ajusteBodyBasePorTipo: { linha: r, espinha: r },
+          swapBaseRaw: r,
+          swapBaseRawPorTipo: { linha: r, espinha: r },
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
@@ -2893,7 +3189,6 @@ export default function Home() {
           limit_not_assign: normalizarRatio(config.cargaMaximaOperador),
           limit_not_divide_upper: limitNotDivideUpper,
           limit_not_divide_lower: limitNotDivideLower,
-          line_type: layoutConfig.tipoLayout,
           max_posts: maxPosts,
           num_operators: numeroOperadoresPedido,
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
@@ -2902,20 +3197,11 @@ export default function Home() {
         const endpointModo3 = config.agruparMaquinas
           ? "allocate-grouped-manual"
           : "allocate-manual";
-
-        const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
-        const respostas = await Promise.all(
-          tipos.map(async (tipo) => {
-            const resposta = await axios.post(
-              `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo3}`,
-              { ...payloadBase, line_type: tipo }
-            );
-            return [tipo, ensureRecord(resposta.data) ?? {}] as const;
-          })
+        const resposta = await axios.post(
+          `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo3}`,
+          payloadBase
         );
-        const rawsPorTipo = Object.fromEntries(respostas) as Record<"linha" | "espinha", any>;
-        const r = rawsPorTipo[layoutConfig.tipoLayout] ?? {};
-
+        const r = ensureRecord(resposta.data) ?? {};
         const taktTime = (pickNumber(r, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0) / 60;
         const tempoCicloApi = pickNumber(r, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]);
         const tempoCiclo = tempoCicloApi != null
@@ -3030,17 +3316,15 @@ export default function Home() {
           numeroOperadores,
           ocupacaoTotal,
         };
-        const tipoAlternativo = layoutConfig.tipoLayout === "espinha" ? "linha" : "espinha";
-        const rawAlternativo = rawsPorTipo[tipoAlternativo] ?? {};
-        const resultadosAlternativosBase = buildResultadosFromApiInline(rawAlternativo, resultadosApi as ResultadosBalanceamento);
+        const resultadosBaseComum = resultadosApi as ResultadosBalanceamento;
         const resultadosPorTipo = {
-          [layoutConfig.tipoLayout]: {
-            ...(resultadosApi as any),
-            machine_layout: resolveMachineLayoutPorTipoInline(r, layoutConfig.tipoLayout),
+          linha: {
+            ...(resultadosBaseComum as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, "linha"),
           } as ResultadosBalanceamento,
-          [tipoAlternativo]: {
-            ...(resultadosAlternativosBase as any),
-            machine_layout: resolveMachineLayoutPorTipoInline(rawAlternativo, tipoAlternativo),
+          espinha: {
+            ...(resultadosBaseComum as any),
+            machine_layout: resolveMachineLayoutPorTipoInline(r, "espinha"),
           } as ResultadosBalanceamento,
         } as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
 
@@ -3052,8 +3336,8 @@ export default function Home() {
           config,
           layoutConfig,
           taskCode: taskCodeSelecionado,
-          ajusteBodyBase: rawsPorTipo[layoutConfig.tipoLayout],
-          ajusteBodyBasePorTipo: rawsPorTipo,
+          ajusteBodyBase: r,
+          ajusteBodyBasePorTipo: { linha: r, espinha: r },
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
@@ -3095,12 +3379,12 @@ export default function Home() {
         }
 
         const taskCode = taskCodeSelecionado || grupoArtigoSelecionado || "custom";
+        const payload = { assignments };
         const resposta = await axios.post(
           `${API_BASE_URL}/tasks/${encodeURIComponent(taskCode)}/allocate-custom`,
-          { assignments }
+          payload
         );
         const r = ensureRecord(resposta.data) ?? {};
-
         // Mapear resposta da API para ResultadosBalanceamento
         const taktTime = (pickNumber(r, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0) / 60;
         const tempoCicloApi = pickNumber(r, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]);
@@ -3173,6 +3457,8 @@ export default function Home() {
           layoutConfig,
           taskCode,
           ajusteBodyBase: resposta.data,
+          swapBaseRaw: resposta.data,
+          swapBaseRawPorTipo: { linha: resposta.data, espinha: resposta.data },
         };
 
         sessionStorage.setItem("balanceamentoData", JSON.stringify(dataToPass));
@@ -3484,10 +3770,14 @@ export default function Home() {
                 const num = Math.max(1, Math.trunc(typed));
                 setNumeroOperadoresInput(String(num));
                 handleConfigChange({ ...config, numeroOperadores: num });
-              }}
+                }}
               permitirRetrocesso={layoutConfig.permitirRetrocesso}
+              distanciaMaxima={layoutConfig.distanciaMaxima}
               onPermitirRetrocessoChange={(value) =>
                 setLayoutConfig((prev) => ({ ...prev, permitirRetrocesso: value }))
+              }
+              onDistanciaMaximaChange={(value) =>
+                setLayoutConfig((prev) => ({ ...prev, distanciaMaxima: value }))
               }
             />
           </div>
@@ -3602,9 +3892,9 @@ export default function Home() {
                     <Download className="w-3 h-3 mr-1.5" />
                     Exportar
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => window.print()} className="text-gray-600 border-gray-200 hover:bg-gray-50 rounded-sm text-[10px] h-7 px-2.5">
-                    <Printer className="w-3 h-3 mr-1.5" />
-                    Imprimir
+                  <Button variant="outline" size="sm" onClick={handleExportPdfInline} className="text-gray-600 border-gray-200 hover:bg-gray-50 rounded-sm text-[10px] h-7 px-2.5">
+                    <FileDown className="w-3 h-3 mr-1.5" />
+                    Exportar PDF
                   </Button>
                 </div>
               </div>
@@ -3676,6 +3966,7 @@ export default function Home() {
               autoRecalcularLayoutRef.current = true;
               setLayoutConfig(next);
             }}
+            onSwapPositions={handleSwapPositionsInline}
           />
         </section>
       )}

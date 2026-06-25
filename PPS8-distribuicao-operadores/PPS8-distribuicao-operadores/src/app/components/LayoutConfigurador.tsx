@@ -196,9 +196,17 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
                 </div>
                 {agruparPorMaquina && (
                   <div>
-                    <Label htmlFor="lc-distancia" className="text-[9px] text-gray-700">Distancia</Label>
+                    <Label className="text-[9px] text-gray-700 mb-0.5 block">Retroceder</Label>
+                    <div className="flex items-center gap-1 h-7">
+                      <Switch checked={permitirRetrocesso} onCheckedChange={setPermitirRetrocesso} />
+                    </div>
+                  </div>
+                )}
+                {agruparPorMaquina && (
+                  <div>
+                    <Label htmlFor="lc-distancia-maxima" className="text-[9px] text-gray-700">{"Distância máxima"}</Label>
                     <Input
-                      id="lc-distancia"
+                      id="lc-distancia-maxima"
                       type="number"
                       min={1}
                       max={8}
@@ -221,14 +229,6 @@ export function LayoutConfigurador({ operacoes, onLayoutChange, agruparPorMaquin
                       }}
                       className="rounded-sm mt-0.5 h-7 text-[10px]"
                     />
-                  </div>
-                )}
-                {agruparPorMaquina && (
-                  <div>
-                    <Label className="text-[9px] text-gray-700 mb-0.5 block">Retroceder</Label>
-                    <div className="flex items-center gap-1 h-7">
-                      <Switch checked={permitirRetrocesso} onCheckedChange={setPermitirRetrocesso} />
-                    </div>
                   </div>
                 )}
                 </div>

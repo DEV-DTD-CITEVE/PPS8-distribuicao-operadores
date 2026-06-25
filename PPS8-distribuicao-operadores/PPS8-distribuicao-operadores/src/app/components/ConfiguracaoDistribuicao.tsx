@@ -27,6 +27,8 @@ interface ConfiguracaoDistribuicaoProps {
   onNumeroOperadoresCommit?: (value: string) => void;
   permitirRetrocesso?: boolean;
   onPermitirRetrocessoChange?: (value: boolean) => void;
+  distanciaMaxima?: number;
+  onDistanciaMaximaChange?: (value: number) => void;
 }
 
 export function ConfiguracaoDistribuicaoComponent({
@@ -49,12 +51,15 @@ export function ConfiguracaoDistribuicaoComponent({
   onNumeroOperadoresCommit,
   permitirRetrocesso = false,
   onPermitirRetrocessoChange,
+  distanciaMaxima = 4,
+  onDistanciaMaximaChange,
 }: ConfiguracaoDistribuicaoProps) {
   const [naoDividirMaiorInput, setNaoDividirMaiorInput] = useState(String(config.naoDividirMaiorQue));
   const [naoDividirMenorInput, setNaoDividirMenorInput] = useState(String(config.naoDividirMenorQue));
   const [cargaMaximaInput, setCargaMaximaInput] = useState(String(config.cargaMaximaOperador));
   const [horasTurnoInput, setHorasTurnoInput] = useState(String(horasTurno));
   const [produtividadeInput, setProdutividadeInput] = useState(String(produtividadeEstimada));
+  const [distanciaMaximaInput, setDistanciaMaximaInput] = useState(String(distanciaMaxima));
 
   useEffect(() => {
     setNaoDividirMaiorInput(String(config.naoDividirMaiorQue));
@@ -75,6 +80,10 @@ export function ConfiguracaoDistribuicaoComponent({
   useEffect(() => {
     setProdutividadeInput(String(produtividadeEstimada));
   }, [produtividadeEstimada]);
+
+  useEffect(() => {
+    setDistanciaMaximaInput(String(distanciaMaxima));
+  }, [distanciaMaxima]);
 
   const parseDecimalInput = (raw: string): number | null => {
     const normalized = raw.trim().replace(",", ".");
@@ -116,6 +125,14 @@ export function ConfiguracaoDistribuicaoComponent({
     const next = parsed == null ? produtividadeEstimada : Math.max(0, Math.min(100, Math.round(parsed)));
     onProdutividadeEstimadaChange(next);
     setProdutividadeInput(String(next));
+  };
+
+  const commitDistanciaMaxima = () => {
+    if (!onDistanciaMaximaChange) return;
+    const parsed = parseDecimalInput(distanciaMaximaInput);
+    const next = parsed == null ? distanciaMaxima : Math.max(1, Math.min(8, Math.round(parsed)));
+    onDistanciaMaximaChange(next);
+    setDistanciaMaximaInput(String(next));
   };
 
   return (
@@ -252,6 +269,33 @@ export function ConfiguracaoDistribuicaoComponent({
                       className="cursor-pointer"
                     />
                   </div>
+                </div>
+              ) : null}
+
+              {config.agruparMaquinas && onDistanciaMaximaChange ? (
+                <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                  <div>
+                    <Label className="font-medium text-gray-900 text-sm">Distância Máxima</Label>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Define o desvio máximo permitido quando o agrupamento está ativo.
+                    </p>
+                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={8}
+                    step={1}
+                    value={distanciaMaximaInput}
+                    onChange={(e) => setDistanciaMaximaInput(e.target.value)}
+                    onBlur={commitDistanciaMaxima}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitDistanciaMaxima();
+                      }
+                    }}
+                    className="rounded-sm text-sm font-mono"
+                  />
                 </div>
               ) : null}
 

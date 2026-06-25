@@ -132,7 +132,7 @@ const mapApiHistoryToLocal = (row: ApiRecord, index: number): HistoricoBalanceam
       horasTurno: 8,
       produtividadeEstimada: 85,
       agruparMaquinas: true,
-      cargaMaximaOperador: 95,
+      cargaMaximaOperador: 100,
       naoDividirMaiorQue: 5,
       naoDividirMenorQue: 0.3,
     },
@@ -488,7 +488,7 @@ export default function Historico() {
         horasTurno: 8,
         produtividadeEstimada: 85,
         agruparMaquinas: true,
-        cargaMaximaOperador: 95,
+        cargaMaximaOperador: 100,
         naoDividirMaiorQue: 5,
         naoDividirMenorQue: 0.3,
       };
