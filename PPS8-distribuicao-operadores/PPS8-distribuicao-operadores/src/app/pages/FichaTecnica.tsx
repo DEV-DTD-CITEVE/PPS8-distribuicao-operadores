@@ -537,18 +537,23 @@ export default function FichaTecnica() {
   const produtoOptions = produtos.map((prod) => ({
     value: prod.id,
     label: `${prod.referencia} ${prod.nome} (${prod.operacoes.length} ops)`,
-    keywords: [prod.id, prod.referencia, prod.nome, String(prod.operacoes.length)],
+    keywords: [prod.id, prod.referencia, prod.nome, prod.descricao || "", String(prod.operacoes.length)],
     renderLabel: (
       <span className="flex items-center gap-2 min-w-0">
-        <span className="font-mono text-xs text-gray-500 shrink-0">{prod.referencia}</span>
+        <span className="font-mono text-xs text-gray-500 shrink-0">
+          {prod.descricao || prod.referencia}
+        </span>
         <span className="truncate">{prod.nome}</span>
         <span className="text-gray-400 shrink-0">({prod.operacoes.length} ops)</span>
       </span>
     ),
     renderSelectedLabel: (
       <span className="flex items-center gap-2 min-w-0">
-        <span className="font-mono text-xs text-gray-500 shrink-0">{prod.referencia}</span>
+        <span className="font-mono text-xs text-gray-500 shrink-0">
+          {prod.descricao || prod.referencia}
+        </span>
         <span className="truncate">{prod.nome}</span>
+        <span className="text-gray-400 shrink-0">({prod.operacoes.length} ops)</span>
       </span>
     ),
   }));
@@ -1783,47 +1788,51 @@ export default function FichaTecnica() {
                   className="rounded-sm text-sm"
                 />
               )}
-              {produtosFiltrados.map((prod) => (
-                <div
-                  key={prod.id}
-                  className={`p-3 rounded-sm border-2 cursor-pointer transition-all ${
-                    produtoSelecionado === prod.id
-                      ? "border-blue-300 bg-blue-50/50"
-                      : "border-gray-200 bg-white hover:border-gray-300"
-                  }`}
-                  onClick={() => handleSelecionarFicha(prod.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-gray-900 truncate">
-                        {prod.nome}
+              <div className="max-h-[32rem] overflow-y-auto pr-1 space-y-2">
+                {produtosFiltrados.map((prod) => (
+                  <div
+                    key={prod.id}
+                    className={`p-3 rounded-sm border-2 cursor-pointer transition-all ${
+                      produtoSelecionado === prod.id
+                        ? "border-blue-300 bg-blue-50/50"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                    onClick={() => handleSelecionarFicha(prod.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-gray-900 truncate">
+                          {prod.nome}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {prod.descricao || prod.referencia}
+                        </div>
+                        {prod.cliente && (
+                          <div className="text-xs text-gray-400 mt-0.5">{prod.cliente}</div>
+                        )}
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge variant="secondary" className="text-xs rounded-sm">
+                            {prod.operacoes.length} ops
+                          </Badge>
+                          <span className="text-xs text-gray-400 font-mono">
+                            {prod.operacoes.reduce((s, o) => s + o.tempo, 0).toFixed(1)} min
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">{prod.referencia}</div>
-                      {prod.cliente && (
-                        <div className="text-xs text-gray-400 mt-0.5">{prod.cliente}</div>
-                      )}
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="secondary" className="text-xs rounded-sm">
-                          {prod.operacoes.length} ops
-                        </Badge>
-                        <span className="text-xs text-gray-400 font-mono">
-                          {prod.operacoes.reduce((s, o) => s + o.tempo, 0).toFixed(1)} min
-                        </span>
-                      </div>
+                      <ChevronRight
+                        className={`w-4 h-4 flex-shrink-0 transition-colors ${
+                          produtoSelecionado === prod.id ? "text-blue-500" : "text-gray-300"
+                        }`}
+                      />
                     </div>
-                    <ChevronRight
-                      className={`w-4 h-4 flex-shrink-0 transition-colors ${
-                        produtoSelecionado === prod.id ? "text-blue-500" : "text-gray-300"
-                      }`}
-                    />
                   </div>
-                </div>
-              ))}
-              {produtos.length > 0 && produtosFiltrados.length === 0 && (
-                <div className="rounded-sm border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
-                  Nenhuma ficha corresponde à pesquisa.
-                </div>
-              )}
+                ))}
+                {produtos.length > 0 && produtosFiltrados.length === 0 && (
+                  <div className="rounded-sm border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
+                    Nenhuma ficha corresponde à pesquisa.
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

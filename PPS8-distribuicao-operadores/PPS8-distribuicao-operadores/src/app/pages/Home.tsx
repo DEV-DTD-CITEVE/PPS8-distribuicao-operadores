@@ -14,13 +14,7 @@ import { useStorage } from "../contexts/StorageContext";
 import axios from "axios";
 import { Label } from "../components/ui/label";
 import { API_BASE_URL } from "../config";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
+import { SearchableCombobox } from "../components/SearchableCombobox";
 import {
   Dialog,
   DialogContent,
@@ -3575,6 +3569,40 @@ export default function Home() {
   const toggleSeccao = (seccao: keyof typeof seccoesExpandidas) =>
     setSeccoesExpandidas((prev) => ({ ...prev, [seccao]: !prev[seccao] }));
 
+  const familiaOptions = familias.map((familia) => ({
+    value: familia.id,
+    label: familia.label,
+    keywords: [familia.id, familia.label],
+  }));
+
+  const produtoOptions = produtosApi.map((prod) => ({
+    value: prod.id,
+    label: prod.nome,
+    keywords: [prod.id, prod.referencia, prod.nome, prod.descricao || ""],
+    renderLabel: (
+      <span className="flex w-full items-center justify-between gap-2">
+        <span className="min-w-0 truncate">
+          <span className="font-mono text-xs text-gray-500 mr-2">
+            {prod.descricao || prod.referencia}
+          </span>
+          {prod.nome}
+        </span>
+        <span className="shrink-0 text-xs text-gray-400">({prod.operacoes.length} ops)</span>
+      </span>
+    ),
+    renderSelectedLabel: (
+      <span className="flex w-full items-center justify-between gap-2">
+        <span className="min-w-0 truncate">
+          <span className="font-mono text-xs text-gray-500 mr-2">
+            {prod.descricao || prod.referencia}
+          </span>
+          {prod.nome}
+        </span>
+        <span className="shrink-0 text-xs text-gray-400">({prod.operacoes.length} ops)</span>
+      </span>
+    ),
+  }));
+
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Render ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   return (
@@ -3634,51 +3662,38 @@ export default function Home() {
                   <Label className="text-xs font-semibold uppercase text-gray-600">
                     Grupo de Artigo
                   </Label>
-                  <Select
+                  <SearchableCombobox
                     value={grupoArtigoSelecionado || undefined}
                     onValueChange={setGrupoArtigoSelecionado}
+                    options={familiaOptions}
+                    placeholder={loadingFamilias ? "A carregar grupos..." : "Selecione um grupo"}
+                    searchPlaceholder="Pesquisar grupo..."
+                    emptyText="Nenhum grupo encontrado."
                     disabled={loadingFamilias || familias.length === 0}
-                  >
-                    <SelectTrigger className="rounded-sm text-sm cursor-pointer">
-                      <SelectValue placeholder={loadingFamilias ? "A carregar grupos..." : "Selecione um grupo"} />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-sm">
-                      {familias.map((familia) => (
-                        <SelectItem key={familia.id} value={familia.id} className="text-sm cursor-pointer">
-                          {familia.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    triggerClassName="rounded-sm text-sm"
+                    contentClassName="rounded-sm"
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label className="text-xs font-semibold uppercase text-gray-600">
                     Ficha Tecnica
                   </Label>
-                  <Select
+                  <SearchableCombobox
                     value={produtoSelecionado || undefined}
                     onValueChange={handleSelecionarFicha}
+                    options={produtoOptions}
+                    placeholder={
+                      loadingFichas
+                        ? "A carregar fichas..."
+                        : "Selecione uma ficha tecnica"
+                    }
+                    searchPlaceholder="Pesquisar ficha..."
+                    emptyText="Nenhuma ficha encontrada."
                     disabled={loadingFichas || produtosApi.length === 0}
-                  >
-                    <SelectTrigger className="rounded-sm text-sm cursor-pointer">
-                      <SelectValue
-                        placeholder={
-                          loadingFichas ? "A carregar fichas..." :
-                          "Selecione uma ficha tecnica"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-sm">
-                      {produtosApi.map((prod) => (
-                        <SelectItem key={prod.id} value={prod.id} className="text-sm cursor-pointer">
-                          <span className="font-mono text-xs text-gray-500 mr-2">{prod.referencia}</span>
-                          {prod.nome}
-                          <span className="text-gray-400 ml-2">({prod.operacoes.length} ops)</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    triggerClassName="rounded-sm text-sm"
+                    contentClassName="rounded-sm"
+                  />
                 </div>
               </div>
               {produto && (
@@ -3797,9 +3812,9 @@ export default function Home() {
                   <Edit3 className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">Entrada Manual de Operacoes</h3>
+                  <h3 className="text-base font-semibold text-gray-900">Entrada Manual de Operações</h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Preencha os dados das operacoes directamente na tabela
+                    Preencha os dados das operações diretamente na tabela. Clique numa célula para editar.
                   </p>
                 </div>
               </div>
@@ -3837,7 +3852,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* BotÃƒÆ’Ã‚Â£o Calcular */}
+      {/* Botão Calcular */}
       <div className="flex justify-center pt-4">
         <Button
           type="button"

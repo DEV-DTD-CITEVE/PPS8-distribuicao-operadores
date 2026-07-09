@@ -37,10 +37,50 @@ export function SearchableCombobox({
   contentClassName,
 }: SearchableComboboxProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [triggerWidth, setTriggerWidth] = useState<number | null>(null);
 
   const selectedOption = options.find((option) => option.value === value);
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const filteredOptions = !normalizedSearch
+    ? options
+    : [...options]
+        .map((option) => {
+          const searchableParts = [
+            option.value,
+            option.label,
+            ...(option.keywords || []),
+          ]
+            .filter(Boolean)
+            .map((part) => part.toLowerCase());
+
+          const exactValue = option.value.toLowerCase() === normalizedSearch;
+          const exactLabel = option.label.toLowerCase() === normalizedSearch;
+          const startsWithValue = option.value.toLowerCase().startsWith(normalizedSearch);
+          const startsWithLabel = option.label.toLowerCase().startsWith(normalizedSearch);
+          const startsWithKeyword = (option.keywords || []).some((keyword) =>
+            keyword.toLowerCase().startsWith(normalizedSearch)
+          );
+          const includesMatch = searchableParts.some((part) => part.includes(normalizedSearch));
+
+          let score = Number.POSITIVE_INFINITY;
+          if (exactValue) score = 0;
+          else if (exactLabel) score = 1;
+          else if (startsWithValue) score = 2;
+          else if (startsWithKeyword) score = 3;
+          else if (startsWithLabel) score = 4;
+          else if (includesMatch) score = 5;
+
+          return { option, score };
+        })
+        .filter(({ score }) => Number.isFinite(score))
+        .sort((a, b) => {
+          if (a.score !== b.score) return a.score - b.score;
+          return a.option.label.localeCompare(b.option.label, "pt-PT", { sensitivity: "base" });
+        })
+        .map(({ option }) => option);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -55,7 +95,13 @@ export function SearchableCombobox({
   }, []);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setSearch("");
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           ref={triggerRef}
@@ -80,20 +126,26 @@ export function SearchableCombobox({
         align="start"
         style={triggerWidth ? { width: `${triggerWidth}px` } : undefined}
       >
-        <Command>
-          <CommandInput placeholder={searchPlaceholder} className="text-sm" />
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={searchPlaceholder}
+            className="text-sm"
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
             <CommandEmpty>{emptyText}</CommandEmpty>
             <CommandGroup>
-              {options.map((option) => (
+              {filteredOptions.map((option) => (
                 <CommandItem
                   key={option.value}
-                  value={option.label}
-                  keywords={option.keywords}
+                  value={option.value}
+                  keywords={[option.label, ...(option.keywords || [])]}
                   className="text-sm cursor-pointer"
                   onSelect={() => {
                     onValueChange(option.value);
                     setOpen(false);
+                    setSearch("");
                   }}
                 >
                   <Check

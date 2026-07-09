@@ -6,7 +6,9 @@ import axios from "axios";
 import { API_BASE_URL } from "../config";
 import { MatrizPolivalenciaGrupos } from "../components/MatrizPolivalenciaGrupos";
 import { ConfiguracaoLayoutComponent } from "../components/ConfiguracaoLayout";
-import { CatalogoMaquinas } from "../components/CatalogoMaquinas";
+import { CatalogoMaquinasApi } from "../components/CatalogoMaquinasApi";
+import { SearchableCombobox } from "../components/SearchableCombobox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -37,7 +39,6 @@ import {
 import {
   Settings,
   Users,
-  Info,
   Plus,
   Trash2,
   Save,
@@ -76,6 +77,7 @@ interface MaquinaSimples {
 interface FamilyOption {
   id: string;
   label: string;
+  description?: string;
 }
 
 type ApiRecord = Record<string, any>;
@@ -158,6 +160,7 @@ export default function Configuracao() {
 
   // Operadores da API (matriz de polivalência) para alimentar a 1ª tabela.
   const [operadoresApi, setOperadoresApi] = useState<Operador[] | null>(null);
+  const [operacoesApiLookup, setOperacoesApiLookup] = useState<Map<string, { id: string; nome: string }>>(new Map());
   const [erroOperadoresApi, setErroOperadoresApi] = useState<string | null>(null);
 
   // Operadores e máquinas vêm sempre do contexto (fonte de verdade única)
@@ -332,6 +335,11 @@ export default function Configuracao() {
   const [filtroPolivalenciaMin, setFiltroPolivalenciaMin] = useState("");
   const [ordenacaoPolivalencia, setOrdenacaoPolivalencia] = useState<"nenhuma" | "asc" | "desc">("nenhuma");
   const [showFiltros, setShowFiltros] = useState(false);
+  const [vistaPolivalencia, setVistaPolivalencia] = useState<"operadores" | "grupos">("operadores");
+  const familiaSelecionadaLabel = useMemo(() => {
+    if (!filtroFamilia) return "";
+    return familias.find((familia) => familia.id === filtroFamilia)?.label || filtroFamilia;
+  }, [familias, filtroFamilia]);
 
   useEffect(() => {
     let cancelado = false;
@@ -345,9 +353,11 @@ export default function Configuracao() {
             pickString(family, ["family_id", "id", "code", "reference"]) ||
             `FAM${String(index + 1).padStart(3, "0")}`;
           const name = pickString(family, ["family_name", "name", "nome"]) || id;
+          const description = pickString(family, ["family_description", "description", "descricao"]) || id;
           return {
             id,
             label: name,
+            description,
           };
         });
 
@@ -359,7 +369,7 @@ export default function Configuracao() {
               return families[0].id;
             });
           } else {
-            const fallbackFamilies = produtosMock.map((family) => ({ id: family.id, label: family.nome }));
+            const fallbackFamilies = produtosMock.map((family) => ({ id: family.id, label: family.nome, description: family.referencia }));
             setFamilias(fallbackFamilies);
             setFiltroFamilia((current) => {
               if (current && fallbackFamilies.some((f) => f.id === current)) return current;
@@ -370,7 +380,7 @@ export default function Configuracao() {
       } catch (error) {
         console.error("Erro ao carregar familias:", error);
         if (!cancelado) {
-          const fallbackFamilies = produtosMock.map((family) => ({ id: family.id, label: family.nome }));
+          const fallbackFamilies = produtosMock.map((family) => ({ id: family.id, label: family.nome, description: family.referencia }));
           setFamilias(fallbackFamilies);
           setFiltroFamilia((current) => {
             if (current && fallbackFamilies.some((f) => f.id === current)) return current;
@@ -426,15 +436,34 @@ export default function Configuracao() {
           };
         });
 
+        const lookupOperacoes = new Map<string, { id: string; nome: string }>();
+        colaboradores.forEach((colaborador) => {
+          ensureArray(colaborador.operations).forEach((op) => {
+            const operacaoId = pickString(op, ["operation_id", "operation_code", "id", "code"]);
+            const operacaoNome = pickString(op, ["operation_name", "name", "nome"]);
+            const chaveNome = operacaoNome ? normalizeText(operacaoNome) : "";
+            const chaveId = operacaoId ? normalizeText(operacaoId) : "";
+            const entrada = {
+              id: operacaoId || operacaoNome || "",
+              nome: operacaoNome || operacaoId || "",
+            };
+
+            if (chaveNome) lookupOperacoes.set(chaveNome, entrada);
+            if (chaveId) lookupOperacoes.set(chaveId, entrada);
+          });
+        });
+
         if (!cancelado) {
           setOperadoresApi(mapeados);
+          setOperacoesApiLookup(lookupOperacoes);
           setErroOperadoresApi(null);
         }
       } catch (error) {
         console.error("Erro ao carregar matriz de polivalencia:", error);
         if (!cancelado) {
           setOperadoresApi(null);
-          setErroOperadoresApi("Nao foi possivel carregar a matriz da API. A mostrar dados locais.");
+          setOperacoesApiLookup(new Map());
+          setErroOperadoresApi("Nao foi possivel carregar a matriz. A mostrar dados locais.");
         }
       }
     };
@@ -448,6 +477,30 @@ export default function Configuracao() {
     const grupo = produtosMock.find((g) => g.id === filtroFamilia);
     return grupo ? Array.from(new Set(grupo.operacoes.map((op) => op.nome))).sort() : todasOperacoesUnicas;
   }, [filtroFamilia]);
+
+  const operacoesPorNome = useMemo(() => {
+    const mapa = new Map<string, { id: string; nome: string }>();
+    operacoesApiLookup.forEach((valor, chave) => {
+      mapa.set(chave, valor);
+    });
+    const todasOperacoes = [...operacoesMock, ...produtosMock.flatMap((grupo) => grupo.operacoes)];
+
+    todasOperacoes.forEach((operacao) => {
+      const id = pickString(operacao as unknown as ApiRecord, ["operation_id", "operation_code", "id", "code"]);
+      const nome = pickString(operacao as unknown as ApiRecord, ["operation_name", "nome", "name"]) || operacao.nome;
+      const entrada = { id: id || operacao.id || "", nome };
+
+      [entrada.id, nome, operacao.nome]
+        .filter((valor): valor is string => Boolean(valor && valor.trim()))
+        .forEach((valor) => {
+          if (!mapa.has(normalizeText(valor))) {
+            mapa.set(normalizeText(valor), entrada);
+          }
+        });
+    });
+
+    return mapa;
+  }, [operacoesApiLookup]);
 
   const tabelaSomenteLeitura = Boolean(operadoresApi);
   const posicoesPolivalencia = ["POL_1","POL_2","POL_3","POL_4","POL_5","POL_6","POL_7","POL_8"];
@@ -577,7 +630,14 @@ export default function Configuracao() {
         </div>
       </div>
 
-      {/* ── Matriz de Polivalência dos Operadores ── */}
+      <Tabs value={vistaPolivalencia} onValueChange={(value) => setVistaPolivalencia(value as "operadores" | "grupos")}>
+        <TabsList className="grid w-full max-w-md grid-cols-2 rounded-sm bg-gray-100 p-1">
+          <TabsTrigger value="operadores" className="rounded-sm text-xs">Vista default</TabsTrigger>
+          <TabsTrigger value="grupos" className="rounded-sm text-xs">Por grupo de artigo</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="operadores" className="mt-4 space-y-8">
+          {/* ── Matriz de Polivalência dos Operadores ── */}
       <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
         <CardHeader className="border-b border-gray-200">
           <CardTitle className="flex items-center justify-between text-gray-900">
@@ -595,11 +655,6 @@ export default function Configuracao() {
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="rounded-sm text-xs">{operadores.length} operadores</Badge>
               <Dialog open={showNovoOperador} onOpenChange={setShowNovoOperador}>
-                <DialogTrigger asChild>
-                  <Button size="sm" className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs font-medium cursor-pointer">
-                    <Plus className="w-4 h-4 mr-2" />Novo Operador
-                  </Button>
-                </DialogTrigger>
                 <DialogContent className="rounded-sm [&>button]:cursor-pointer">
                   <DialogHeader>
                     <DialogTitle className="text-base font-semibold">Adicionar Novo Operador</DialogTitle>
@@ -628,7 +683,7 @@ export default function Configuracao() {
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-sm border border-gray-200">
                       <div>
                         <Label className="text-xs font-medium">Ativo</Label>
-                        <p className="text-[10px] text-gray-500 mt-0.5">Enviado para a API como campo `active`</p>
+                        <p className="text-[10px] text-gray-500 mt-0.5">Campo `active` na origem de dados</p>
                       </div>
                       <Switch
                         className="cursor-pointer"
@@ -662,18 +717,32 @@ export default function Configuracao() {
               <FolderTree className="w-4 h-4 text-blue-600" />
               <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Familia de Artigos:</span>
             </div>
-            <Select value={filtroFamilia} onValueChange={setFiltroFamilia}>
-              <SelectTrigger className="w-[260px] rounded-sm text-xs h-8 bg-white cursor-pointer">
-                <SelectValue placeholder={loadingFamilias ? "A carregar familias..." : "Todas as familias"} />
-              </SelectTrigger>
-              <SelectContent className="rounded-sm">
-                {familias.map((familia) => (
-                  <SelectItem key={familia.id} value={familia.id} className="text-xs cursor-pointer">
-                    {familia.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableCombobox
+              value={filtroFamilia}
+              onValueChange={setFiltroFamilia}
+              options={familias.map((familia) => ({
+                value: familia.id,
+                label: familia.label,
+                keywords: [familia.id, familia.description || ""],
+                renderLabel: (
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium text-gray-900">{familia.label}</span>
+                    <span className="text-[11px] text-gray-500">{familia.description || familia.id}</span>
+                  </div>
+                ),
+                renderSelectedLabel: (
+                  <div className="flex flex-col items-start leading-tight">
+                    <span className="font-medium text-gray-900">{familia.label}</span>
+                    <span className="text-[11px] text-gray-500">{familia.description || familia.id}</span>
+                  </div>
+                ),
+              }))}
+              placeholder={loadingFamilias ? "A carregar famílias..." : "Todas as famílias"}
+              searchPlaceholder="Pesquisar família..."
+              emptyText="Nenhuma família encontrada"
+              disabled={loadingFamilias || familias.length === 0}
+              triggerClassName="w-[260px] rounded-sm text-xs h-8 bg-white cursor-pointer"
+            />
             {filtroFamilia && (
               <Badge variant="secondary" className="rounded-sm text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
                   {operacoesFamiliaSelecionada.length} operacoes
@@ -797,9 +866,17 @@ export default function Configuracao() {
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase sticky left-0 bg-gray-50 z-10 min-w-[140px]">Operador</th>
                   <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap w-16">OLE %</th>
-                  {colunasPolivalencia.map((pol) => (
-                    <th key={pol} className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{pol}</th>
-                  ))}
+                  {colunasPolivalencia.map((pol) => {
+                    const operacao = operacoesPorNome.get(normalizeText(pol));
+                    return (
+                      <th key={pol} className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">
+                        <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">
+                          {operacao?.id || "—"}
+                        </div>
+                        <div className="mt-1">{pol}</div>
+                      </th>
+                    );
+                  })}
                   {mostrarColunaEliminar && (
                     <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-16 sticky right-0 bg-gray-50 z-10">Acoes</th>
                   )}
@@ -896,205 +973,21 @@ export default function Configuracao() {
             </table>
           </div>
 
-          <div className="m-6 p-5 bg-gray-50 rounded-sm border border-gray-200">
-            <div className="flex items-center gap-2 mb-4">
-              <Info className="w-4 h-4 text-gray-500" />
-              <span className="font-semibold text-gray-900 text-xs uppercase tracking-wide">Informacao</span>
-            </div>
-            <div className="text-xs text-gray-600 space-y-1">
-              <p>Clique numa celula da matriz para editar a competencia do operador</p>
-              <p>{tabelaSomenteLeitura ? "Cada coluna representa uma operacao vinda da API de polivalencia" : "Cada posicao (POL_1, POL_2, etc.) representa uma competencia operacional especifica"}</p>
-              <p>O OLE% indica a eficiencia historica do operador - clique para editar</p>
-              <p className="text-blue-600">Todas as alteracoes sao guardadas automaticamente no ficheiro de sessao</p>
-            </div>
-          </div>
         </CardContent>
       </Card>
+        </TabsContent>
 
-      {/* ── Configuração de Máquinas ── */}
-      <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
-        <CardHeader className="border-b border-gray-200">
-          <CardTitle className="flex items-center justify-between text-gray-900">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-sm flex items-center justify-center">
-                <Cog className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <div className="text-base font-semibold">Configuração de Máquinas</div>
-                <CardDescription className="text-gray-500 mt-0.5 text-xs">
-                  Definição de máquinas por tipo, ponto, largura e setup — clique para editar
-                </CardDescription>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="rounded-sm text-xs">{maquinas.length} tipos</Badge>
-              <Dialog open={showNovaMaquina} onOpenChange={setShowNovaMaquina}>
-                <DialogTrigger asChild>
-                  <Button size="sm" className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs font-medium cursor-pointer">
-                    <Plus className="w-4 h-4 mr-2" />Nova Máquina
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-sm [&>button]:cursor-pointer">
-                  <DialogHeader>
-                    <DialogTitle className="text-base font-semibold">Adicionar Nova Máquina</DialogTitle>
-                    <DialogDescription className="text-xs">Máquinas com ponto, largura ou setup diferente são consideradas máquinas distintas</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-xs font-medium">Tipo de Máquina</Label>
-                      <Input value={novaMaquina.tipo} onChange={(e) => setNovaMaquina({ ...novaMaquina, tipo: e.target.value })} placeholder="ex: P/P1, P/C N flat lock" className="rounded-sm text-sm mt-1" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label className="text-xs font-medium">Largura</Label>
-                        <Input value={novaMaquina.largura} onChange={(e) => setNovaMaquina({ ...novaMaquina, largura: e.target.value })} placeholder="ex: 5.6mm" className="rounded-sm text-sm mt-1" />
-                      </div>
-                      <div>
-                        <Label className="text-xs font-medium">Ponto (Gauge)</Label>
-                        <Input value={novaMaquina.ponto} onChange={(e) => setNovaMaquina({ ...novaMaquina, ponto: e.target.value })} placeholder="ex: 301, 401, 607" className="rounded-sm text-sm mt-1" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label className="text-xs font-medium">Setup</Label>
-                        <Input value={novaMaquina.setup} onChange={(e) => setNovaMaquina({ ...novaMaquina, setup: e.target.value })} placeholder="ex: Standard, Flat Lock" className="rounded-sm text-sm mt-1" />
-                      </div>
-                      <div>
-                        <Label className="text-xs font-medium">Quantidade</Label>
-                        <Input type="number" min={1} value={novaMaquina.quantidade} onChange={(e) => setNovaMaquina({ ...novaMaquina, quantidade: Number(e.target.value) })} className="rounded-sm text-sm mt-1" />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-sm border border-gray-200">
-                      <div>
-                        <Label className="text-xs font-medium">Permitir Agrupamento</Label>
-                        <p className="text-[10px] text-gray-500 mt-0.5">Agrupar com máquinas de mesma configuração</p>
-                      </div>
-                      <Switch className="cursor-pointer" checked={novaMaquina.agrupavel} onCheckedChange={(checked) => setNovaMaquina({ ...novaMaquina, agrupavel: checked })} />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button onClick={handleCriarMaquina} className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs cursor-pointer" disabled={!novaMaquina.tipo.trim()}>
-                      Adicionar
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-auto max-h-[65vh]">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase min-w-[60px]">ID</th>
-                  <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase min-w-[140px]">Tipo</th>
-                  <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase min-w-[80px]">Ponto</th>
-                  <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase min-w-[80px]">Largura</th>
-                  <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase min-w-[100px]">Setup</th>
-                  <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase min-w-[50px]">Qtd</th>
-                  <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase min-w-[90px]">Agrupável</th>
-                  <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase min-w-[200px]">Operações Compatíveis</th>
-                  <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-16">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {maquinas.map((maq) => (
-                  <tr key={maq.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    <td className="p-3"><span className="font-mono text-xs text-gray-500">{maq.id}</span></td>
-                    <td className="p-3">
-                      {editandoCelula === `maq-${maq.id}-tipo` ? (
-                        <Input
-                          defaultValue={maq.tipo}
-                          onBlur={(e) => { handleEditarCampoMaquina(maq.id, "tipo", e.target.value); setEditandoCelula(null); }}
-                          onKeyDown={(e) => { if (e.key === "Enter") { handleEditarCampoMaquina(maq.id, "tipo", (e.target as HTMLInputElement).value); setEditandoCelula(null); } }}
-                          autoFocus className="h-7 text-xs rounded-sm"
-                        />
-                      ) : (
-                        <span className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600" onClick={() => setEditandoCelula(`maq-${maq.id}-tipo`)}>{maq.tipo}</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      {editandoCelula === `maq-${maq.id}-ponto` ? (
-                        <Input defaultValue={maq.ponto} onBlur={(e) => { handleEditarCampoMaquina(maq.id, "ponto", e.target.value); setEditandoCelula(null); }} onKeyDown={(e) => { if (e.key === "Enter") { handleEditarCampoMaquina(maq.id, "ponto", (e.target as HTMLInputElement).value); setEditandoCelula(null); } }} autoFocus className="h-7 text-xs rounded-sm w-20 text-center mx-auto" />
-                      ) : (
-                        <Badge variant="secondary" className="font-mono text-xs rounded-sm cursor-pointer" onClick={() => setEditandoCelula(`maq-${maq.id}-ponto`)}>{maq.ponto}</Badge>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      {editandoCelula === `maq-${maq.id}-largura` ? (
-                        <Input defaultValue={String(maq.largura)} onBlur={(e) => { handleEditarCampoMaquina(maq.id, "largura", parseFloat(e.target.value) || 0); setEditandoCelula(null); }} onKeyDown={(e) => { if (e.key === "Enter") { handleEditarCampoMaquina(maq.id, "largura", parseFloat((e.target as HTMLInputElement).value) || 0); setEditandoCelula(null); } }} autoFocus className="h-7 text-xs rounded-sm w-20 text-center mx-auto" />
-                      ) : (
-                        <Badge variant="secondary" className="font-mono text-xs rounded-sm cursor-pointer" onClick={() => setEditandoCelula(`maq-${maq.id}-largura`)}>{maq.largura}</Badge>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      {editandoCelula === `maq-${maq.id}-setup` ? (
-                        <Input defaultValue={maq.setup} onBlur={(e) => { handleEditarCampoMaquina(maq.id, "setup", e.target.value); setEditandoCelula(null); }} onKeyDown={(e) => { if (e.key === "Enter") { handleEditarCampoMaquina(maq.id, "setup", (e.target as HTMLInputElement).value); setEditandoCelula(null); } }} autoFocus className="h-7 text-xs rounded-sm w-24 text-center mx-auto" />
-                      ) : (
-                        <span className="text-xs text-gray-700 cursor-pointer hover:text-blue-600" onClick={() => setEditandoCelula(`maq-${maq.id}-setup`)}>{maq.setup}</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      {editandoCelula === `maq-${maq.id}-qtd` ? (
-                        <Input type="number" min={0} defaultValue={maq.quantidade} onBlur={(e) => { handleEditarCampoMaquina(maq.id, "quantidade", Number(e.target.value)); setEditandoCelula(null); }} onKeyDown={(e) => { if (e.key === "Enter") { handleEditarCampoMaquina(maq.id, "quantidade", Number((e.target as HTMLInputElement).value)); setEditandoCelula(null); } }} autoFocus className="h-7 text-xs rounded-sm w-14 text-center mx-auto font-mono" />
-                      ) : (
-                        <span className="font-mono text-sm font-bold text-gray-900 cursor-pointer hover:text-blue-600" onClick={() => setEditandoCelula(`maq-${maq.id}-qtd`)}>{maq.quantidade}</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      <Switch
-                        checked={maq.agrupavel}
-                        onCheckedChange={(checked) => handleEditarCampoMaquina(maq.id, "permitirAgrupamento", checked)}
-                      />
-                      <div className="text-[9px] text-gray-400 mt-0.5">{maq.agrupavel ? "Sim" : "Não"}</div>
-                    </td>
-                    <td className="p-3">
-                      <div className="flex flex-wrap gap-1">
-                        {maq.operacoesCompativeis.length > 0 ? (
-                          maq.operacoesCompativeis.map((op) => (
-                            <Badge key={op} variant="secondary" className="text-[10px] rounded-sm cursor-pointer hover:bg-gray-300" onClick={() => handleToggleOperacaoMaquina(maq.id, op)}>
-                              {op}<X className="w-2.5 h-2.5 ml-1" />
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-[10px] text-gray-400">Nenhuma</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-3 text-center">
-                      <Button variant="ghost" size="sm" onClick={() => handleRemoverMaquina(maq.id)} className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600">
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="m-6 p-5 bg-blue-50 rounded-sm border border-blue-200">
-            <div className="flex items-center gap-2 mb-3">
-              <Shield className="w-4 h-4 text-blue-600" />
-              <span className="font-semibold text-gray-900 text-xs uppercase tracking-wide">Regras de Diferenciação de Máquinas</span>
-            </div>
-            <div className="text-xs text-gray-700 space-y-2">
-              <div className="flex items-start gap-2"><div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-1.5 flex-shrink-0" /><p>Máquinas com <span className="font-semibold">ponto (gauge) diferente</span> são consideradas máquinas distintas</p></div>
-              <div className="flex items-start gap-2"><div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-1.5 flex-shrink-0" /><p>Máquinas com <span className="font-semibold">largura diferente</span> são consideradas máquinas distintas</p></div>
-              <div className="flex items-start gap-2"><div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-1.5 flex-shrink-0" /><p>Máquinas com <span className="font-semibold">setup diferente</span> são consideradas máquinas distintas</p></div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Matriz de Polivalência por Grupos */}
-      <MatrizPolivalenciaGrupos operadores={operadores} grupos={produtosMock} />
+        <TabsContent value="grupos" className="mt-4">
+          <MatrizPolivalenciaGrupos operadores={operadores} grupos={produtosMock} modo="api" />
+        </TabsContent>
+      </Tabs>
 
       {/* Catálogo de Máquinas */}
-      <CatalogoMaquinas
-        maquinas={dados.maquinas}
-        onAddMaquina={handleAddMaquinaAoCatalogo}
-        onEditMaquina={handleEditMaquinaDoCatalogo}
-        onRemoveMaquina={handleRemoveMaquinaDoCatalogo}
+      <CatalogoMaquinasApi
+        familyId={filtroFamilia}
+        familyLabel={familiaSelecionadaLabel}
+        familyOptions={familias}
+        onFamilyChange={setFiltroFamilia}
       />
 
       {/* Configuração de Layout */}

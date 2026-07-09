@@ -1,5 +1,5 @@
 ﻿import { Operacao, Operador } from "../types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Plus, Trash2, UserCheck } from "lucide-react";
 import { Button } from "./ui/button";
 
@@ -43,15 +43,41 @@ const FIELDS: Array<keyof Operacao | "operador"> = [
   "operador",
 ];
 
+const SETUP_OPTIONS = [
+  "Standard",
+  "Presilhas",
+  "Elástico",
+  "Etiqueta",
+  "Etiqueta dupla",
+  "Etiqueta lateral",
+  "Gola",
+  "Gola+Lapela",
+  "Forro",
+  "Bolsos",
+  "Fecho",
+  "Decote",
+  "Cinto",
+  "Renda",
+];
+
+const parseOperatorTokens = (value: string) =>
+  value
+    .split(/[,;]+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => token.split(/\s*[-–—]\s*/)[0].trim())
+    .filter(Boolean);
+
 export function TabelaOperacoesManual({
   operacoes,
   onOperacoesChange,
+  operadores,
   atribuicoes = {},
   onAtribuicaoChange,
 }: TabelaOperacoesManualProps) {
   const [editing, setEditing] = useState<EditingCell>(null);
   const [localOps, setLocalOps] = useState<Operacao[]>(operacoes);
-  // Local free-text operador per operaÃ§Ã£o id
+  // Local free-text de operadores por operação
   const [localOps_operador, setLocalOps_operador] = useState<{ [id: string]: string }>(() => {
     const init: { [id: string]: string } = {};
     operacoes.forEach((op) => {
@@ -60,18 +86,16 @@ export function TabelaOperacoesManual({
     return init;
   });
 
-  // Sincronizar quando props mudam
-  useMemo(() => {
+  // Sincronizar quando as props mudam
+  useEffect(() => {
     setLocalOps(operacoes);
   }, [operacoes]);
 
-  useMemo(() => {
+  useEffect(() => {
     setLocalOps_operador((prev) => {
       const next = { ...prev };
       operacoes.forEach((op) => {
-        if (!(op.id in next)) {
-          next[op.id] = (atribuicoes[op.id] || []).join(", ");
-        }
+        next[op.id] = (atribuicoes[op.id] || []).join(", ");
       });
       return next;
     });
@@ -111,10 +135,7 @@ export function TabelaOperacoesManual({
     (rowIndex: number) => {
       const op = localOps[rowIndex];
       const raw = localOps_operador[op.id] || "";
-      const ids = raw
-        .split(/[,;]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const ids = parseOperatorTokens(raw);
       onAtribuicaoChange && onAtribuicaoChange(op.id, ids);
     },
     [localOps, localOps_operador, onAtribuicaoChange]
@@ -202,26 +223,58 @@ export function TabelaOperacoesManual({
     [localOps, onOperacoesChange, handleAddRow, commitOperador]
   );
 
+  const resolveOperatorLabel = useCallback(
+    (value: string) => {
+      const operator = operadores?.find(
+        (item) =>
+          item.id.toLowerCase() === value.toLowerCase() ||
+          item.nome?.toLowerCase() === value.toLowerCase()
+      );
+      return operator ? `${operator.id}${operator.nome ? ` - ${operator.nome}` : ""}` : value;
+    },
+    [operadores]
+  );
+
+  const renderOperatorDisplay = useCallback(
+    (value: string) => {
+      const tokens = parseOperatorTokens(value);
+      if (tokens.length === 0) return "—";
+      return tokens.map((token) => resolveOperatorLabel(token)).join(", ");
+    },
+    [resolveOperatorLabel]
+  );
+
   const renderCell = useCallback(
     (op: Operacao, rowIndex: number, field: keyof Operacao | "operador") => {
       const isEditing =
         editing?.rowIndex === rowIndex && editing?.field === field;
 
-      // â”€â”€ Operador column (free text)
+      // Operador: seleção por texto com sugestões
       if (field === "operador") {
         const val = localOps_operador[op.id] || "";
         if (isEditing) {
           return (
-            <input
-              autoFocus
-              type="text"
-              value={val}
-              onChange={(e) => handleOperadorChange(rowIndex, e.target.value)}
-              onBlur={() => handleBlur("operador", rowIndex)}
-              onKeyDown={(e) => handleKeyDown(e, rowIndex, "operador")}
-              className="w-full h-full px-2 py-1 text-xs border-2 border-blue-500 outline-none font-mono bg-white"
-              placeholder="ID operador"
-            />
+            <div>
+              <input
+                autoFocus
+                list={`operadores-${op.id}`}
+                type="text"
+                value={val}
+                onChange={(e) => handleOperadorChange(rowIndex, e.target.value)}
+                onBlur={() => handleBlur("operador", rowIndex)}
+                onKeyDown={(e) => handleKeyDown(e, rowIndex, "operador")}
+                className="w-full h-full px-2 py-1 text-xs border-2 border-blue-500 outline-none font-mono bg-white"
+                placeholder="OP001, OP002"
+              />
+              <datalist id={`operadores-${op.id}`}>
+                {(operadores || []).map((operador) => (
+                  <option
+                    key={operador.id}
+                    value={`${operador.id}${operador.nome ? ` - ${operador.nome}` : ""}`}
+                  />
+                ))}
+              </datalist>
+            </div>
           );
         }
         return (
@@ -229,14 +282,14 @@ export function TabelaOperacoesManual({
             className={`block w-full h-full px-2 py-1 text-xs cursor-text font-mono ${
               !val ? "text-gray-300" : "text-gray-800"
             }`}
-            onDoubleClick={() => setEditing({ rowIndex, field: "operador" })}
+            onClick={() => setEditing({ rowIndex, field: "operador" })}
           >
-            {val || "â€”"}
+            {renderOperatorDisplay(val)}
           </span>
         );
       }
 
-      // â”€â”€ SequÃªncia (read-only label)
+      // Sequência (read-only label)
       if (field === "sequencia") {
         return (
           <span className="text-gray-500 font-mono text-xs px-2 py-1 block">
@@ -245,7 +298,7 @@ export function TabelaOperacoesManual({
         );
       }
 
-      // â”€â”€ All other fields
+      // Demais campos
       const value = op[field as keyof Operacao];
       const displayNumericValue =
         field === "tempo" && typeof value === "number" ? value * 60 : value;
@@ -255,6 +308,7 @@ export function TabelaOperacoesManual({
           : (value as string) || "";
 
       if (isEditing) {
+        const useDatalist = field === "setup";
         const inputValue =
           field === "tempo" && typeof value === "number"
             ? Math.round(value * 60)
@@ -262,22 +316,31 @@ export function TabelaOperacoesManual({
             ? value
             : value || "";
         return (
-          <input
-            autoFocus
-            type={
-              field === "tempo" || field === "largura" ? "number" : "text"
-            }
-            step={field === "tempo" ? "1" : "1"}
-            value={inputValue}
-            onChange={(e) =>
-              handleCellChange(rowIndex, field as keyof Operacao, e.target.value)
-            }
-            onBlur={() => handleBlur(field as keyof Operacao, rowIndex)}
-            onKeyDown={(e) =>
-              handleKeyDown(e, rowIndex, field as keyof Operacao)
-            }
-            className="w-full h-full px-2 py-1 text-xs border-2 border-blue-500 outline-none font-mono bg-white"
-          />
+          <div>
+            <input
+              autoFocus
+              list={useDatalist ? `setups-${op.id}` : undefined}
+              type={field === "tempo" || field === "largura" ? "number" : "text"}
+              step={field === "tempo" ? "1" : "1"}
+              value={inputValue}
+              onChange={(e) =>
+                handleCellChange(rowIndex, field as keyof Operacao, e.target.value)
+              }
+              onBlur={() => handleBlur(field as keyof Operacao, rowIndex)}
+              onKeyDown={(e) =>
+                handleKeyDown(e, rowIndex, field as keyof Operacao)
+              }
+              className="w-full h-full px-2 py-1 text-xs border-2 border-blue-500 outline-none font-mono bg-white"
+              placeholder={field === "nome" ? "Ex.: Pregar gola" : ""}
+            />
+            {useDatalist && (
+              <datalist id={`setups-${op.id}`}>
+                {SETUP_OPTIONS.map((setup) => (
+                  <option key={setup} value={setup} />
+                ))}
+              </datalist>
+            )}
+          </div>
         );
       }
 
@@ -286,11 +349,11 @@ export function TabelaOperacoesManual({
           className={`block w-full h-full px-2 py-1 text-xs cursor-text ${
             field === "tempo" || field === "largura" ? "font-mono" : ""
           } ${!displayValue ? "text-gray-300" : ""}`}
-          onDoubleClick={() =>
+          onClick={() =>
             setEditing({ rowIndex, field: field as keyof Operacao })
           }
         >
-          {displayValue || "â€”"}
+          {displayValue || "—"}
         </span>
       );
     },
@@ -316,7 +379,7 @@ export function TabelaOperacoesManual({
         <div className="flex items-center gap-4">
           <span className="text-xs text-gray-500">
             <span className="font-semibold text-gray-700">{localOps.length}</span>{" "}
-            operaÃ§Ãµes
+            operações
           </span>
           <span className="text-xs text-gray-500">
             Tempo total:{" "}
@@ -337,7 +400,7 @@ export function TabelaOperacoesManual({
           className="rounded-sm text-xs h-8"
         >
           <Plus className="w-3.5 h-3.5 mr-1.5" />
-          Adicionar Linha
+          Nova operação
         </Button>
       </div>
 
@@ -372,10 +435,10 @@ export function TabelaOperacoesManual({
               {[
                 "Seq",
                 "ID",
-                "OperaÃ§Ã£o",
+                "Operação",
                 "Tempo (s)",
-                "MÃ¡quina",
-                "MÃ¡quina 2",
+                "Máquina",
+                "Máquina 2",
                 "Largura",
                 "Ponto",
                 "Setup",
@@ -394,7 +457,7 @@ export function TabelaOperacoesManual({
                 </div>
               </th>
               <th className="p-2 text-center text-xs font-semibold text-gray-600 uppercase">
-                AÃ§Ãµes
+                Ações
               </th>
             </tr>
           </thead>
@@ -453,7 +516,7 @@ export function TabelaOperacoesManual({
                   colSpan={11}
                   className="p-8 text-center text-sm text-gray-400"
                 >
-                  Nenhuma operaÃ§Ã£o. Clique em "Adicionar Linha" para comeÃ§ar.
+                  Nenhuma operação. Clique em "Nova operação" para começar.
                 </td>
               </tr>
             )}
@@ -487,15 +550,15 @@ export function TabelaOperacoesManual({
 
       {/* Dica */}
       <div className="text-xs text-gray-400">
-        Duplo clique numa célula para editar Â·{" "}
+        Clique numa célula para editar ·{" "}
         <kbd className="px-1 border border-gray-200 rounded-sm text-[9px] bg-white text-gray-500">
           Enter
         </kbd>{" "}
-        prÃ³xima linha Â·{" "}
+        próxima linha ·{" "}
         <kbd className="px-1 border border-gray-200 rounded-sm text-[9px] bg-white text-gray-500">
           Tab
         </kbd>{" "}
-        prÃ³xima coluna Â·{" "}
+        próxima coluna ·{" "}
         <kbd className="px-1 border border-gray-200 rounded-sm text-[9px] bg-white text-gray-500">
           Esc
         </kbd>{" "}
