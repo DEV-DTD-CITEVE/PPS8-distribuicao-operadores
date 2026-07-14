@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Operador, Maquina, ConfiguracaoLayout } from "../types";
 import { operacoesMock, produtosMock, layoutPadraoEspinha } from "../data/mock";
 import { useStorage } from "../contexts/StorageContext";
@@ -119,7 +119,7 @@ const normalizeText = (value: string): string =>
     .toLowerCase()
     .trim();
 
-const POLYVALENCE_API_BASE = "http://192.168.54.202:7860/api";
+const POLYVALENCE_API_BASE = "http://localhost:7860/api";
 const POLYVALENCE_ENDPOINT = `${POLYVALENCE_API_BASE}/polyvalence/`;
 
 function maquinaToSimples(m: Maquina): MaquinaSimples {
