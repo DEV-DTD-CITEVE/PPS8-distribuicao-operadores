@@ -307,15 +307,15 @@ export function CatalogoMaquinasApi({ familyId, familyLabel, familyOptions, onFa
                 label: family.label,
                 keywords: [family.id, family.description || ""],
                 renderLabel: (
-                  <div className="flex flex-col items-start">
+                  <div className="flex max-w-full flex-col items-start overflow-hidden">
                     <span className="font-medium text-gray-900">{family.label}</span>
-                    <span className="text-[11px] text-gray-500">{family.description || family.id}</span>
+                    <span className="block w-full truncate text-[11px] text-gray-500">{family.description || family.id}</span>
                   </div>
                 ),
                 renderSelectedLabel: (
-                  <div className="flex flex-col items-start leading-tight">
+                  <div className="flex max-w-full flex-col items-start overflow-hidden leading-tight">
                     <span className="font-medium text-gray-900">{family.label}</span>
-                    <span className="text-[11px] text-gray-500">{family.description || family.id}</span>
+                    <span className="block w-full truncate text-[11px] text-gray-500">{family.description || family.id}</span>
                   </div>
                 ),
               }))}
@@ -340,15 +340,15 @@ export function CatalogoMaquinasApi({ familyId, familyLabel, familyOptions, onFa
                 label: option.label,
                 keywords: [option.id, option.description || ""],
                 renderLabel: (
-                  <div className="flex flex-col items-start">
+                  <div className="flex max-w-full flex-col items-start overflow-hidden">
                     <span className="font-medium text-gray-900">{option.id}</span>
-                    {option.description && <span className="text-[11px] text-gray-500">{option.description}</span>}
+                    {option.description && <span className="block w-full truncate text-[11px] text-gray-500">{option.description}</span>}
                   </div>
                 ),
                 renderSelectedLabel: (
-                  <div className="flex flex-col items-start leading-tight">
+                  <div className="flex max-w-full flex-col items-start overflow-hidden leading-tight">
                     <span className="font-medium text-gray-900">{option.id}</span>
-                    {option.description && <span className="text-[11px] text-gray-500">{option.description}</span>}
+                    {option.description && <span className="block w-full truncate text-[11px] text-gray-500">{option.description}</span>}
                   </div>
                 ),
               }))}
@@ -373,15 +373,15 @@ export function CatalogoMaquinasApi({ familyId, familyLabel, familyOptions, onFa
                   value: "ALL",
                   label: "Todos",
                   renderLabel: (
-                    <div className="flex flex-col items-start">
+                    <div className="flex max-w-full flex-col items-start overflow-hidden">
                       <span className="font-medium text-gray-900">Todos</span>
-                      <span className="text-[11px] text-gray-500">Mostrar todas as maquinas</span>
+                      <span className="block w-full truncate text-[11px] text-gray-500">Mostrar todas as maquinas</span>
                     </div>
                   ),
                   renderSelectedLabel: (
-                    <div className="flex flex-col items-start leading-tight">
+                    <div className="flex max-w-full flex-col items-start overflow-hidden leading-tight">
                       <span className="font-medium text-gray-900">Todos</span>
-                      <span className="text-[11px] text-gray-500">Mostrar todas as maquinas</span>
+                      <span className="block w-full truncate text-[11px] text-gray-500">Mostrar todas as maquinas</span>
                     </div>
                   ),
                 },
@@ -390,17 +390,17 @@ export function CatalogoMaquinasApi({ familyId, familyLabel, familyOptions, onFa
                   label: type,
                   keywords: [type],
                   renderLabel: (
-                    <div className="flex flex-col items-start">
+                    <div className="flex max-w-full flex-col items-start overflow-hidden">
                       <span className="font-medium text-gray-900">{type}</span>
-                      <span className="text-[11px] text-gray-500">
+                      <span className="block w-full truncate text-[11px] text-gray-500">
                         {machineEntries.filter((machine) => machine.type === type).length} maquinas
                       </span>
                     </div>
                   ),
                   renderSelectedLabel: (
-                    <div className="flex flex-col items-start leading-tight">
+                    <div className="flex max-w-full flex-col items-start overflow-hidden leading-tight">
                       <span className="font-medium text-gray-900">{type}</span>
-                      <span className="text-[11px] text-gray-500">
+                      <span className="block w-full truncate text-[11px] text-gray-500">
                         {machineEntries.filter((machine) => machine.type === type).length} maquinas
                       </span>
                     </div>

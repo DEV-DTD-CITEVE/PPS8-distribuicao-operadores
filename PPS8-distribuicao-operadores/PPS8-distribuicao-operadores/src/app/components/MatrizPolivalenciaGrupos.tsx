@@ -54,45 +54,38 @@ function LocalView({ operadores, grupos }: Pick<MatrizPolivalenciaGruposProps, "
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 sticky left-0 bg-gray-50 z-10">
-                Operador
+              <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 sticky left-0 bg-gray-50 z-20 min-w-[180px]">
+                Grupo
               </th>
-              <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase border-r border-gray-200">
-                OLE%<br />Histórico
-              </th>
-              {grupos.map((grupo) => (
+              {operadores.map((operador) => (
                 <th
-                  key={grupo.id}
-                  className="p-3 text-center text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 min-w-[120px]"
+                  key={operador.id}
+                  className="p-3 text-center text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 min-w-[140px]"
                 >
-                  <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">{grupo.referencia}</div>
-                  <div className="truncate mt-1" title={grupo.nome}>
-                    {grupo.nome}
-                  </div>
+                  <div className="text-xs font-semibold text-gray-900">{operador.id}</div>
+                  {operador.nome && <div className="mt-0.5 text-[10px] font-normal text-gray-500 normal-case">{operador.nome}</div>}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {operadores.map((operador, idx) => (
+            {grupos.map((grupo, idx) => (
               <tr
-                key={operador.id}
+                key={grupo.id}
                 className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                   idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"
                 }`}
               >
-                <td className="p-3 font-mono font-semibold text-sm text-gray-900 border-r border-gray-200 sticky left-0 bg-inherit z-10">
-                  {operador.id}
+                <td className="p-3 sticky left-0 bg-inherit z-10 border-r border-gray-200">
+                  <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">{grupo.referencia}</div>
+                  <div className="mt-1 font-semibold text-sm text-gray-900" title={grupo.nome}>
+                    {grupo.nome}
+                  </div>
                 </td>
-                <td className="p-3 text-center border-r border-gray-200">
-                  <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(operador.oleHistorico)}`}>
-                    {operador.oleHistorico}%
-                  </span>
-                </td>
-                {grupos.map((grupo) => {
+                {operadores.map((operador) => {
                   const oleGrupo = operador.competenciasPorGrupo?.[grupo.id];
                   return (
-                    <td key={grupo.id} className="p-3 text-center border-r border-gray-200">
+                    <td key={`${grupo.id}-${operador.id}`} className="p-3 text-center border-r border-gray-200">
                       {oleGrupo !== undefined ? (
                         <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(oleGrupo)}`}>
                           {oleGrupo}%
@@ -221,7 +214,7 @@ function ApiView() {
     return families.filter((family) => family.code === filtroFamilia);
   }, [families, filtroFamilia]);
 
-  const visibleRows = useMemo(() => {
+  const visibleCollaborators = useMemo(() => {
     const termo = filtroOperador.trim().toLowerCase();
     if (!termo) return rows;
 
@@ -280,46 +273,43 @@ function ApiView() {
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 sticky left-0 bg-gray-50 z-10">
-                Operador
+              <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 sticky left-0 bg-gray-50 z-20 min-w-[180px]">
+                Familia de artigos
               </th>
-              <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase border-r border-gray-200">
-                OLE%<br />Histórico
-              </th>
-              {visibleFamilies.map((family) => (
+              {visibleCollaborators.map((row) => (
                 <th
-                  key={family.code}
-                  className="p-3 text-center text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 min-w-[120px]"
+                  key={row.collaborator_id}
+                  className="p-3 text-center text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 min-w-[150px]"
                 >
-                  <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">{family.code}</div>
-                  <div className="truncate mt-1" title={family.name}>
-                    {family.name}
+                  <div className="text-xs font-semibold text-gray-900">{row.collaborator_id}</div>
+                  {row.collaborator_name && <div className="mt-0.5 text-[10px] font-normal text-gray-500 normal-case">{row.collaborator_name}</div>}
+                  <div className="mt-2">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(row.ole_historico)}`}>
+                      {row.ole_historico}%
+                    </span>
                   </div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row, idx) => (
+            {visibleFamilies.map((family, idx) => (
               <tr
-                key={row.collaborator_id}
+                key={family.code}
                 className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                   idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"
                 }`}
               >
-                <td className="p-3 font-mono font-semibold text-sm text-gray-900 border-r border-gray-200 sticky left-0 bg-inherit z-10">
-                  <div className="leading-none">{row.collaborator_id}</div>
-                  {row.collaborator_name && <div className="mt-1 text-[10px] font-normal text-gray-500">{row.collaborator_name}</div>}
+                <td className="p-3 sticky left-0 bg-inherit z-10 border-r border-gray-200">
+                  <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">{family.code}</div>
+                  <div className="mt-1 font-semibold text-sm text-gray-900" title={family.name}>
+                    {family.name}
+                  </div>
                 </td>
-                <td className="p-3 text-center border-r border-gray-200">
-                  <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(row.ole_historico)}`}>
-                    {row.ole_historico}%
-                  </span>
-                </td>
-                {visibleFamilies.map((family) => {
+                {visibleCollaborators.map((row) => {
                   const oleFamily = row.by_family?.[family.code];
                   return (
-                    <td key={family.code} className="p-3 text-center border-r border-gray-200">
+                    <td key={`${family.code}-${row.collaborator_id}`} className="p-3 text-center border-r border-gray-200">
                       {oleFamily !== undefined && oleFamily !== null ? (
                         <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(oleFamily)}`}>
                           {oleFamily}%
@@ -342,7 +332,7 @@ function ApiView() {
         <div className="mt-4 grid grid-cols-3 gap-4 pt-4 border-t border-gray-200">
           <div className="bg-gray-50 p-3 rounded-sm">
             <div className="text-xs text-gray-500 uppercase mb-1">Total Operadores</div>
-            <div className="text-lg font-bold text-gray-900">{visibleRows.length}</div>
+            <div className="text-lg font-bold text-gray-900">{visibleCollaborators.length}</div>
           </div>
           <div className="bg-gray-50 p-3 rounded-sm">
             <div className="text-xs text-gray-500 uppercase mb-1">Total Grupos</div>
@@ -351,8 +341,8 @@ function ApiView() {
           <div className="bg-gray-50 p-3 rounded-sm">
             <div className="text-xs text-gray-500 uppercase mb-1">OLE Médio Geral</div>
             <div className="text-lg font-bold text-gray-900">
-              {visibleRows.length > 0
-                ? (visibleRows.reduce((sum, row) => sum + row.ole_historico, 0) / visibleRows.length).toFixed(1)
+              {visibleCollaborators.length > 0
+                ? (visibleCollaborators.reduce((sum, row) => sum + row.ole_historico, 0) / visibleCollaborators.length).toFixed(1)
                 : "0.0"}%
             </div>
           </div>

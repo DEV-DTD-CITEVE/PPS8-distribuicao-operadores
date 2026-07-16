@@ -725,15 +725,15 @@ export default function Configuracao() {
                 label: familia.label,
                 keywords: [familia.id, familia.description || ""],
                 renderLabel: (
-                  <div className="flex flex-col items-start">
+                  <div className="flex max-w-full flex-col items-start overflow-hidden">
                     <span className="font-medium text-gray-900">{familia.label}</span>
-                    <span className="text-[11px] text-gray-500">{familia.description || familia.id}</span>
+                    <span className="block w-full truncate text-[11px] text-gray-500">{familia.description || familia.id}</span>
                   </div>
                 ),
                 renderSelectedLabel: (
-                  <div className="flex flex-col items-start leading-tight">
+                  <div className="flex max-w-full flex-col items-start overflow-hidden leading-tight">
                     <span className="font-medium text-gray-900">{familia.label}</span>
-                    <span className="text-[11px] text-gray-500">{familia.description || familia.id}</span>
+                    <span className="block w-full truncate text-[11px] text-gray-500">{familia.description || familia.id}</span>
                   </div>
                 ),
               }))}
@@ -864,111 +864,145 @@ export default function Configuracao() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase sticky left-0 bg-gray-50 z-10 min-w-[140px]">Operador</th>
-                  <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap w-16">OLE %</th>
-                  {colunasPolivalencia.map((pol) => {
-                    const operacao = operacoesPorNome.get(normalizeText(pol));
-                    return (
-                      <th key={pol} className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">
-                        <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">
-                          {operacao?.id || "—"}
+                  <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase sticky left-0 bg-gray-50 z-20 min-w-[180px]">
+                    Operacao
+                  </th>
+                  {operadoresVisiveis.map((operador) => (
+                    <th
+                      key={operador.id}
+                      className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap min-w-[150px]"
+                    >
+                      <div className="text-xs font-semibold text-gray-900">{operador.id}</div>
+                      {operador.nome && (
+                        <div className="mt-0.5 text-[10px] font-normal text-gray-500 normal-case">
+                          {operador.nome}
                         </div>
-                        <div className="mt-1">{pol}</div>
-                      </th>
-                    );
-                  })}
+                      )}
+                      <div className="mt-2">
+                        {!tabelaSomenteLeitura && editandoCelula === `${operador.id}-ole` ? (
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            defaultValue={operador.oleHistorico}
+                            onBlur={(e) => {
+                              handleEditOLE(operador.id, Number(e.target.value));
+                              setEditandoCelula(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                handleEditOLE(operador.id, Number((e.target as HTMLInputElement).value));
+                                setEditandoCelula(null);
+                              }
+                            }}
+                            autoFocus
+                            className="h-7 w-16 text-xs text-center rounded-sm font-mono mx-auto"
+                          />
+                        ) : (
+                          <Badge
+                            variant="secondary"
+                            className="font-mono font-semibold text-xs rounded-sm cursor-pointer"
+                            onClick={() => {
+                              if (!tabelaSomenteLeitura) setEditandoCelula(`${operador.id}-ole`);
+                            }}
+                          >
+                            {operador.oleHistorico}%
+                          </Badge>
+                        )}
+                      </div>
+                    </th>
+                  ))}
                   {mostrarColunaEliminar && (
-                    <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-16 sticky right-0 bg-gray-50 z-10">Acoes</th>
+                    <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-16 sticky right-0 bg-gray-50 z-10">
+                      Acoes
+                    </th>
                   )}
                 </tr>
               </thead>
               <tbody>
-                {operadoresVisiveis.map((operador) => (
-                  <tr key={operador.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    <td className="p-3 sticky left-0 bg-white z-10">
-                      <div className="font-semibold text-sm text-gray-900">{operador.id}</div>
-                    </td>
-                    <td className="p-3 text-center">
-                      {!tabelaSomenteLeitura && editandoCelula === `${operador.id}-ole` ? (
-                        <Input
-                          type="number" min={0} max={100}
-                          defaultValue={operador.oleHistorico}
-                          onBlur={(e) => { handleEditOLE(operador.id, Number(e.target.value)); setEditandoCelula(null); }}
-                          onKeyDown={(e) => { if (e.key === "Enter") { handleEditOLE(operador.id, Number((e.target as HTMLInputElement).value)); setEditandoCelula(null); } }}
-                          autoFocus
-                          className="h-8 w-16 text-xs text-center rounded-sm font-mono mx-auto"
-                        />
-                      ) : (
-                        <Badge
-                          variant="secondary"
-                          className="font-mono font-semibold text-xs rounded-sm cursor-pointer"
-                          onClick={() => { if (!tabelaSomenteLeitura) setEditandoCelula(`${operador.id}-ole`); }}
-                        >
-                          {operador.oleHistorico}%
-                        </Badge>
-                      )}
-                    </td>
-                    {colunasPolivalencia.map((pol) => {
-                      const key = celulaKey(operador.id, pol);
-                      const competencia = operador.competencias[pol];
-                      return (
-                        <td key={pol} className="p-2 text-center">
-                          {!tabelaSomenteLeitura && editandoCelula === key ? (
-                            <div className="space-y-1">
-                              <Input
-                                defaultValue={competencia ? competencia.operacao || "" : ""}
-                                onBlur={(e) => { handleEditCompetencia(operador.id, pol, e.target.value || null); setEditandoCelula(null); }}
-                                onKeyDown={(e) => { if (e.key === "Enter") { handleEditCompetencia(operador.id, pol, (e.target as HTMLInputElement).value || null); setEditandoCelula(null); } }}
-                                autoFocus
-                                className="h-8 text-xs rounded-sm min-w-[120px]"
-                                list={`ops-${key}`}
-                                placeholder="Operacao..."
-                              />
-                              {competencia && competencia.operacao && (
-                                <Input
-                                  type="number" min={0} max={100}
-                                  defaultValue={competencia.ole}
-                                  onBlur={(e) => handleEditCompetencia(operador.id, pol, competencia.operacao, Number(e.target.value))}
-                                  className="h-7 text-xs rounded-sm min-w-[120px]"
-                                  placeholder="OLE%"
-                                />
-                              )}
-                              <datalist id={`ops-${key}`}>
-                                {operacoesFamiliaSelecionada.map((opName) => <option key={opName} value={opName} />)}
-                              </datalist>
-                            </div>
-                          ) : (
-                            <div
-                              className={`inline-flex flex-col items-center justify-center min-w-[120px] min-h-[36px] rounded-sm cursor-pointer transition-colors ${
-                                competencia
-                                  ? `px-3 py-2 font-medium text-xs ${getOleColorClasses(competencia.ole)}`
-                                  : "w-10 h-10 bg-gray-100 text-gray-400 hover:bg-gray-200"
-                              }`}
-                              onClick={() => { if (!tabelaSomenteLeitura) setEditandoCelula(key); }}
-                            >
-                              {competencia ? (
-                                <>
-                                  <span className="text-xs font-mono">{competencia.ole}%</span>
-                                </>
-                              ) : "-"}
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                    {mostrarColunaEliminar && (
-                      <td className="p-3 text-center sticky right-0 bg-white z-10">
-                        <Button
-                          variant="ghost" size="sm"
-                          onClick={() => handleRemoverOperador(operador.id)}
-                          className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+                {colunasPolivalencia.map((pol) => {
+                  const operacao = operacoesPorNome.get(normalizeText(pol));
+                  return (
+                    <tr key={pol} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="p-3 sticky left-0 bg-white z-10 border-r border-gray-200">
+                        <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">
+                          {operacao?.id || "—"}
+                        </div>
+                        <div className="mt-1 font-semibold text-sm text-gray-900">{pol}</div>
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      {operadoresVisiveis.map((operador) => {
+                        const key = celulaKey(operador.id, pol);
+                        const competencia = operador.competencias[pol];
+                        return (
+                          <td key={key} className="p-2 text-center">
+                            {!tabelaSomenteLeitura && editandoCelula === key ? (
+                              <div className="space-y-1">
+                                <Input
+                                  defaultValue={competencia ? competencia.operacao || "" : ""}
+                                  onBlur={(e) => {
+                                    handleEditCompetencia(operador.id, pol, e.target.value || null);
+                                    setEditandoCelula(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      handleEditCompetencia(operador.id, pol, (e.target as HTMLInputElement).value || null);
+                                      setEditandoCelula(null);
+                                    }
+                                  }}
+                                  autoFocus
+                                  className="h-8 text-xs rounded-sm min-w-[120px]"
+                                  list={`ops-${key}`}
+                                  placeholder="Operacao..."
+                                />
+                                {competencia && competencia.operacao && (
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    defaultValue={competencia.ole}
+                                    onBlur={(e) => handleEditCompetencia(operador.id, pol, competencia.operacao, Number(e.target.value))}
+                                    className="h-7 text-xs rounded-sm min-w-[120px]"
+                                    placeholder="OLE%"
+                                  />
+                                )}
+                                <datalist id={`ops-${key}`}>
+                                  {operacoesFamiliaSelecionada.map((opName) => (
+                                    <option key={opName} value={opName} />
+                                  ))}
+                                </datalist>
+                              </div>
+                            ) : (
+                              <div
+                                className={`inline-flex flex-col items-center justify-center min-w-[120px] min-h-[36px] rounded-sm cursor-pointer transition-colors ${
+                                  competencia
+                                    ? `px-3 py-2 font-medium text-xs ${getOleColorClasses(competencia.ole)}`
+                                    : "w-10 h-10 bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                }`}
+                                onClick={() => {
+                                  if (!tabelaSomenteLeitura) setEditandoCelula(key);
+                                }}
+                              >
+                                {competencia ? <span className="text-xs font-mono">{competencia.ole}%</span> : "-"}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                      {mostrarColunaEliminar && (
+                        <td className="p-3 text-center sticky right-0 bg-white z-10">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {}}
+                            className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
