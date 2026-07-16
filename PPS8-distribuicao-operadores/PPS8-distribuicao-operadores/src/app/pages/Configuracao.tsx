@@ -332,6 +332,7 @@ export default function Configuracao() {
   const [loadingFamilias, setLoadingFamilias] = useState(false);
   const [filtroOperador, setFiltroOperador] = useState("");
   const [filtroOperacoesSelecionadas, setFiltroOperacoesSelecionadas] = useState<string[]>([]);
+  const [searchOperacoes, setSearchOperacoes] = useState("");
   const [filtroPolivalenciaMin, setFiltroPolivalenciaMin] = useState("");
   const [ordenacaoPolivalencia, setOrdenacaoPolivalencia] = useState<"nenhuma" | "asc" | "desc">("nenhuma");
   const [showFiltros, setShowFiltros] = useState(false);
@@ -586,6 +587,21 @@ export default function Configuracao() {
 
   const celulaKey = (opId: string, pol: string) => `${opId}-${pol}`;
   const mostrarColunaEliminar = false;
+  const colunasOperacoesFiltradas = useMemo(() => {
+    const normalizedSearch = normalizeText(searchOperacoes);
+    if (!normalizedSearch) return colunasBasePolivalencia;
+
+    return colunasBasePolivalencia.filter((col) => {
+      const operacaoInfo = operacoesPorNome.get(normalizeText(col));
+      const searchableParts = [
+        normalizeText(col),
+        normalizeText(operacaoInfo?.id || ""),
+        normalizeText(operacaoInfo?.nome || ""),
+      ];
+      return searchableParts.some((part) => part.includes(normalizedSearch));
+    });
+  }, [colunasBasePolivalencia, operacoesPorNome, searchOperacoes]);
+
   const colunasPolivalencia = useMemo(() => {
     if (filtroOperacoesSelecionadas.length === 0) return colunasBasePolivalencia;
     const selected = new Set(filtroOperacoesSelecionadas.map((op) => normalizeText(op)));
@@ -792,8 +808,16 @@ export default function Configuracao() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-[320px] p-2">
-                    <div className="max-h-64 overflow-auto space-y-1">
-                      {colunasBasePolivalencia.map((op) => {
+                    <div className="space-y-2 pb-2 border-b border-gray-200">
+                      <Input
+                        value={searchOperacoes}
+                        onChange={(e) => setSearchOperacoes(e.target.value)}
+                        placeholder="Pesquisar por id ou operação..."
+                        className="text-xs h-8 bg-white"
+                      />
+                    </div>
+                    <div className="max-h-64 overflow-auto space-y-1 pt-2">
+                      {colunasOperacoesFiltradas.map((op) => {
                         const checked = filtroOperacoesSelecionadas.some(
                           (item) => normalizeText(item) === normalizeText(op)
                         );
