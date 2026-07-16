@@ -797,6 +797,7 @@ export default function Configuracao() {
                         const checked = filtroOperacoesSelecionadas.some(
                           (item) => normalizeText(item) === normalizeText(op)
                         );
+                        const operacaoInfo = operacoesPorNome.get(normalizeText(op));
                         return (
                           <button
                             key={op}
@@ -805,7 +806,14 @@ export default function Configuracao() {
                             className="w-full flex items-center justify-between px-2 py-1.5 text-xs rounded-sm hover:bg-gray-100"
                           >
                             <span className="text-left">{op}</span>
-                            {checked ? <Check className="w-3.5 h-3.5 text-blue-600" /> : null}
+                            <span className="flex items-center gap-2">
+                              {operacaoInfo?.id ? (
+                                <span className="text-right text-[11px] text-gray-400">
+                                  {operacaoInfo.id}
+                                </span>
+                              ) : null}
+                              {checked ? <Check className="w-3.5 h-3.5 text-blue-600" /> : null}
+                            </span>
                           </button>
                         );
                       })}

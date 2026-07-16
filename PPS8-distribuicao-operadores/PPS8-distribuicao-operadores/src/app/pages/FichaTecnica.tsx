@@ -1758,87 +1758,9 @@ export default function FichaTecnica() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Lista de Produtos (sidebar) */}
-        <div className="lg:col-span-1 space-y-3">
-          <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
-            <CardHeader className="border-b border-gray-200 pb-3">
-              <CardTitle className="flex items-center justify-between gap-2 text-sm font-semibold text-gray-900">
-                <div className="flex items-center gap-2">
-                  <Package className="w-4 h-4 text-blue-600" />
-                  Fichas Tecnicas ({produtos.length})
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 rounded-sm p-0 hover:bg-gray-100"
-                  onClick={() => setShowPesquisaFichas((current) => !current)}
-                >
-                  <Search className="w-4 h-4" />
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 space-y-2">
-              {showPesquisaFichas && (
-                <Input
-                  value={pesquisaFichas}
-                  onChange={(e) => setPesquisaFichas(e.target.value)}
-                  placeholder="Pesquisar fichas..."
-                  className="rounded-sm text-sm"
-                />
-              )}
-              <div className="max-h-[32rem] overflow-y-auto pr-1 space-y-2">
-                {produtosFiltrados.map((prod) => (
-                  <div
-                    key={prod.id}
-                    className={`p-3 rounded-sm border-2 cursor-pointer transition-all ${
-                      produtoSelecionado === prod.id
-                        ? "border-blue-300 bg-blue-50/50"
-                        : "border-gray-200 bg-white hover:border-gray-300"
-                    }`}
-                    onClick={() => handleSelecionarFicha(prod.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm text-gray-900 truncate">
-                          {prod.nome}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {prod.descricao || prod.referencia}
-                        </div>
-                        {prod.cliente && (
-                          <div className="text-xs text-gray-400 mt-0.5">{prod.cliente}</div>
-                        )}
-                        <div className="flex items-center gap-2 mt-2">
-                          <Badge variant="secondary" className="text-xs rounded-sm">
-                            {prod.operacoes.length} ops
-                          </Badge>
-                          <span className="text-xs text-gray-400 font-mono">
-                            {prod.operacoes.reduce((s, o) => s + o.tempo, 0).toFixed(1)} min
-                          </span>
-                        </div>
-                      </div>
-                      <ChevronRight
-                        className={`w-4 h-4 flex-shrink-0 transition-colors ${
-                          produtoSelecionado === prod.id ? "text-blue-500" : "text-gray-300"
-                        }`}
-                      />
-                    </div>
-                  </div>
-                ))}
-                {produtos.length > 0 && produtosFiltrados.length === 0 && (
-                  <div className="rounded-sm border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
-                    Nenhuma ficha corresponde à pesquisa.
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
+      <div className="grid grid-cols-1 gap-6">
         {/* Ficha Tecnica do Produto */}
-        <div className="lg:col-span-3 space-y-6">
+        <div className="space-y-6">
           {!produto ? (
             <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
               <CardContent className="p-16 text-center">
