@@ -741,6 +741,22 @@ const extrairDistribuicaoDeTableData = (
 };
 
 const extrairMensagemErro = (error: unknown): string => {
+  const formatListMessage = (message: string): string => {
+    const trimmed = message.trim();
+    const parts = trimmed.split(/:(.+)/s);
+    if (parts.length !== 3) return trimmed;
+
+    const prefix = parts[0].trim();
+    const listPart = parts[1].trim();
+    const items = listPart
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (items.length < 2) return trimmed;
+    return `${prefix}:\n${items.map((item) => `- ${item}`).join("\n")}`;
+  };
+
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as
       | { detail?: unknown; message?: string; error?: string }
@@ -765,17 +781,17 @@ const extrairMensagemErro = (error: unknown): string => {
       if (linhas.length > 0) return linhas.join("\n");
     }
 
-    if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
+    if (typeof data?.detail === "string" && data.detail.trim()) return formatListMessage(data.detail);
     if (data?.detail && typeof data.detail === "object") {
       const detail = data.detail as { message?: unknown };
-      if (typeof detail.message === "string" && detail.message.trim()) return detail.message;
+      if (typeof detail.message === "string" && detail.message.trim()) return formatListMessage(detail.message);
     }
-    if (typeof data?.message === "string" && data.message.trim()) return data.message;
-    if (typeof data?.error === "string" && data.error.trim()) return data.error;
-    if (typeof error.message === "string" && error.message.trim()) return error.message;
+    if (typeof data?.message === "string" && data.message.trim()) return formatListMessage(data.message);
+    if (typeof data?.error === "string" && data.error.trim()) return formatListMessage(data.error);
+    if (typeof error.message === "string" && error.message.trim()) return formatListMessage(error.message);
   }
 
-  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error instanceof Error && error.message.trim()) return formatListMessage(error.message);
   return "Ocorreu um erro inesperado.";
 };
 
@@ -3873,7 +3889,9 @@ export default function Home() {
             <DialogContent className="max-w-md rounded-sm">
               <DialogHeader>
                 <DialogTitle>Erro</DialogTitle>
-                <DialogDescription>{erroPopupInline || ""}</DialogDescription>
+                <DialogDescription>
+                  <div className="whitespace-pre-wrap">{erroPopupInline || ""}</div>
+                </DialogDescription>
               </DialogHeader>
             </DialogContent>
           </Dialog>
@@ -3881,7 +3899,9 @@ export default function Home() {
             <DialogContent className="max-w-md rounded-sm">
               <DialogHeader>
                 <DialogTitle>Sucesso</DialogTitle>
-                <DialogDescription>{sucessoPopupInline || ""}</DialogDescription>
+                <DialogDescription>
+                  <div className="whitespace-pre-wrap">{sucessoPopupInline || ""}</div>
+                </DialogDescription>
               </DialogHeader>
             </DialogContent>
           </Dialog>
@@ -4034,7 +4054,7 @@ export default function Home() {
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Erro ao calcular balanceamento</DialogTitle>
             <DialogDescription className="text-xs">
-              {erroCalculoModal || "Ocorreu um erro inesperado."}
+              <div className="whitespace-pre-wrap">{erroCalculoModal || "Ocorreu um erro inesperado."}</div>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

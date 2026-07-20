@@ -7,6 +7,7 @@ interface TabelaDistribuicaoProps {
   resultados: ResultadosBalanceamento;
   operadores: any[];
   operacoes: any[];
+  operatorOrder?: string[];
   onDistribuicaoChange?: (novaDistribuicao: DistribuicaoCarga[]) => void;
   unidadeTempo?: "min" | "s";
   viewMode?: "tempo" | "percentagem";
@@ -257,7 +258,8 @@ const resolveTableDataTotalPercentageForOperator = (
 const buildOperatorColumns = (
   rows: OperationAllocationRow[],
   operadores: any[],
-  operatorSlots: OperatorSlot[] = []
+  operatorSlots: OperatorSlot[] = [],
+  operatorOrder: string[] = []
 ): OperatorColumn[] => {
   const columns = new Map<string, OperatorColumn>();
 
@@ -302,11 +304,35 @@ const buildOperatorColumns = (
     });
   });
 
+  const operatorOrderMap = new Map<string, number>();
+  operatorOrder.forEach((code, index) => {
+    const key = normalizeKey(String(code || ""));
+    if (key && !operatorOrderMap.has(key)) {
+      operatorOrderMap.set(key, index);
+    }
+  });
+
   return Array.from(columns.values()).sort((a, b) => {
+    const aKey = a.key;
+    const bKey = b.key;
+    const aOrder = operatorOrderMap.has(aKey) ? operatorOrderMap.get(aKey)! : Number.MAX_SAFE_INTEGER;
+    const bOrder = operatorOrderMap.has(bKey) ? operatorOrderMap.get(bKey)! : Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    if (aOrder === Number.MAX_SAFE_INTEGER && bOrder === Number.MAX_SAFE_INTEGER) {
+      return a.key.localeCompare(b.key, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+    }
+
     const aPos = a.positionNumber ?? Number.MAX_SAFE_INTEGER;
     const bPos = b.positionNumber ?? Number.MAX_SAFE_INTEGER;
     if (aPos !== bPos) return aPos - bPos;
-    return a.code.localeCompare(b.code);
+    return a.code.localeCompare(b.code, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
   });
 };
 
@@ -606,6 +632,7 @@ function TabelaAllocacoes({
   resultados,
   operadores,
   operacoes,
+  operatorOrder = [],
   viewMode = "tempo",
   onViewModeChange,
   onConfirmarEdicao,
@@ -616,6 +643,7 @@ function TabelaAllocacoes({
   resultados: ResultadosBalanceamento;
   operadores: any[];
   operacoes: any[];
+  operatorOrder?: string[];
   viewMode?: "tempo" | "percentagem";
   onViewModeChange?: (mode: "tempo" | "percentagem") => void;
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
@@ -653,8 +681,8 @@ function TabelaAllocacoes({
     null;
 
   const operatorColumns = useMemo(
-    () => buildOperatorColumns(rows, operadores, operatorSlots),
-    [rows, operadores, operatorSlots]
+    () => buildOperatorColumns(rows, operadores, operatorSlots, operatorOrder),
+    [rows, operadores, operatorSlots, operatorOrder]
   );
 
   const totalsByOperator = useMemo(() => {
@@ -1155,6 +1183,7 @@ export function TabelaDistribuicao({
   resultados,
   operadores,
   operacoes,
+  operatorOrder,
   viewMode = "tempo",
   onViewModeChange,
   onConfirmarEdicao,
@@ -1167,6 +1196,7 @@ export function TabelaDistribuicao({
       resultados={resultados}
       operadores={operadores}
       operacoes={operacoes}
+      operatorOrder={operatorOrder}
       viewMode={viewMode}
       onViewModeChange={onViewModeChange}
       onConfirmarEdicao={onConfirmarEdicao}

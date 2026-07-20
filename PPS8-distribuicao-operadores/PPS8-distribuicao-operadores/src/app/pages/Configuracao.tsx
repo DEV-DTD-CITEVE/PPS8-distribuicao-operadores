@@ -119,8 +119,7 @@ const normalizeText = (value: string): string =>
     .toLowerCase()
     .trim();
 
-const POLYVALENCE_API_BASE = "http://localhost:7860/api";
-const POLYVALENCE_ENDPOINT = `${POLYVALENCE_API_BASE}/polyvalence/`;
+const POLYVALENCE_ENDPOINT = `${API_BASE_URL}/polyvalence/`;
 
 function maquinaToSimples(m: Maquina): MaquinaSimples {
   return {

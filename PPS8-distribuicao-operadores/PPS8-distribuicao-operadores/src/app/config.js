@@ -1,4 +1,4 @@
-const DEFAULT_LOCAL_API_BASE_URL = "http://localhost:7860/api";
+const DEFAULT_LOCAL_API_BASE_URL = "http://dev.citeve.pt:7860/api";
 const DEFAULT_DEV_CITEVE_API_BASE_URL = "http://dev.citeve.pt/texpact-wp2-pps8-balancer-api/api";
 const ENV_API_BASE_URL = import.meta?.env?.VITE_API_BASE_URL;
 
@@ -24,7 +24,10 @@ const getApiBaseUrl = () => {
     return normalizeBaseUrl(DEFAULT_LOCAL_API_BASE_URL);
   }
   if (hostname === "192.168.54.202") {
-    return "http://localhost:7860/api";
+    return "http://dev.citeve.pt:7860/api";
+  }
+  if (hostname === "192.168.105.83") {
+    return "http://192.168.105.83:7860/api";
   }
 
   return normalizeBaseUrl(ENV_API_BASE_URL || DEFAULT_LOCAL_API_BASE_URL);

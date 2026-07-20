@@ -346,7 +346,12 @@ export function DashboardResultados({
       appendOperator(String(dist?.operadorId || ""));
     });
 
-    return Array.from(ordered.values());
+    return Array.from(ordered.values()).sort((a, b) =>
+      normalizeKey(a).localeCompare(normalizeKey(b), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      })
+    );
   })();
   const operacaoById = new Map(
     (operacoes || []).map((operacao: any) => [String(operacao?.id || "").trim(), operacao])
@@ -745,6 +750,7 @@ export function DashboardResultados({
           resultados={resultados}
           operadores={operadores}
           operacoes={operacoes}
+          operatorOrder={orderedOperatorCodes}
           viewMode={viewMode}
           onViewModeChange={onViewModeChange}
           unidadeTempo="s"
