@@ -67,6 +67,27 @@ const pickNumber = (obj: ApiRecord, keys: string[]): number | null => {
   return null;
 };
 
+const buildTableDataFromDistribuicao = (distribuicao: any[]) =>
+  distribuicao
+    .map((dist: any) => ({
+      operator: String(dist?.operadorId ?? dist?.operator_id ?? dist?.operator ?? "").trim(),
+      occupancy: pickNumber(dist, ["ocupacao", "occupancy"]) ?? 0,
+      load_minutes: pickNumber(dist, ["cargaHoraria"]) ?? 0,
+      cycles_per_hour: pickNumber(dist, ["ciclosPorHora"]) ?? 0,
+    }))
+    .filter((row: any) => row.operator);
+
+const buildSharePerOperatorSeconds = (distribuicao: any[], cycleTimeSeconds: number) => {
+  if (cycleTimeSeconds <= 0) return null;
+  const perOperator: Record<string, number> = {};
+  distribuicao.forEach((dist: any) => {
+    const operatorId = String(dist?.operadorId ?? dist?.operator_id ?? dist?.operator ?? "").trim();
+    if (!operatorId) return;
+    perOperator[operatorId] = cycleTimeSeconds;
+  });
+  return Object.keys(perOperator).length > 0 ? perOperator : null;
+};
+
 const parseMetodo = (row: ApiRecord): 1 | 2 | 3 => {
   const modeText = pickString(row, ["mode_label", "method_label", "metodo_label", "mode"]);
   const modeKey = modeText
@@ -206,7 +227,8 @@ const buildResultadosFromDetail = (raw: ApiRecord): ResultadosBalanceamento => {
   );
   const taktSeconds = pickNumber(raw, ["takt_time_seconds", "takt_time", "taktTime"]) ?? 0;
   const cicloApi = pickNumber(raw, ["real_cycle_time_seconds", "cycle_time_seconds", "cycle_time", "tempo_ciclo_segundos"]) ?? 0;
-  const tempoCiclo = cicloApi > 10 ? cicloApi / 60 : cicloApi;
+  const cycleTimeSeconds = cicloApi;
+  const tempoCiclo = cycleTimeSeconds > 10 ? cycleTimeSeconds / 60 : cycleTimeSeconds;
   const produtividadeRaw = pickNumber(raw, ["estimated_productivity", "productivity_pct", "productivity", "produtividade", "efficiency"]) ?? 0;
   const produtividade = produtividadeRaw <= 1 ? produtividadeRaw * 100 : produtividadeRaw;
   const perdas = pickNumber(raw, ["balance_loss_pct", "perdas", "loss_pct"]) ?? Math.max(0, 100 - produtividade);
@@ -259,15 +281,34 @@ const buildResultadosFromDetail = (raw: ApiRecord): ResultadosBalanceamento => {
   const ocupacaoTotal =
     pickNumber(raw, ["occupancy_total", "ocupacao_total", "total_occupancy", "total_load"]) ??
     distribuicao.reduce((sum: number, d: any) => sum + ((pickNumber(d, ["cargaHoraria"]) ?? 0) * 60), 0);
+  const tableDataRaw =
+    raw?.table_data ??
+    raw?.tableData ??
+    raw?.operator_table ??
+    raw?.operatorTable ??
+    raw?.results_table ??
+    null;
+  const tableData = Array.isArray(tableDataRaw) && tableDataRaw.length > 0
+    ? tableDataRaw
+    : buildTableDataFromDistribuicao(distribuicao);
+  const operatorSlots = ensureArray(raw?.operator_slots ?? raw?.operatorSlots);
+  const sharePerOperatorSeconds =
+    raw?.share_per_operator_seconds ??
+    raw?.sharePerOperatorSeconds ??
+    buildSharePerOperatorSeconds(distribuicao, cycleTimeSeconds);
 
   return {
     distribuicao: distribuicao as any,
     operation_allocations: operationAllocations,
+    table_data: tableData as any,
+    operator_slots: operatorSlots as any,
+    share_per_operator_seconds: sharePerOperatorSeconds as any,
     machine_layout: resolveMachineLayout(raw),
     machine_times_per_operator: (raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator ?? null) as any,
     numeroCiclosPorHora: ciclosHora || 0,
     taktTime: taktSeconds / 60,
     tempoCiclo,
+    cycle_time_seconds: cycleTimeSeconds || undefined,
     produtividade,
     perdas,
     numeroOperadores: numeroOperadores || 0,

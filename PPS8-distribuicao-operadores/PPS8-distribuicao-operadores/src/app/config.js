@@ -25,12 +25,11 @@ const getApiBaseUrl = () => {
   }
   if (hostname === "192.168.54.202") {
     return "http://dev.citeve.pt:7860/api";
-  }
-  if (hostname === "192.168.105.83") {
+  } else if (hostname === "192.168.105.83") {
+    return "http://192.168.105.83:7860/api";
+  } else {
     return "http://192.168.105.83:7860/api";
   }
-
-  return normalizeBaseUrl(ENV_API_BASE_URL || DEFAULT_LOCAL_API_BASE_URL);
 };
 
 export const API_BASE_URL = getApiBaseUrl();

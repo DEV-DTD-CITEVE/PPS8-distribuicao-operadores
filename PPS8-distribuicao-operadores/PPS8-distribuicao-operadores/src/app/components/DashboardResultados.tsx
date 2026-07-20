@@ -178,14 +178,6 @@ export function DashboardResultados({
     const slots = Array.isArray((resultados as any)?.operator_slots) ? [...((resultados as any).operator_slots as any[])] : [];
     if (slots.length === 0) return [] as string[];
     return slots
-      .sort((a, b) => {
-        const aPos = Number(a?.position_number);
-        const bPos = Number(b?.position_number);
-        const safeAPos = Number.isFinite(aPos) ? aPos : Number.MAX_SAFE_INTEGER;
-        const safeBPos = Number.isFinite(bPos) ? bPos : Number.MAX_SAFE_INTEGER;
-        if (safeAPos !== safeBPos) return safeAPos - safeBPos;
-        return String(a?.operator_id || "").localeCompare(String(b?.operator_id || ""));
-      })
       .map((slot) => resolveOperatorCode(String(slot?.operator_id || slot?.operator_name || ""), operadores))
       .filter(Boolean);
   })();
@@ -225,6 +217,18 @@ export function DashboardResultados({
             : { operator: key, occupancy: value }
         )
       : [];
+  const tableDataOperatorCodes = (() => {
+    const ordered = new Map<string, string>();
+    tableRows.forEach((row: any) => {
+      const operatorRef = String(row?.operator ?? row?.operator_id ?? row?.operador ?? row?.operador_id ?? "").trim();
+      if (!operatorRef) return;
+      const resolved = resolveOperatorCode(operatorRef, operadores);
+      const normalized = normalizeKey(resolved || operatorRef);
+      if (!normalized || ordered.has(normalized)) return;
+      ordered.set(normalized, String(resolved || operatorRef));
+    });
+    return Array.from(ordered.values());
+  })();
   tableRows.forEach((row: any) => {
     const operatorRef = String(row?.operator ?? row?.operator_id ?? row?.operador ?? row?.operador_id ?? "").trim();
     if (!operatorRef) return;
@@ -330,6 +334,7 @@ export function DashboardResultados({
       }
     };
 
+    tableDataOperatorCodes.forEach(appendOperator);
     slotOrderedOperatorCodes.forEach(appendOperator);
 
     if (totaisSegundosPorOperador.size > 0 || maxSegundosPorOperador.size > 0) {
@@ -346,15 +351,13 @@ export function DashboardResultados({
       appendOperator(String(dist?.operadorId || ""));
     });
 
-    return Array.from(ordered.values()).sort((a, b) =>
-      normalizeKey(a).localeCompare(normalizeKey(b), undefined, {
-        numeric: true,
-        sensitivity: "base",
-      })
-    );
+    return Array.from(ordered.values());
   })();
   const operacaoById = new Map(
     (operacoes || []).map((operacao: any) => [String(operacao?.id || "").trim(), operacao])
+  );
+  const operacaoOrderById = new Map(
+    (operacoes || []).map((operacao: any, index: number) => [normalizeKey(String(operacao?.id || "").trim()), index])
   );
   const distribuicaoByOperator = new Map(
     (resultados.distribuicao || []).map((dist) => [normalizeKey(resolveOperatorCode(dist.operadorId, operadores)), dist])
@@ -487,6 +490,12 @@ export function DashboardResultados({
             return String(operacao?.id || operacao?.sequencia || rawId);
           })
           .filter((value): value is string => Boolean(value))
+          .sort((a, b) => {
+            const indiceA = operacaoOrderById.get(normalizeKey(a)) ?? Number.MAX_SAFE_INTEGER;
+            const indiceB = operacaoOrderById.get(normalizeKey(b)) ?? Number.MAX_SAFE_INTEGER;
+            if (indiceA !== indiceB) return indiceA - indiceB;
+            return a.localeCompare(b);
+          })
       : [];
     const fallbackTotal = Number(dist?.cargaHoraria) * 60;
     const totalFromAllocations = totaisSegundosPorOperador.get(normalizedOperatorCode);

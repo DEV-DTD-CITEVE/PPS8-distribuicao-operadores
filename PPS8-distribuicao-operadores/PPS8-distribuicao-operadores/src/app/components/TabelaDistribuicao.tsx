@@ -556,15 +556,7 @@ const tdBase = (bg: string, extra?: CSSProperties): CSSProperties => ({
   ...extra,
 });
 
-const sortOperationRows = (rows: OperationAllocationRow[]): OperationAllocationRow[] =>
-  [...rows].sort((a, b) => {
-    const aSeq = a.seq ?? Number.MAX_SAFE_INTEGER;
-    const bSeq = b.seq ?? Number.MAX_SAFE_INTEGER;
-    if (aSeq !== bSeq) return aSeq - bSeq;
-    const aKey = String(a.operation_code || a.operation_id || a.operation_name || "");
-    const bKey = String(b.operation_code || b.operation_id || b.operation_name || "");
-    return aKey.localeCompare(bKey);
-  });
+const sortOperationRows = (rows: OperationAllocationRow[]): OperationAllocationRow[] => [...rows];
 
 const buildRowsFromDistribuicao = (
   distribuicao: DistribuicaoCarga[],
@@ -579,9 +571,7 @@ const buildRowsFromDistribuicao = (
     }
   });
 
-  const orderedOps = [...operacoes].sort(
-    (a, b) => (parseNumberLike(a?.sequencia) ?? 0) - (parseNumberLike(b?.sequencia) ?? 0)
-  );
+  const orderedOps = [...operacoes];
 
   return orderedOps.map((op, index) => {
     const opId = String(op?.id || "");

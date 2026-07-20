@@ -140,6 +140,19 @@ const normalizeKey = (value: string): string =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+const ordenarOperacoesPelaBase = (operacoesIds: string[], operacoesBase: Operacao[]): string[] => {
+  const ordemPorId = new Map(
+    operacoesBase.map((operacao, index) => [normalizeKey(operacao.id), index])
+  );
+
+  return Array.from(new Set(operacoesIds.filter(Boolean))).sort((a, b) => {
+    const indiceA = ordemPorId.get(normalizeKey(a)) ?? Number.MAX_SAFE_INTEGER;
+    const indiceB = ordemPorId.get(normalizeKey(b)) ?? Number.MAX_SAFE_INTEGER;
+    if (indiceA !== indiceB) return indiceA - indiceB;
+    return a.localeCompare(b);
+  });
+};
+
 const extractDigits = (value: string): string => {
   const parts = value.match(/\d+/g);
   return parts ? parts.join("") : "";
@@ -363,7 +376,7 @@ const extrairDistribuicaoDeOperationAllocations = (
     const ocupacao = tempoCiclo > 0 ? (dados.tempoTotal / tempoCiclo) * 100 : 0;
     return {
       operadorId,
-      operacoes: Array.from(dados.operacoes),
+      operacoes: ordenarOperacoesPelaBase(Array.from(dados.operacoes), operacoesBase),
       cargaHoraria: dados.tempoTotal,
       ocupacao,
       ciclosPorHora: dados.tempoTotal > 0 ? 60 / dados.tempoTotal : 0,
@@ -504,7 +517,7 @@ const extrairOperacoesETemposDoRow = (
     extrairOperacoesPorReferencia(opsRaw, operacoesBase).forEach((opId) => operacoes.add(opId));
   }
 
-  return { operacoes: Array.from(operacoes), temposOperacoes };
+  return { operacoes: ordenarOperacoesPelaBase(Array.from(operacoes), operacoesBase), temposOperacoes };
 };
 
 const extrairDistribuicaoDeTableData = (
@@ -731,7 +744,7 @@ const extrairDistribuicaoDeTableData = (
 
     return {
       operadorId,
-      operacoes: Array.from(dados.operacoes),
+      operacoes: ordenarOperacoesPelaBase(Array.from(dados.operacoes), operacoesBase),
       cargaHoraria: dados.cargaHoraria,
       ocupacao: ocupacaoCalculada,
       ciclosPorHora: dados.cargaHoraria > 0 ? 60 / dados.cargaHoraria : 0,
@@ -813,12 +826,10 @@ const mapApiTaskToProduto = (raw: ApiRecord, index: number, familyId: string): P
   const taskId = pickString(raw, ["task_id","task_code","id","code"]) || `${familyId}-TASK-${String(index + 1).padStart(3, "0")}`;
   const taskName = pickString(raw, ["task_name","name","nome","description","descricao"]) || `Ficha ${index + 1}`;
   const operationsRaw = ensureArray(raw.operations ?? raw.operacoes ?? raw.steps ?? raw.sequence ?? raw.gama_operatoria).map((op, i) => mapApiOperation(op, i));
-  const operations = operationsRaw
-    .sort((a, b) => a.sequencia - b.sequencia)
-    .map((operation, operationIndex) => ({
-      ...operation,
-      sequencia: operationIndex + 1,
-    }));
+  const operations = operationsRaw.map((operation, operationIndex) => ({
+    ...operation,
+    sequencia: operationIndex + 1,
+  }));
   const numOperations = pickNumber(raw, ["num_operations", "numero_operacoes", "operations_count"]) ?? operations.length;
   const numCapableOperators = pickNumber(raw, ["num_capable_operators", "numero_operadores_disponiveis"]);
   const numDistinctMachines = pickNumber(raw, ["num_distinct_machines", "numero_maquinas_distintas"]);
@@ -1848,7 +1859,7 @@ export default function Home() {
       }
       return {
         operadorId,
-        operacoes: Array.from(dados.operacoes),
+        operacoes: ordenarOperacoesPelaBase(Array.from(dados.operacoes), operacoes),
         cargaHoraria,
         ocupacao: denominatorSeconds > 0 ? (dados.segundos / denominatorSeconds) * 100 : 0,
         ciclosPorHora: cargaHoraria > 0 ? 60 / cargaHoraria : 0,
@@ -2919,7 +2930,7 @@ export default function Home() {
         if (distribuicao.length === 0) {
           distribuicao = Object.entries(mapa).map(([operadorId, dados]) => ({
             operadorId,
-            operacoes: Array.from(dados.operacoes),
+            operacoes: ordenarOperacoesPelaBase(Array.from(dados.operacoes), operacoes),
             cargaHoraria: dados.tempoTotal,
             ocupacao: tempoCiclo > 0 ? (dados.tempoTotal / tempoCiclo) * 100 : 0,
             ciclosPorHora: dados.tempoTotal > 0 ? 60 / dados.tempoTotal : 0,
@@ -3103,7 +3114,7 @@ export default function Home() {
         if (distribuicao.length === 0) {
           distribuicao = Object.entries(mapa).map(([operadorId, dados]) => ({
             operadorId,
-            operacoes: Array.from(dados.operacoes),
+            operacoes: ordenarOperacoesPelaBase(Array.from(dados.operacoes), operacoes),
             cargaHoraria: dados.tempoTotal,
             ocupacao: tempoCiclo > 0 ? (dados.tempoTotal / tempoCiclo) * 100 : 0,
             ciclosPorHora: dados.tempoTotal > 0 ? 60 / dados.tempoTotal : 0,
@@ -3288,7 +3299,7 @@ export default function Home() {
         if (distribuicao.length === 0) {
           distribuicao = Object.entries(mapa).map(([operadorId, dados]) => ({
             operadorId,
-            operacoes: Array.from(dados.operacoes),
+            operacoes: ordenarOperacoesPelaBase(Array.from(dados.operacoes), operacoes),
             cargaHoraria: dados.tempoTotal,
             ocupacao: tempoCiclo > 0 ? (dados.tempoTotal / tempoCiclo) * 100 : 0,
             ciclosPorHora: dados.tempoTotal > 0 ? 60 / dados.tempoTotal : 0,
@@ -3424,7 +3435,7 @@ export default function Home() {
         }
         const distribuicao: DistItem[] = Object.entries(mapa).map(([operadorId, dados]) => ({
           operadorId,
-          operacoes: Array.from(dados.operacoes),
+          operacoes: ordenarOperacoesPelaBase(Array.from(dados.operacoes), operacoes),
           cargaHoraria: dados.tempoTotal,
           ocupacao: tempoCiclo > 0 ? (dados.tempoTotal / tempoCiclo) * 100 : 0,
           ciclosPorHora: dados.tempoTotal > 0 ? 60 / dados.tempoTotal : 0,
