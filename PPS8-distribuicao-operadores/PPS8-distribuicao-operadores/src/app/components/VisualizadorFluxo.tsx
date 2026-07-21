@@ -56,6 +56,11 @@ function EspinhaLayout({
   estacoesMapeadas, operatorColorMap, permitirCruzamento, swapMode, swapSource, swapTarget, onStationClick,
 }: EspinhaLayoutProps) {
   const colStyle = { flex: 1, minWidth: 110 } as const;
+  const flowSegmentCount = Object.values(flowByOperator).reduce(
+    (total, sequence) => total + Math.max(0, sequence.length - 1),
+    0
+  );
+  const corridorHeight = Math.max(160, Math.min(320, 80 + flowSegmentCount * 18));
 
   const [arrows, setArrows] = useState<ArrowDef[]>([]);
   const [activeOperator, setActiveOperator] = useState<string>("ALL");
@@ -200,9 +205,50 @@ function EspinhaLayout({
       const sameColumnLaneOffset =
         Math.max(fr.width, tr.width) / 2 + PORT_MARGIN + 22 + Math.floor(currentSegmentIndex / 2) * 8;
       const sameColumnLaneX = isSameColumn ? fromCenterX + sameColumnSide * sameColumnLaneOffset : null;
+      const sameSideDifferentColumns = startIsA === endIsA && !sameColumnByCards;
+      const movesRight = baseToX > baseFromX;
+      const fromSideX = (movesRight ? fr.right + PORT_MARGIN : fr.left - PORT_MARGIN) - cr.left;
+      const toSideX = (movesRight ? tr.left - PORT_MARGIN : tr.right + PORT_MARGIN) - cr.left;
+      const fromRowY = (fr.top + fr.height / 2) - cr.top;
+      const toRowY = (tr.top + tr.height / 2) - cr.top;
+      const rowStations = startIsA ? ladoA : ladoB;
+      const leftX = Math.min(baseFromX, baseToX);
+      const rightX = Math.max(baseFromX, baseToX);
+      const intermediateRects: DOMRect[] = [];
+      const hasIntermediateCard = rowStations.some((station) => {
+        if (station === est || station === next) return false;
+        const rect = cardRefs.current.get(station)?.getBoundingClientRect();
+        if (!rect) return false;
+        const centerX = rect.left + rect.width / 2 - cr.left;
+        if (centerX > leftX && centerX < rightX) {
+          intermediateRects.push(rect);
+          return true;
+        }
+        return false;
+      });
+      const corridorCenterY = (corridorTop + corridorBottom) / 2;
+      const clearRowY = hasIntermediateCard
+        ? corridorCenterY + (startIsA ? -16 : 16)
+        : startIsA ? corridorTop + 12 : corridorBottom - 12;
+      const horizontalLaneY = hasIntermediateCard
+        ? clearRowY + routeIndex * 24 * (startIsA ? -1 : 1)
+        : fromRowY + routeIndex * 24 * (startIsA ? 1 : -1);
+      const destinationApproachX = toSideX + (movesRight ? -12 : 12);
+      const usesOuterPorts = sameSideDifferentColumns && hasIntermediateCard;
       const d = startIsA !== endIsA && sameColumnByCards
         ? `M ${(baseFromX + fromPortOffset + baseToX + toPortOffset) / 2} ${startY} ` +
           `L ${(baseFromX + fromPortOffset + baseToX + toPortOffset) / 2} ${endY}`
+        : usesOuterPorts
+          ? `M ${fromCenterX} ${startY} ` +
+            `L ${fromCenterX} ${horizontalLaneY} ` +
+            `L ${toCenterX} ${horizontalLaneY} ` +
+            `L ${toCenterX} ${endY}`
+        : sameSideDifferentColumns
+          ? `M ${fromSideX} ${fromRowY} ` +
+            `L ${fromSideX} ${horizontalLaneY} ` +
+            `L ${destinationApproachX} ${horizontalLaneY} ` +
+            `L ${destinationApproachX} ${toRowY} ` +
+            `L ${toSideX} ${toRowY}`
         : isSameColumn
         ? `M ${fromCenterX} ${startY} ` +
           `L ${sameColumnLaneX} ${startY} ` +
@@ -226,10 +272,6 @@ function EspinhaLayout({
       });
     });
 
-    console.log(
-      "[EspinhaLayout] setas calculadas:",
-      newArrows.map(({ operator, key, d }) => ({ operator, key, d }))
-    );
     setArrows(newArrows);
   }, [flowByOperator, estacoesMapeadas, ladoA, ladoB, operatorColorMap]);
 
@@ -313,7 +355,7 @@ function EspinhaLayout({
       <div ref={layoutRef} style={{ position: "relative", width: "100%" }}>
         {/* Arrow overlay — pixel coords, no viewBox */}
         <svg
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 40, overflow: "visible" }}
+           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 0, overflow: "visible" }}
         >
           <defs>
             <marker
@@ -321,8 +363,8 @@ function EspinhaLayout({
               viewBox="0 0 10 10"
               refX="8"
               refY="5"
-              markerWidth="7"
-              markerHeight="7"
+              markerWidth="6"
+              markerHeight="6"
               markerUnits="userSpaceOnUse"
               orient="auto"
             >
@@ -338,12 +380,12 @@ function EspinhaLayout({
                 d={a.d}
                 fill="none"
                 stroke={color}
-                strokeWidth={isFocused ? 2.1 : 1.45}
-                strokeDasharray="4 3"
+                strokeWidth={isFocused ? 1.8 : 1.2}
+                strokeDasharray="4 4"
                 strokeLinecap="butt"
                 strokeLinejoin="round"
                 markerEnd="url(#flow-arrowhead)"
-                opacity={isFocused ? 0.95 : 0.7}
+                opacity={isFocused ? 0.9 : 0.62}
               />
             );
           })}
@@ -368,7 +410,7 @@ function EspinhaLayout({
             ))}
           </div>
 
-          <div className="h-24 relative">
+           <div className="relative" style={{ height: `${corridorHeight}px` }}>
             <div className="absolute inset-x-4 top-1/2 border-t-2 border-dashed border-gray-300" />
             <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 bg-gray-50 px-3 py-0.5 text-gray-400 text-[8px] font-semibold whitespace-nowrap">
               CORREDOR {permitirCruzamento ? "- CRUZAMENTO" : ""}
@@ -868,8 +910,6 @@ export function VisualizadorFluxo({
 
     const rawFlow = rawEspinha?.operator_Flow ?? rawEspinha?.operator_flow;
 
-    console.log("[VisualizadorFluxo] layouts.espinha.operator_Flow recebido:", rawFlow);
-
     if (rawFlow && typeof rawFlow === "object") {
       Object.entries(rawFlow as Record<string, unknown>).forEach(([operatorKeyRaw, rawSteps]) => {
         if (!Array.isArray(rawSteps) || rawSteps.length === 0) return;
@@ -883,7 +923,6 @@ export function VisualizadorFluxo({
           .sort((a, b) => a.step - b.step);
 
         const seq = ordered.map((entry) => entry.station);
-        console.log(`[VisualizadorFluxo] fluxo ${operatorKey}:`, seq);
         if (operatorKey && seq.length > 0) out[operatorKey] = seq;
       });
 
