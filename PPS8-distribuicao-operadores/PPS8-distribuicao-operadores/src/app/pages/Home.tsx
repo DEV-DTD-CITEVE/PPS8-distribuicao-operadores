@@ -125,7 +125,7 @@ const ensureRecord = (value: unknown): ApiRecord | null => {
   }
   if (value && typeof value === "object") {
     const record = value as ApiRecord;
-    const hasDirectKeys = ["code","id","name","description","operations","operacoes","task_id","task_code","family_id"].some((key) => key in record);
+    const hasDirectKeys = ["code","id","name","description","operations","operacoes","task_id","task_code","family_id","layouts","espinha","machine_layout","operator_flow"].some((key) => key in record);
     if (hasDirectKeys) return record;
     const nestedRecord = Object.values(record).find((entry) => entry && typeof entry === "object" && !Array.isArray(entry));
     if (nestedRecord && typeof nestedRecord === "object") return nestedRecord as ApiRecord;
@@ -1667,6 +1667,11 @@ export default function Home() {
   };
 
   const resolveMachineLayoutPorTipoInline = (raw: any, tipoLayout: "linha" | "espinha"): any[] => {
+    // A API nova devolve os dados por tipo dentro de `espinha`/`linha`.
+    // Mantemos também o formato antigo, onde estes campos estão na raiz.
+    const typedResponse =
+      raw?.[tipoLayout] ??
+      (tipoLayout === "espinha" ? raw?.spine ?? raw?.fishbone ?? raw?.backbone : raw?.line ?? raw?.linear ?? raw?.row);
     const layoutsRoot =
       raw?.layouts ??
       raw?.machine_layouts ??
@@ -1696,6 +1701,8 @@ export default function Home() {
 
     const source =
       layoutsRoot ??
+      typedResponse?.machine_layout ??
+      typedResponse?.machineLayout ??
       raw?.machine_layout ??
       raw?.machineLayout ??
       raw?.layout_machines ??
@@ -2019,6 +2026,8 @@ export default function Home() {
     const machineLayout = resolveMachineLayoutInline(raw);
     return {
       distribuicao: distribuicao as any,
+      espinha: (raw?.espinha ?? (currentResultados as any)?.espinha ?? null) as any,
+      layouts: (raw?.layouts ?? (currentResultados as any)?.layouts ?? null) as any,
       operation_allocations: operationAllocations as any,
       share_per_operator_seconds:
         ((shouldPreferDerivedOperatorMetrics
@@ -2040,7 +2049,7 @@ export default function Home() {
           null) as any,
       machine_layout:
         ((machineLayout.length > 0 ? machineLayout : resolveMachineLayoutInline(currentResultados)) ?? null) as any,
-      operator_flow: ((raw?.operator_flow ?? raw?.operatorFlow) ?? (currentResultados as any)?.operator_flow ?? null) as any,
+      operator_flow: (raw?.espinha?.operator_flow ?? (currentResultados as any)?.espinha?.operator_flow ?? null) as any,
       machine_times_per_operator:
         ((raw?.machine_times_per_operator ?? raw?.machineTimesPerOperator) ??
           (currentResultados as any)?.machine_times_per_operator ??
@@ -2944,12 +2953,14 @@ export default function Home() {
           distribuicao.reduce((sum, dist) => sum + dist.cargaHoraria * 60, 0);
 
         const resultadosApi = {
+          espinha: (r as any)?.espinha ?? (r as any)?.Espinha ?? null,
+          layouts: (r as any)?.layouts ?? null,
           distribuicao,
           operation_allocations: operationAllocations,
           share_per_operator_seconds: (r as any)?.share_per_operator_seconds ?? (r as any)?.sharePerOperatorSeconds ?? null,
           table_data: (r as any)?.table_data ?? (r as any)?.tableData ?? (r as any)?.operator_table ?? (r as any)?.operatorTable ?? (r as any)?.results_table ?? null,
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
-          operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
+          operator_flow: (r as any)?.espinha?.operator_flow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
           operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),
           kpis: (r as any)?.kpis ?? null,
@@ -3128,12 +3139,14 @@ export default function Home() {
           distribuicao.reduce((sum, dist) => sum + dist.cargaHoraria * 60, 0);
 
         const resultadosApi = {
+          espinha: (r as any)?.espinha ?? (r as any)?.Espinha ?? null,
+          layouts: (r as any)?.layouts ?? null,
           distribuicao,
           operation_allocations: operationAllocations,
           share_per_operator_seconds: (r as any)?.share_per_operator_seconds ?? (r as any)?.sharePerOperatorSeconds ?? null,
           table_data: (r as any)?.table_data ?? (r as any)?.tableData ?? (r as any)?.operator_table ?? (r as any)?.operatorTable ?? (r as any)?.results_table ?? null,
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
-          operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
+          operator_flow: (r as any)?.espinha?.operator_flow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
           operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),
           kpis: (r as any)?.kpis ?? null,
@@ -3313,12 +3326,14 @@ export default function Home() {
           distribuicao.reduce((sum, dist) => sum + dist.cargaHoraria * 60, 0);
 
         const resultadosApi = {
+          espinha: (r as any)?.espinha ?? (r as any)?.Espinha ?? null,
+          layouts: (r as any)?.layouts ?? null,
           distribuicao,
           operation_allocations: operationAllocations,
           share_per_operator_seconds: (r as any)?.share_per_operator_seconds ?? (r as any)?.sharePerOperatorSeconds ?? null,
           table_data: (r as any)?.table_data ?? (r as any)?.tableData ?? (r as any)?.operator_table ?? (r as any)?.operatorTable ?? (r as any)?.results_table ?? null,
           machine_layout: (r as any)?.machine_layout ?? (r as any)?.machineLayout ?? null,
-          operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
+          operator_flow: (r as any)?.espinha?.operator_flow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
           operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),
           kpis: (r as any)?.kpis ?? null,
@@ -3446,11 +3461,13 @@ export default function Home() {
           distribuicao.reduce((sum, dist) => sum + dist.cargaHoraria * 60, 0);
 
         const resultadosCustom = {
+          espinha: (r as any)?.espinha ?? (r as any)?.Espinha ?? null,
+          layouts: (r as any)?.layouts ?? null,
           distribuicao,
           operation_allocations: operationAllocations,
           share_per_operator_seconds: (r as any)?.share_per_operator_seconds ?? (r as any)?.sharePerOperatorSeconds ?? null,
           table_data: (r as any)?.table_data ?? (r as any)?.tableData ?? (r as any)?.operator_table ?? (r as any)?.operatorTable ?? (r as any)?.results_table ?? null,
-          operator_flow: (r as any)?.operator_flow ?? (r as any)?.operatorFlow ?? null,
+          operator_flow: (r as any)?.espinha?.operator_flow ?? null,
           machine_times_per_operator: (r as any)?.machine_times_per_operator ?? (r as any)?.machineTimesPerOperator ?? null,
           operator_slots: normalizeOperatorSlotsInline((r as any)?.operator_slots ?? (r as any)?.operatorSlots),
           kpis: (r as any)?.kpis ?? null,

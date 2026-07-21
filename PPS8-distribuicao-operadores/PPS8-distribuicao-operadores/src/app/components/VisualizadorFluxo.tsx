@@ -69,7 +69,6 @@ function EspinhaLayout({
     const PORT_MARGIN = 8;
     const PORT_SPLIT = 10;
     const OPERATOR_PORT_STEP = 12;
-    const SEGMENT_LANE_STEP = 12;
 
     type SegmentInfo = {
       operatorId: string;
@@ -87,9 +86,6 @@ function EspinhaLayout({
       fluxoSeq.slice(0, -1).forEach((est, idx) => {
         const next = fluxoSeq[idx + 1];
         if (!next) return;
-        const fromData = estacoesMapeadas[est];
-        if (!fromData || (fromData.maquina === "" && fromData.operador === "")) return;
-
         const fromEl = cardRefs.current.get(est);
         const toEl = cardRefs.current.get(next);
         if (!fromEl || !toEl) return;
@@ -142,6 +138,13 @@ function EspinhaLayout({
     const laneStartY = corridorTop + 6;
     const laneEndY = corridorBottom - 6;
     const laneSpan = Math.max(0, laneEndY - laneStartY);
+    const segmentLaneY = new Map<SegmentInfo, number>();
+    segments.forEach((segment, index) => {
+      const laneY = segments.length <= 1
+        ? (laneStartY + laneEndY) / 2
+        : laneStartY + (laneSpan * index) / (segments.length - 1);
+      segmentLaneY.set(segment, laneY);
+    });
     const operatorLaneY = new Map<string, number>();
     operatorIds.forEach((operatorId, index) => {
       const laneY =
@@ -151,18 +154,38 @@ function EspinhaLayout({
       operatorLaneY.set(operatorId, laneY);
     });
 
-    const operatorSegmentCounts = new Map<string, number>();
-    segments.forEach(({ operatorId }) => {
-      operatorSegmentCounts.set(operatorId, (operatorSegmentCounts.get(operatorId) || 0) + 1);
-    });
     const operatorSegmentIndex = new Map<string, number>();
+    const outgoingGroups = new Map<string, SegmentInfo[]>();
+    const incomingGroups = new Map<string, SegmentInfo[]>();
+    const routeGroups = new Map<string, SegmentInfo[]>();
+    segments.forEach((segment) => {
+      outgoingGroups.set(segment.est, [...(outgoingGroups.get(segment.est) || []), segment]);
+      incomingGroups.set(segment.next, [...(incomingGroups.get(segment.next) || []), segment]);
+      const routeKey = [segment.est, segment.next].sort().join("<->");
+      routeGroups.set(routeKey, [...(routeGroups.get(routeKey) || []), segment]);
+    });
 
     segments.forEach((segment) => {
       const { operatorId, est, next, idx, fromEl, toEl, startIsA, endIsA } = segment;
+      const outgoing = outgoingGroups.get(est) || [segment];
+      const incoming = incomingGroups.get(next) || [segment];
+      const outgoingIndex = outgoing.indexOf(segment);
+      const incomingIndex = incoming.indexOf(segment);
+      const outgoingOffset = (outgoingIndex - (outgoing.length - 1) / 2) * 12;
+      const incomingOffset = (incomingIndex - (incoming.length - 1) / 2) * 12;
+      const routeKey = [est, next].sort().join("<->");
+      const routeGroup = routeGroups.get(routeKey) || [segment];
+      const routeIndex = routeGroup.indexOf(segment);
+      const routeOffset = (routeIndex - (routeGroup.length - 1) / 2) * 14;
       const fr = fromEl.getBoundingClientRect();
       const tr = toEl.getBoundingClientRect();
-      const fromCenterX = fr.left + fr.width / 2 + operatorPortOffset(est, operatorId) - cr.left;
-      const toCenterX = tr.left + tr.width / 2 + operatorPortOffset(next, operatorId) - cr.left;
+      const baseFromX = fr.left + fr.width / 2 - cr.left;
+      const baseToX = tr.left + tr.width / 2 - cr.left;
+      const fromPortOffset = operatorPortOffset(est, operatorId) + outgoingOffset + routeOffset;
+      const toPortOffset = operatorPortOffset(next, operatorId) + incomingOffset + routeOffset;
+      const fromCenterX = baseFromX + fromPortOffset;
+      const toCenterX = baseToX + toPortOffset;
+      const sameColumnByCards = Math.abs(baseToX - baseFromX) < PORT_SPLIT * 2.5;
       const isNearSameColumn = Math.abs(toCenterX - fromCenterX) < PORT_SPLIT * 2.5;
       const startX = isNearSameColumn ? fromCenterX : fromCenterX + PORT_SPLIT;
       const endX = isNearSameColumn ? toCenterX : toCenterX - PORT_SPLIT;
@@ -170,14 +193,25 @@ function EspinhaLayout({
       const endY = (endIsA ? tr.bottom + PORT_MARGIN : tr.top - PORT_MARGIN) - cr.top;
       const currentSegmentIndex = operatorSegmentIndex.get(operatorId) || 0;
       operatorSegmentIndex.set(operatorId, currentSegmentIndex + 1);
-      const totalSegments = operatorSegmentCounts.get(operatorId) || 1;
-      const segmentCenter = (totalSegments - 1) / 2;
-      const segmentOffset = (currentSegmentIndex - segmentCenter) * SEGMENT_LANE_STEP;
-      const baseLaneY = operatorLaneY.get(operatorId) ?? (corridorTop + corridorBottom) / 2;
-      const laneY = Math.max(laneStartY, Math.min(laneEndY, baseLaneY + segmentOffset));
-      const isDirectVertical = Math.abs(endX - startX) < 2;
-      const d = isDirectVertical
-        ? `M ${startX} ${startY} L ${endX} ${endY}`
+      const baseLaneY = segmentLaneY.get(segment) ?? operatorLaneY.get(operatorId) ?? (corridorTop + corridorBottom) / 2;
+      const laneY = Math.max(laneStartY, Math.min(laneEndY, baseLaneY));
+      const isSameColumn = sameColumnByCards && isNearSameColumn;
+      const sameColumnSide = currentSegmentIndex % 2 === 0 ? -1 : 1;
+      const sameColumnLaneOffset =
+        Math.max(fr.width, tr.width) / 2 + PORT_MARGIN + 22 + Math.floor(currentSegmentIndex / 2) * 8;
+      const sameColumnLaneX = isSameColumn ? fromCenterX + sameColumnSide * sameColumnLaneOffset : null;
+      const d = startIsA !== endIsA && sameColumnByCards
+        ? `M ${(baseFromX + fromPortOffset + baseToX + toPortOffset) / 2} ${startY} ` +
+          `L ${(baseFromX + fromPortOffset + baseToX + toPortOffset) / 2} ${endY}`
+        : isSameColumn
+        ? `M ${fromCenterX} ${startY} ` +
+          `L ${sameColumnLaneX} ${startY} ` +
+          `L ${sameColumnLaneX} ${endY} ` +
+          `L ${toCenterX} ${endY}`
+        : startIsA === endIsA
+          ? `M ${fromCenterX} ${startY} ` +
+            `L ${toCenterX} ${startY} ` +
+            `L ${toCenterX} ${endY}`
         : `M ${startX} ${startY} ` +
           `L ${startX} ${laneY} ` +
           `L ${endX} ${laneY} ` +
@@ -192,6 +226,10 @@ function EspinhaLayout({
       });
     });
 
+    console.log(
+      "[EspinhaLayout] setas calculadas:",
+      newArrows.map(({ operator, key, d }) => ({ operator, key, d }))
+    );
     setArrows(newArrows);
   }, [flowByOperator, estacoesMapeadas, ladoA, ladoB, operatorColorMap]);
 
@@ -408,13 +446,11 @@ function EspinhaLayout({
                   </span>
                   {seq.map((est, i) => {
                     const isA = est.startsWith("A");
-                    const nextEst = seq[i + 1];
-                    const isCross = nextEst && nextEst.charAt(0) !== est.charAt(0);
                     return (
                       <span key={`flow-${opId}-${i}-${est}`} className="flex items-center gap-1">
                         <span className={`text-[13px] font-mono font-bold px-1.5 py-1 rounded-sm leading-none ${isA ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>{est}</span>
                         {i < seq.length - 1 && (
-                          <span className={`text-[13px] font-semibold leading-none ${isCross ? "text-amber-500" : "text-gray-400"}`}>{isCross ? "<->" : "->"}</span>
+                          <span className="text-[13px] font-semibold leading-none text-gray-400">-&gt;</span>
                         )}
                       </span>
                     );
@@ -826,45 +862,40 @@ export function VisualizadorFluxo({
   }, [estacoesMapeadas, operadoresPorEstacaoPreview]);
 
   const flowByOperatorFromApi = useMemo(() => {
-    const rawFlow = (resultados as any)?.operator_flow ?? (resultados as any)?.operatorFlow;
-    if (!rawFlow || typeof rawFlow !== "object") return {} as Record<string, string[]>;
-
-    const flowEntries = Object.entries(rawFlow as Record<string, unknown>);
     const out: Record<string, string[]> = {};
 
-    flowEntries.forEach(([operatorKeyRaw, rawSteps]) => {
-      if (!Array.isArray(rawSteps) || rawSteps.length === 0) return;
-      const operatorKey = resolveOperatorCode(String(operatorKeyRaw || "").trim()) || String(operatorKeyRaw || "").trim();
-      const ordered = [...rawSteps]
-        .map((entry: any, idx) => ({
-          step: Number(entry?.step ?? idx + 1),
-          station: extrairCodigoEstacao(entry?.position_label ?? entry?.position ?? entry),
-        }))
-        .filter((entry) => entry.station)
-        .sort((a, b) => a.step - b.step);
+    const rawEspinha = (resultados as any)?.layouts?.espinha;
 
-      const seq: string[] = [];
-      ordered.forEach((entry) => {
-        if (seq.length === 0 || seq[seq.length - 1] !== entry.station) {
-          seq.push(entry.station);
-        }
+    const rawFlow = rawEspinha?.operator_Flow ?? rawEspinha?.operator_flow;
+
+    console.log("[VisualizadorFluxo] layouts.espinha.operator_Flow recebido:", rawFlow);
+
+    if (rawFlow && typeof rawFlow === "object") {
+      Object.entries(rawFlow as Record<string, unknown>).forEach(([operatorKeyRaw, rawSteps]) => {
+        if (!Array.isArray(rawSteps) || rawSteps.length === 0) return;
+        const operatorKey = resolveOperatorCode(String(operatorKeyRaw || "").trim()) || String(operatorKeyRaw || "").trim();
+        const ordered = [...rawSteps]
+          .map((entry: any, idx) => ({
+            step: Number(entry?.step ?? idx + 1),
+            station: extrairCodigoEstacao(entry?.position_label ?? entry?.position ?? entry),
+          }))
+          .filter((entry) => entry.station)
+          .sort((a, b) => a.step - b.step);
+
+        const seq = ordered.map((entry) => entry.station);
+        console.log(`[VisualizadorFluxo] fluxo ${operatorKey}:`, seq);
+        if (operatorKey && seq.length > 0) out[operatorKey] = seq;
       });
-      if (operatorKey && seq.length > 0) out[operatorKey] = seq;
-    });
+
+      if (Object.keys(out).length > 0) return out;
+    }
 
     return out;
   }, [resultados, extrairCodigoEstacao, resolveOperatorCode]);
 
   const flowByOperatorVisual = useMemo(() => {
-    const grouped: Record<string, string[]> = {};
-    estacoesBase.forEach((estacao) => {
-      const operador = String(estacoesMapeadasVisuais[estacao]?.operador || "").trim();
-      if (!operador) return;
-      if (!grouped[operador]) grouped[operador] = [];
-      grouped[operador].push(estacao);
-    });
-    return grouped;
-  }, [estacoesBase, estacoesMapeadasVisuais]);
+    return flowByOperatorFromApi;
+  }, [flowByOperatorFromApi]);
 
   const handleStationClick = useCallback((station: string) => {
     if (!swapMode) return;
