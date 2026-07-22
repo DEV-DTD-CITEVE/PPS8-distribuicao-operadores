@@ -38,6 +38,7 @@ import { AtribuicaoManual } from "../components/AtribuicaoManual";
 import { SearchableCombobox } from "../components/SearchableCombobox";
 import * as XLSX from "xlsx";
 import axios from "axios";
+import { useStorage } from "../contexts/StorageContext";
 import { API_BASE_URL } from "../config";
 
 type ApiRecord = Record<string, any>;
@@ -486,8 +487,12 @@ const buildImportMetadataFromFileName = (fileName: string): ExcelImportMetadata 
 };
 
 export default function FichaTecnica() {
+  const { dados, salvar } = useStorage();
+  const fichaTecnicaGuardada = dados.configuracao.fichaTecnicaSelecionada;
   const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [produtoSelecionado, setProdutoSelecionado] = useState<string | null>(null);
+  const [produtoSelecionado, setProdutoSelecionado] = useState<string | null>(
+    fichaTecnicaGuardada?.fichaId || null
+  );
   const [showNovoProduto, setShowNovoProduto] = useState(false);
   const [showNovaOperacao, setShowNovaOperacao] = useState(false);
   const [editandoOperacao, setEditandoOperacao] = useState<string | null>(null);
@@ -506,7 +511,9 @@ export default function FichaTecnica() {
   const [pesquisaImportacao, setPesquisaImportacao] = useState("");
   const [showPesquisaImportacao, setShowPesquisaImportacao] = useState(false);
   const [familias, setFamilias] = useState<FamilyOption[]>([]);
-  const [grupoArtigoSelecionado, setGrupoArtigoSelecionado] = useState<string>("");
+  const [grupoArtigoSelecionado, setGrupoArtigoSelecionado] = useState<string>(
+    fichaTecnicaGuardada?.grupoArtigoId || ""
+  );
   const [loadingFamilias, setLoadingFamilias] = useState(false);
   const [loadingFichas, setLoadingFichas] = useState(false);
   const [loadingFichaPorCodigo, setLoadingFichaPorCodigo] = useState(false);
@@ -522,11 +529,23 @@ export default function FichaTecnica() {
   const operacaoPendenteSyncCodeRef = useRef<string | null>(null);
   const produtosRef = useRef<Produto[]>([]);
   const produtoSelecionadoRef = useRef<string | null>(null);
+  const sincronizacaoInicialRef = useRef(false);
 
   const setOperacaoPendenteSync = (index: number | null, code: string | null) => {
     operacaoPendenteSyncIndexRef.current = index;
     operacaoPendenteSyncCodeRef.current = code;
   };
+
+  useEffect(() => {
+    if (!dados.pronto || sincronizacaoInicialRef.current) return;
+    sincronizacaoInicialRef.current = true;
+    const fichaGuardada = dados.configuracao.fichaTecnicaSelecionada;
+    if (fichaGuardada?.grupoArtigoId) setGrupoArtigoSelecionado(fichaGuardada.grupoArtigoId);
+    if (fichaGuardada?.fichaId) {
+      produtoSelecionadoRef.current = fichaGuardada.fichaId;
+      setProdutoSelecionado(fichaGuardada.fichaId);
+    }
+  }, [dados.pronto]);
 
   const operadores = operadoresMock;
   const familiaOptions = familias.map((familia) => ({
@@ -644,14 +663,26 @@ export default function FichaTecnica() {
         );
 
         setProdutos(fichas);
-        const selecionadoAnterior = produtoSelecionadoRef.current;
-        const proximoSelecionado = fichas.some((ficha) => ficha.id === selecionadoAnterior)
-          ? selecionadoAnterior
-          : fichas[0]?.id || null;
+        const fichaGuardada = dados.configuracao.fichaTecnicaSelecionada;
+        const proximoSelecionado =
+          fichaGuardada?.grupoArtigoId === grupoArtigoSelecionado &&
+          fichas.some((ficha) => ficha.id === fichaGuardada?.fichaId)
+            ? fichaGuardada.fichaId
+            : fichas.some((ficha) => ficha.id === produtoSelecionadoRef.current)
+              ? produtoSelecionadoRef.current
+              : fichas[0]?.id || null;
         setProdutoSelecionado(proximoSelecionado);
 
         if (proximoSelecionado) {
           produtoSelecionadoRef.current = proximoSelecionado;
+          void salvar({
+            configuracao: {
+              fichaTecnicaSelecionada: {
+                grupoArtigoId: grupoArtigoSelecionado,
+                fichaId: proximoSelecionado,
+              },
+            },
+          });
           void handleCarregarFichaPorCodigo(proximoSelecionado, fichas);
         }
       } catch (error) {
@@ -741,6 +772,14 @@ export default function FichaTecnica() {
   const handleSelecionarFicha = (produtoId: string) => {
     produtoSelecionadoRef.current = produtoId;
     setProdutoSelecionado(produtoId);
+    void salvar({
+      configuracao: {
+        fichaTecnicaSelecionada: {
+          grupoArtigoId: grupoArtigoSelecionado,
+          fichaId: produtoId,
+        },
+      },
+    });
     setOperacaoPendenteSync(null, null);
     setAtribuicoesManual({});
     void handleCarregarFichaPorCodigo(produtoId);

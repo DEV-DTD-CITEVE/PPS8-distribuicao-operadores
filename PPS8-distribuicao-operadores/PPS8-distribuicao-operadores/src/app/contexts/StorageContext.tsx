@@ -58,6 +58,11 @@ export interface DadosSessao {
   maquinas: Maquina[];
   configuracao: {
     grupoArtigoSelecionado: string;
+    /** Ficha técnica activa transversal aos separadores */
+    fichaTecnicaSelecionada: {
+      grupoArtigoId: string;
+      fichaId: string;
+    } | null;
     operacoesManual: any[];
     layoutConfig: any;
     dadosUnidades: {
@@ -81,6 +86,7 @@ const dadosPadrao: DadosSessao = {
   maquinas: maquinasMock,
   configuracao: {
     grupoArtigoSelecionado: "",
+    fichaTecnicaSelecionada: null,
     operacoesManual: [],
     layoutConfig: {
       tipoLayout: "linha",

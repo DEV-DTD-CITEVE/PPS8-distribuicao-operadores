@@ -1127,7 +1127,9 @@ export default function Home() {
   const [familias, setFamilias] = useState<FamilyOption[]>([]);
   const [loadingFamilias, setLoadingFamilias] = useState(false);
   const [produtosApi, setProdutosApi] = useState<Produto[]>([]);
-  const [produtoSelecionado, setProdutoSelecionado] = useState<string | null>(null);
+  const [produtoSelecionado, setProdutoSelecionado] = useState<string | null>(
+    confGuardada.fichaTecnicaSelecionada?.fichaId || null
+  );
   const [loadingFichas, setLoadingFichas] = useState(false);
   const [candidatePoolsByOperation, setCandidatePoolsByOperation] = useState<Record<string, string[]>>({});
   const [quantidadeObjetivoInput, setQuantidadeObjetivoInput] = useState("");
@@ -1312,11 +1314,25 @@ export default function Home() {
         const technicalSheets = ensureArray(resposta.data);
         const fichas = technicalSheets.map((sheet, index) => mapApiTaskToProduto(sheet, index, grupoArtigoSelecionado));
         setProdutosApi(fichas);
-        let proximoSelecionado: string | null = null;
-        setProdutoSelecionado((prev) => {
-          proximoSelecionado = fichas.some((f) => f.id === prev) ? prev : fichas[0]?.id || null;
-          return proximoSelecionado;
-        });
+        const fichaGuardada = dados.configuracao.fichaTecnicaSelecionada;
+        const fichaGuardadaPertenceAFamilia = fichaGuardada?.grupoArtigoId === grupoArtigoSelecionado;
+        const proximoSelecionado =
+          (fichaGuardadaPertenceAFamilia && fichas.some((f) => f.id === fichaGuardada?.fichaId)
+            ? fichaGuardada?.fichaId
+            : produtoSelecionado && fichas.some((f) => f.id === produtoSelecionado)
+              ? produtoSelecionado
+              : fichas[0]?.id) || null;
+        setProdutoSelecionado(proximoSelecionado);
+        if (proximoSelecionado) {
+          void salvar({
+            configuracao: {
+              fichaTecnicaSelecionada: {
+                grupoArtigoId: grupoArtigoSelecionado,
+                fichaId: proximoSelecionado,
+              },
+            },
+          });
+        }
       } catch (error) {
         console.error("Erro ao carregar fichas da familia:", error);
         setErroApi("Nao foi possivel carregar fichas tecnicas da familia selecionada.");
@@ -1331,6 +1347,14 @@ export default function Home() {
 
   const handleSelecionarFicha = (produtoId: string) => {
     setProdutoSelecionado(produtoId);
+    void salvar({
+      configuracao: {
+        fichaTecnicaSelecionada: {
+          grupoArtigoId: grupoArtigoSelecionado,
+          fichaId: produtoId,
+        },
+      },
+    });
   };
 
   useEffect(() => {
