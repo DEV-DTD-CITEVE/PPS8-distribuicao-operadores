@@ -71,6 +71,7 @@ const buildTaskOptions = (payload: unknown): TaskOption[] =>
 
 interface CatalogoMaquinasApiProps {
   familyId: string;
+  defaultTaskId?: string;
   familyLabel?: string;
   familyOptions: Array<{ id: string; label: string; description?: string }>;
   onFamilyChange: (familyId: string) => void;
@@ -96,7 +97,7 @@ interface MachineEntry {
   operations: MachineOperationRow[];
 }
 
-export function CatalogoMaquinasApi({ familyId, familyLabel, familyOptions, onFamilyChange }: CatalogoMaquinasApiProps) {
+export function CatalogoMaquinasApi({ familyId, defaultTaskId, familyLabel, familyOptions, onFamilyChange }: CatalogoMaquinasApiProps) {
   const [taskOptions, setTaskOptions] = useState<TaskOption[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedMachineType, setSelectedMachineType] = useState("ALL");
@@ -125,6 +126,7 @@ export function CatalogoMaquinasApi({ familyId, familyLabel, familyOptions, onFa
         setTaskOptions(options);
         setSelectedTaskId((current) => {
           if (current && options.some((option) => option.id === current)) return current;
+          if (defaultTaskId && options.some((option) => option.id === defaultTaskId)) return defaultTaskId;
           return options[0]?.id || "";
         });
         setSelectedMachineType("ALL");
@@ -145,7 +147,7 @@ export function CatalogoMaquinasApi({ familyId, familyLabel, familyOptions, onFa
     return () => {
       active = false;
     };
-  }, [familyId]);
+  }, [familyId, defaultTaskId]);
 
   useEffect(() => {
     let active = true;

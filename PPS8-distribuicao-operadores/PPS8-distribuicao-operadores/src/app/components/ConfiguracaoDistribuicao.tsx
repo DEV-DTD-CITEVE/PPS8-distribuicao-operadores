@@ -178,7 +178,7 @@ export function ConfiguracaoDistribuicaoComponent({
             </div>
 
             <div
-              className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors cursor-pointer"
+              className="order-first flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors cursor-pointer"
               onClick={() => onChange({ ...config, possibilidade: 5 })}
             >
               <RadioGroupItem value="5" id="r5" className="mt-0.5" />

@@ -326,7 +326,11 @@ export default function Configuracao() {
 
   // ── Filtros ───────────────────────────────────────────────────────────────
 
-  const [filtroFamilia, setFiltroFamilia] = useState<string>("");
+  const [filtroFamilia, setFiltroFamilia] = useState<string>(
+    dados.configuracao.grupoArtigoSelecionado ||
+      dados.configuracao.fichaTecnicaSelecionada?.grupoArtigoId ||
+      ""
+  );
   const [familias, setFamilias] = useState<FamilyOption[]>([]);
   const [loadingFamilias, setLoadingFamilias] = useState(false);
   const [filtroOperador, setFiltroOperador] = useState("");
@@ -340,6 +344,15 @@ export default function Configuracao() {
     if (!filtroFamilia) return "";
     return familias.find((familia) => familia.id === filtroFamilia)?.label || filtroFamilia;
   }, [familias, filtroFamilia]);
+
+  useEffect(() => {
+    const familiaEmCache =
+      dados.configuracao.grupoArtigoSelecionado ||
+      dados.configuracao.fichaTecnicaSelecionada?.grupoArtigoId ||
+      "";
+    if (!familiaEmCache) return;
+    setFiltroFamilia((atual) => atual || familiaEmCache);
+  }, [dados.configuracao.grupoArtigoSelecionado, dados.configuracao.fichaTecnicaSelecionada?.grupoArtigoId]);
 
   useEffect(() => {
     let cancelado = false;
@@ -1050,6 +1063,7 @@ export default function Configuracao() {
       {/* Catálogo de Máquinas */}
       <CatalogoMaquinasApi
         familyId={filtroFamilia}
+        defaultTaskId={dados.configuracao.fichaTecnicaSelecionada?.fichaId || undefined}
         familyLabel={familiaSelecionadaLabel}
         familyOptions={familias}
         onFamilyChange={setFiltroFamilia}
