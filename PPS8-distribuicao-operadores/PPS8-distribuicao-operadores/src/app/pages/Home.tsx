@@ -1194,7 +1194,7 @@ export default function Home() {
   const [resultadosAtuaisInline, setResultadosAtuaisInline] = useState<ResultadosBalanceamento | null>(null);
   const [resultadosPorTipoInline, setResultadosPorTipoInline] = useState<Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>>({});
   const [configAtualInline, setConfigAtualInline] = useState<ConfiguracaoDistribuicao | null>(null);
-  const [viewModeInline, setViewModeInline] = useState<"tempo" | "percentagem">("tempo");
+  const [viewModeInline, setViewModeInline] = useState<"tempo" | "percentagem" | "ole">("tempo");
   const [ajusteBodyBaseInline, setAjusteBodyBaseInline] = useState<any>(null);
   const [ajusteBodyBasePorTipoInline, setAjusteBodyBasePorTipoInline] = useState<Partial<Record<"linha" | "espinha", any>>>({});
   const [swapBaseRawInline, setSwapBaseRawInline] = useState<any>(null);
@@ -4224,7 +4224,7 @@ export default function Home() {
             operadores={resultadosInlineData.operadores}
             operacoes={resultadosInlineData.operacoes}
             layoutConfig={layoutConfig}
-            viewMode={viewModeInline}
+            viewMode={viewModeInline === "ole" ? "tempo" : viewModeInline}
             agruparPorMaquina={configAtualInline.agruparMaquinas}
             onTipoLayoutChange={(tipo) => {
               if (layoutConfig.tipoLayout === tipo) return;

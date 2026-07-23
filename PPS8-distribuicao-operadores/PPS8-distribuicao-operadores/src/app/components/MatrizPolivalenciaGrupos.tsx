@@ -311,7 +311,10 @@ function ApiView() {
                   return (
                     <td key={`${family.code}-${row.collaborator_id}`} className="p-3 text-center border-r border-gray-200">
                       {oleFamily !== undefined && oleFamily !== null ? (
-                        <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(oleFamily)}`}>
+                        <span
+                          title={`Percentagem OLE: ${oleFamily}%`}
+                          className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(oleFamily)}`}
+                        >
                           {oleFamily}%
                         </span>
                       ) : (

@@ -11,8 +11,8 @@ interface DashboardResultadosProps {
   config: ConfiguracaoDistribuicao;
   onRecalcular: (novosResultados: ResultadosBalanceamento, novaConfig: ConfiguracaoDistribuicao) => void;
   onDistribuicaoChange?: (novaDistribuicao: DistribuicaoCarga[]) => void;
-  viewMode?: "tempo" | "percentagem";
-  onViewModeChange?: (mode: "tempo" | "percentagem") => void;
+  viewMode?: "tempo" | "percentagem" | "ole";
+  onViewModeChange?: (mode: "tempo" | "percentagem" | "ole") => void;
   onConfirmarEdicao?: (editedRows: any[]) => Promise<void>;
   onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;

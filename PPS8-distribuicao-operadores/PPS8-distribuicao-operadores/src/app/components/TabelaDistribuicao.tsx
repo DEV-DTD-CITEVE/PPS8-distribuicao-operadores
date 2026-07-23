@@ -11,8 +11,8 @@ interface TabelaDistribuicaoProps {
   operatorOrder?: string[];
   onDistribuicaoChange?: (novaDistribuicao: DistribuicaoCarga[]) => void;
   unidadeTempo?: "min" | "s";
-  viewMode?: "tempo" | "percentagem";
-  onViewModeChange?: (mode: "tempo" | "percentagem") => void;
+  viewMode?: "tempo" | "percentagem" | "ole";
+  onViewModeChange?: (mode: "tempo" | "percentagem" | "ole") => void;
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
   onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
@@ -340,6 +340,7 @@ const buildOperatorColumns = (
 };
 
 const getOperatorTime = (row: OperationAllocationRow, column: OperatorColumn): number | null => {
+  const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
   const directTime = parseNumberLike(row.operator_times?.[column.code]);
   if (directTime != null) return directTime;
 
@@ -349,7 +350,6 @@ const getOperatorTime = (row: OperationAllocationRow, column: OperatorColumn): n
     if (parsed != null) return parsed;
   }
 
-  const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
   for (const allocation of allocations) {
     const record = allocation as Record<string, unknown>;
     const operatorCode = String(
@@ -384,6 +384,7 @@ const getOperatorTime = (row: OperationAllocationRow, column: OperatorColumn): n
 };
 
 const resolveRowOperatorRef = (row: OperationAllocationRow, column: OperatorColumn): string => {
+  const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
   const directInTimes = Object.keys(row.operator_times || {}).find(
     (candidate) => normalizeKey(candidate) === column.key
   );
@@ -394,7 +395,6 @@ const resolveRowOperatorRef = (row: OperationAllocationRow, column: OperatorColu
   );
   if (directInPositions) return directInPositions;
 
-  const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
   for (const allocation of allocations) {
     const record = allocation as Record<string, unknown>;
     const operatorCode = String(
@@ -452,6 +452,29 @@ const getOperatorPercentage = (
     normalizeKey(column.label || ""),
   ]);
 
+  const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
+
+  // O OLE da API é distinto da ocupação: por exemplo, 0.128 = 12.8% de
+  // ocupação, enquanto ole_percentage = 93.5 é o OLE que deve ser mostrado.
+  for (const allocation of allocations) {
+    const record = allocation as Record<string, unknown>;
+    const operatorCode = String(
+      record.operator_code ??
+      record.operator_id ??
+      record.operador_id ??
+      record.operator ??
+      record.operador ??
+      record.code ??
+      ""
+    ).trim();
+    const normalizedOperatorCode = normalizeKey(operatorCode);
+    if (!operatorCode || (!candidateKeys.has(operatorCode) && !candidateKeys.has(normalizedOperatorCode) && normalizedOperatorCode !== column.key)) {
+      continue;
+    }
+    const olePercentage = parseNumberLike(record.ole_percentage ?? record.ole_percent);
+    if (olePercentage != null) return normalizePercentageValue(olePercentage);
+  }
+
   const percentageMaps = [
     (row as Record<string, unknown>).occupancy_percentage,
     (row as Record<string, unknown>).occupancy_percentages,
@@ -459,6 +482,8 @@ const getOperatorPercentage = (
     (row as Record<string, unknown>).operator_percentage,
     (row as Record<string, unknown>).operator_percents,
     (row as Record<string, unknown>).operator_occupancy,
+    (row as Record<string, unknown>).ole_percentage,
+    (row as Record<string, unknown>).ole_percentages,
   ];
 
   for (const map of percentageMaps) {
@@ -477,6 +502,42 @@ const getOperatorPercentage = (
     }
   }
 
+  const position = Object.entries(row.operator_positions || {}).find(([rawKey]) => {
+    const normalizedRawKey = normalizeKey(rawKey);
+    return candidateKeys.has(rawKey) || candidateKeys.has(normalizedRawKey) || normalizedRawKey === column.key;
+  })?.[1];
+  if (position && typeof position === "object") {
+    const parsedPositionOle = parseNumberLike(
+      (position as Record<string, unknown>).ole_percentage ??
+      (position as Record<string, unknown>).ole_percent ??
+      (position as Record<string, unknown>).percentage
+    );
+    if (parsedPositionOle != null) return normalizePercentageValue(parsedPositionOle);
+  }
+
+  // Quando a API devolve operator_allocations, o ole_percentage dessa
+  // alocação é a fonte de verdade e deve prevalecer sobre o valor calculado
+  // a partir dos segundos.
+  const allocationsFallback = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
+  for (const allocation of allocationsFallback) {
+    const record = allocation as Record<string, unknown>;
+    const operatorCode = String(
+      record.operator_code ??
+      record.operator_id ??
+      record.operador_id ??
+      record.operator ??
+      record.operador ??
+      record.code ??
+      ""
+    ).trim();
+    const normalizedOperatorCode = normalizeKey(operatorCode);
+    if (!operatorCode || (!candidateKeys.has(operatorCode) && !candidateKeys.has(normalizedOperatorCode) && normalizedOperatorCode !== column.key)) {
+      continue;
+    }
+    const rawOle = parseNumberLike(record.ole_percentage ?? record.ole_percent);
+    if (rawOle != null) return normalizePercentageValue(rawOle);
+  }
+
   const seconds = getOperatorTime(row, column);
   const denominatorSeconds = Math.max(
     0,
@@ -486,7 +547,6 @@ const getOperatorPercentage = (
     return (seconds / denominatorSeconds) * 100;
   }
 
-  const allocations = Array.isArray(row.operator_allocations) ? row.operator_allocations : [];
   for (const allocation of allocations) {
     const record = allocation as Record<string, unknown>;
     const operatorCode = String(
@@ -511,6 +571,7 @@ const getOperatorPercentage = (
       record.occupancy_percent ??
       record.operator_occupancy ??
       record.allocation_percentage ??
+      record.ole_percentage ??
       record.share;
     const parsed = parseNumberLike(percentageValue);
     if (parsed != null) return normalizePercentageValue(parsed);
@@ -639,8 +700,8 @@ function TabelaAllocacoes({
   operadores: any[];
   operacoes: any[];
   operatorOrder?: string[];
-  viewMode?: "tempo" | "percentagem";
-  onViewModeChange?: (mode: "tempo" | "percentagem") => void;
+  viewMode?: "tempo" | "percentagem" | "ole";
+  onViewModeChange?: (mode: "tempo" | "percentagem" | "ole") => void;
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
   onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
@@ -753,6 +814,9 @@ function TabelaAllocacoes({
     return getOperatorPercentage(row, column, percentageBaseSeconds);
   };
 
+  const getDisplayedOleValue = (row: OperationAllocationRow, column: OperatorColumn): number | null =>
+    getOperatorPercentage(row, column, cycleTimeSeconds);
+
   const totalsByOperatorPercent = useMemo(() => {
     const percentages: Record<string, number> = {};
     operatorColumns.forEach((column) => {
@@ -773,13 +837,13 @@ function TabelaAllocacoes({
 
   const formatMetric = (value: number | null | undefined): string => {
     if (value == null) return "-";
-    if (viewMode === "percentagem") return `${formatDisplayDecimal(value)}%`;
+    if (viewMode === "percentagem" || viewMode === "ole") return `${formatDisplayDecimal(value)}%`;
     return formatDisplayDecimal(value);
   };
 
   const getMetricColor = (value: number | null | undefined): string => {
     if (value == null) return "#d1d5db";
-    if (viewMode === "percentagem" && value > 100) return "#dc2626";
+    if ((viewMode === "percentagem" || viewMode === "ole") && value > 100) return "#dc2626";
     return "#2563eb";
   };
 
@@ -970,6 +1034,15 @@ function TabelaAllocacoes({
               >
                 Percentagem
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === "ole" ? "default" : "ghost"}
+                onClick={() => onViewModeChange("ole")}
+                className="h-6 px-2 text-[10px]"
+              >
+                OLE
+              </Button>
             </div>
           ) : null}
           {onConfirmarEdicao ? (
@@ -1101,11 +1174,14 @@ function TabelaAllocacoes({
                     {formatDisplayDecimal(row.total_time_seconds)}
                   </td>
                   {operatorColumns.map((column) => {
+                    const olePercentage = getOperatorPercentage(row, column, cycleTimeSeconds);
                     const value =
-                      viewMode === "percentagem"
-                        ? getDisplayedPercentageValue(row, column)
-                        : getOperatorTime(row, column);
-                    const editable = isEditing;
+                      viewMode === "ole"
+                        ? getDisplayedOleValue(row, column)
+                        : viewMode === "percentagem"
+                          ? getDisplayedPercentageValue(row, column)
+                          : getOperatorTime(row, column);
+                    const editable = isEditing && viewMode !== "ole";
                     return (
                       <td
                         key={column.key}
@@ -1115,6 +1191,7 @@ function TabelaAllocacoes({
                           fontWeight: 600,
                           color: editable ? getMetricColor(value) : getMetricColor(value),
                         })}
+                        title={olePercentage != null ? `Percentagem OLE: ${formatDisplayDecimal(olePercentage)}%` : undefined}
                         onDoubleClick={() => startEditFromCell(index, column.key, value)}
                       >
                         {editable ? (
@@ -1187,14 +1264,16 @@ function TabelaAllocacoes({
                     fontFamily: "monospace",
                     fontWeight: 700,
                     color:
-                      viewMode === "percentagem" && (totalsByOperatorPercent[column.key] ?? 0) > 100
+                      (viewMode === "percentagem" || viewMode === "ole") && (totalsByOperatorPercent[column.key] ?? 0) > 100
                         ? "#dc2626"
                         : "#2563eb",
                   })}
                 >
                     {viewMode === "percentagem"
                       ? formatMetric(totalsByOperatorPercent[column.key] ?? 0)
-                      : formatDisplayDecimal(totalsByOperator[column.key] ?? 0)}
+                      : viewMode === "ole"
+                        ? "-"
+                        : formatDisplayDecimal(totalsByOperator[column.key] ?? 0)}
                 </td>
               ))}
             </tr>

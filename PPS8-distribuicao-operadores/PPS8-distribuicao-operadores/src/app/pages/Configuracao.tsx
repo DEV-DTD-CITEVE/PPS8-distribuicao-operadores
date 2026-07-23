@@ -1044,6 +1044,9 @@ export default function Configuracao() {
                                     ? `px-3 py-2 font-medium text-xs ${getOleColorClasses(competencia.ole)}`
                                     : "w-10 h-10 bg-gray-100 text-gray-400 hover:bg-gray-200"
                                 }`}
+                                title={competencia && Number.isFinite(Number(competencia.ole))
+                                  ? `Percentagem OLE: ${competencia.ole}%`
+                                  : undefined}
                                 onClick={() => {
                                   if (!tabelaSomenteLeitura) setEditandoCelula(key);
                                 }}
