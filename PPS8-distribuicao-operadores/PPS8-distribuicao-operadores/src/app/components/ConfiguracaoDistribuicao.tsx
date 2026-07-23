@@ -150,7 +150,7 @@ export function ConfiguracaoDistribuicaoComponent({
           </div>
         </CardTitle>
       </CardHeader>
-       <CardContent className="p-4 xl:h-[600px] xl:overflow-y-auto">
+       <CardContent className="p-4 xl:h-[620px] xl:overflow-y-auto">
         <div className={`grid grid-cols-1 gap-6 ${config.possibilidade !== 4 ? "xl:grid-cols-2" : ""}`}>
         <div className="space-y-3">
           <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
