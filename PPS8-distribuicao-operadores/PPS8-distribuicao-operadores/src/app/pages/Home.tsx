@@ -15,6 +15,7 @@ import axios from "axios";
 import { Label } from "../components/ui/label";
 import { API_BASE_URL } from "../config";
 import { SearchableCombobox } from "../components/SearchableCombobox";
+import { Progress } from "../components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -86,6 +87,41 @@ const pickString = (obj: ApiRecord, keys: string[]): string => {
     if (typeof value === "number" && Number.isFinite(value)) return String(value);
   }
   return "";
+};
+
+const extrairOperadoresDosResultadosIdeais = (raw: ApiRecord): Operador[] => {
+  const slots = ensureArray(
+    raw.operator_slots ??
+      raw.operatorSlots ??
+      raw.layouts?.linha?.operator_slots ??
+      raw.layouts?.espinha?.operator_slots
+  );
+  const byId = new Map<string, Operador>();
+  const add = (idRaw: unknown, nameRaw?: unknown) => {
+    const id = String(idRaw ?? "").trim();
+    if (!id) return;
+    const current = byId.get(id);
+    const name = String(nameRaw ?? current?.nome ?? "").trim();
+    byId.set(id, current || {
+      id,
+      nome: name || id,
+      competencias: {},
+      oleHistorico: 100,
+    });
+    if (name && current) current.nome = name;
+  };
+
+  slots.forEach((slot) => add(
+    slot.operator_id ?? slot.operatorId ?? slot.operador_id,
+    slot.operator_name ?? slot.operatorName
+  ));
+  ensureArray(raw.operation_allocations ?? raw.operationAllocations).forEach((row) => {
+    Object.entries(row.operator_times ?? {}).forEach(([id]) => add(id, row.operator_positions?.[id]?.operator_name));
+    Object.entries(row.operator_positions ?? {}).forEach(([id, position]) => add(id, position?.operator_name));
+  });
+  Object.keys(raw.machine_times_per_operator ?? {}).forEach((id) => add(id));
+  Object.keys(raw.operator_flow ?? {}).forEach((id) => add(id));
+  return Array.from(byId.values());
 };
 
 const pickNumber = (obj: ApiRecord, keys: string[]): number | null => {
@@ -1171,6 +1207,9 @@ export default function Home() {
   const [isGuardandoHistorico, setIsGuardandoHistorico] = useState(false);
   const [erroPopupInline, setErroPopupInline] = useState<string | null>(null);
   const [sucessoPopupInline, setSucessoPopupInline] = useState<string | null>(null);
+  const [idealCollaborators, setIdealCollaborators] = useState<any[]>([]);
+  const [idealCollaboratorsLoading, setIdealCollaboratorsLoading] = useState(false);
+  const [idealAssignmentColumn, setIdealAssignmentColumn] = useState<string | null>(null);
 
   const getMaxPostsPayloadInline = useCallback((nextLayoutConfig: LayoutConfig) => {
     const postosInputEl = document.getElementById("lc-postos") as HTMLInputElement | null;
@@ -1425,6 +1464,7 @@ export default function Home() {
     ? operacoesManual
     : (produto ? produto.operacoes : []);
   const usarAllocateModo1Api = config.possibilidade === 1;
+  const usarAllocateIdealApi = config.possibilidade === 5;
   const usarAllocateObjetivoApi = config.possibilidade === 2;
   const usarAllocateNumeroOperadoresApi = config.possibilidade === 3;
   const taskCodeSelecionado = (produto?.referencia || produto?.id || grupoArtigoSelecionado || "").trim();
@@ -1464,7 +1504,7 @@ export default function Home() {
 
   // Sincroniza operadores com a ficha tecnica activa (quando muda de ficha/operacoes)
   useEffect(() => {
-    if (config.possibilidade === 4 || !produto || operacoes.length === 0 || operadores.length === 0) return;
+    if (config.possibilidade === 4 || config.possibilidade === 5 || !produto || operacoes.length === 0 || operadores.length === 0) return;
 
     const nomesOperacoes = new Set(
       operacoes
@@ -2479,8 +2519,10 @@ export default function Home() {
         max_posts: maxPosts,
         max_position_deviation: Math.max(1, Number(nextLayoutConfig.distanciaMaxima) || 1),
         position_deviation_mode: nextLayoutConfig.permitirRetrocesso ? "both" : "forward",
+        ...(configAtualInline?.possibilidade === 5 ? { group_by_machine: configAtualInline.agruparMaquinas } : {}),
       };
-      const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/adjust`, body);
+      const ajusteEndpoint = configAtualInline?.possibilidade === 5 ? "adjust-ideal" : "adjust";
+      const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/${ajusteEndpoint}`, body);
       const novoRaw = resposta.data ?? {};
       const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
       const proximosResultadosPorTipo = Object.fromEntries(
@@ -2539,7 +2581,7 @@ export default function Home() {
     } finally {
       setIsAjustando(false);
     }
-  }, [taskCodeInline, taskCodeSelecionado, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, getMaxPostsPayloadInline, buildResultadosFromApiInline]);
+  }, [taskCodeInline, taskCodeSelecionado, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, getMaxPostsPayloadInline, buildResultadosFromApiInline, configAtualInline]);
 
   const handleConfirmarEdicaoInline = useCallback(async (editedRows: any[]) => {
     const codigoFicha = taskCodeInline || taskCodeSelecionado;
@@ -2552,7 +2594,11 @@ export default function Home() {
       const bodyBase = ajusteBodyBaseInline ?? ajusteBodyBasePorTipoInline[layoutConfig.tipoLayout];
       if (!bodyBase) return;
       const body = mergeRowsIntoAdjustBodyInline(bodyBase, editedRows);
-      const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/adjust`, body);
+      if (configAtualInline?.possibilidade === 5) {
+        body.group_by_machine = configAtualInline.agruparMaquinas;
+      }
+      const ajusteEndpoint = configAtualInline?.possibilidade === 5 ? "adjust-ideal" : "adjust";
+      const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/${ajusteEndpoint}`, body);
       const novoRaw = resposta.data ?? {};
       logAdjustPercentageTraceInline(editedRows, body, novoRaw);
       const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
@@ -2614,7 +2660,135 @@ export default function Home() {
     } finally {
       setIsAjustando(false);
     }
-  }, [taskCodeInline, taskCodeSelecionado, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline, layoutConfig.tipoLayout]);
+  }, [taskCodeInline, taskCodeSelecionado, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline, layoutConfig.tipoLayout, configAtualInline]);
+
+  const handleAtribuirColunaIdeal = useCallback(async (operatorCode: string) => {
+    setIdealAssignmentColumn(operatorCode);
+    if (idealCollaborators.length > 0) return;
+    setIdealCollaboratorsLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/operations/collaborators/all`);
+      const entries = ensureArray(response.data);
+      const flattened = entries.flatMap((entry: any) =>
+        ensureArray(entry?.collaborators ?? entry?.colaboradores ?? entry)
+      );
+      const source = flattened.length > 0 ? flattened : entries;
+      const unique = new Map<string, any>();
+      source.forEach((item: any) => {
+        const id = pickString(item, ["collaborator_id", "collaboratorId", "id", "operator_id", "operador_id"]);
+        if (id && !unique.has(id)) unique.set(id, item);
+      });
+      setIdealCollaborators(Array.from(unique.values()));
+    } catch (error) {
+      setIdealAssignmentColumn(null);
+      setErroPopupInline((error as any)?.response?.data?.detail || "Não foi possível obter os colaboradores.");
+    } finally {
+      setIdealCollaboratorsLoading(false);
+    }
+  }, [idealCollaborators.length]);
+
+  const handleConfirmarAtribuicaoIdeal = useCallback(async (collaborator: any) => {
+    const selectedColumnCode = idealAssignmentColumn;
+    const codigoFicha = taskCodeInline || taskCodeSelecionado;
+    const bodyBase = ajusteBodyBaseInline ?? ajusteBodyBasePorTipoInline[layoutConfig.tipoLayout];
+    const collaboratorId = pickString(collaborator, ["collaborator_id", "collaboratorId", "id", "operator_id", "operador_id"]);
+    if (!selectedColumnCode || !codigoFicha || !bodyBase || !collaboratorId) return;
+
+    const existingRenameMap = ((bodyBase as any)?.rename_map || {}) as Record<string, string>;
+    const operatorCode = selectedColumnCode.toUpperCase().startsWith("VIRT")
+      ? selectedColumnCode
+      : Object.entries(existingRenameMap).find(([, collaboratorCode]) =>
+          normalizeKey(String(collaboratorCode)) === normalizeKey(selectedColumnCode)
+        )?.[0] || selectedColumnCode;
+    const duplicateAssignment = Object.entries(existingRenameMap).some(([virtualCode, assignedId]) =>
+      virtualCode !== operatorCode && normalizeKey(String(assignedId)) === normalizeKey(collaboratorId)
+    );
+    if (duplicateAssignment) {
+      setErroPopupInline("Este colaborador já está atribuído a outra coluna.");
+      return;
+    }
+
+    setIsAjustando(true);
+    try {
+      const body = {
+        ...(structuredClone(bodyBase) || {}),
+        edited_operation_code: "",
+        rename_map: {
+          ...existingRenameMap,
+          [operatorCode]: collaboratorId,
+        },
+        group_by_machine: configAtualInline?.agruparMaquinas ?? false,
+      };
+      const response = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/adjust-ideal`, body);
+      const raw = response.data ?? {};
+      // O endpoint pode não devolver o rename_map. Mantemo-lo no estado local
+      // para que a barra de progresso e o filtro do popup reflitam a atribuição.
+      const rawComAtribuicoes = {
+        ...raw,
+        rename_map: {
+          ...existingRenameMap,
+          [operatorCode]: collaboratorId,
+        },
+      };
+      const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
+      const nextResultsByType = Object.fromEntries(
+        tipos.map((tipo) => {
+          const base = buildResultadosFromApiInline(rawComAtribuicoes, resultadosAtuaisInline!);
+          return [
+            tipo,
+            {
+              ...(base as any),
+              machine_layout: resolveMachineLayoutPorTipoInline(rawComAtribuicoes, tipo),
+            } as ResultadosBalanceamento,
+          ];
+        })
+      ) as Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>;
+      const next = nextResultsByType[layoutConfig.tipoLayout] ?? resultadosAtuaisInline!;
+      setResultadosAtuaisInline(next);
+      setResultadosPorTipoInline((prev) => ({ ...prev, ...nextResultsByType }));
+      setAjusteBodyBaseInline(rawComAtribuicoes);
+      setAjusteBodyBasePorTipoInline({ linha: rawComAtribuicoes, espinha: rawComAtribuicoes });
+      setSwapBaseRawInline(rawComAtribuicoes);
+      setSwapBaseRawPorTipoInline({ linha: rawComAtribuicoes, espinha: rawComAtribuicoes });
+      setExportPdfBodyInline(rawComAtribuicoes);
+      setResultadosInlineData((prev) => prev ? {
+        ...prev,
+        resultados: next,
+        resultadosPorTipo: { ...(prev.resultadosPorTipo || {}), ...nextResultsByType },
+         operadores: extrairOperadoresDosResultadosIdeais(rawComAtribuicoes),
+         ajusteBodyBase: rawComAtribuicoes,
+         ajusteBodyBasePorTipo: { linha: rawComAtribuicoes, espinha: rawComAtribuicoes },
+         swapBaseRaw: rawComAtribuicoes,
+         swapBaseRawPorTipo: { linha: rawComAtribuicoes, espinha: rawComAtribuicoes },
+      } : prev);
+      setIdealAssignmentColumn(null);
+    } catch (error) {
+      setErroPopupInline((error as any)?.response?.data?.detail?.message || (error as any)?.response?.data?.detail || "Não foi possível atribuir o colaborador.");
+    } finally {
+      setIsAjustando(false);
+    }
+  }, [idealAssignmentColumn, taskCodeInline, taskCodeSelecionado, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, layoutConfig.tipoLayout, resultadosAtuaisInline, buildResultadosFromApiInline, configAtualInline]);
+
+  const idealRenameMap = ((ajusteBodyBaseInline as any)?.rename_map || {}) as Record<string, string>;
+  const idealAssignedCollaboratorIds = new Set(
+    Object.values(idealRenameMap)
+      .map((value) => normalizeKey(String(value)))
+      .filter(Boolean)
+  );
+  const idealAssignmentMax = Math.max(
+    Number(configAtualInline?.numeroOperadores || 0),
+    Number(resultadosAtuaisInline?.numeroOperadores || 0),
+    Array.isArray(resultadosAtuaisInline?.operator_slots) ? resultadosAtuaisInline.operator_slots.length : 0,
+    Object.keys(idealRenameMap).length,
+    1
+  );
+  const idealSelectedVirtualCode = idealAssignmentColumn
+    ? (idealAssignmentColumn.toUpperCase().startsWith("VIRT")
+        ? idealAssignmentColumn
+        : Object.entries(idealRenameMap).find(([, collaboratorCode]) =>
+            normalizeKey(String(collaboratorCode)) === normalizeKey(idealAssignmentColumn)
+          )?.[0] || idealAssignmentColumn)
+    : null;
 
   const handleSwapPositionsInline = useCallback(async (positionA: string, positionB: string) => {
     const codigoFicha = taskCodeInline || taskCodeSelecionado || resultadosInlineData?.taskCode;
@@ -2842,7 +3016,7 @@ export default function Home() {
         operadoresSelecionados.includes(op.id)
       );
 
-      if (!usarAllocateModo1Api && !usarAllocateObjetivoApi && !usarAllocateNumeroOperadoresApi && config.possibilidade !== 4 && operadoresDisponiveis.length === 0) {
+      if (!usarAllocateModo1Api && !usarAllocateIdealApi && !usarAllocateObjetivoApi && !usarAllocateNumeroOperadoresApi && config.possibilidade !== 4 && operadoresDisponiveis.length === 0) {
         alert("Por favor, selecione pelo menos um operador.");
         return;
       }
@@ -2857,7 +3031,7 @@ export default function Home() {
         return;
       }
       // Modo 1: usar endpoint automatico (sequencial ou agrupado por maquina)
-      if (usarAllocateModo1Api) {
+      if (usarAllocateModo1Api || usarAllocateIdealApi) {
         if (!taskCodeSelecionado) {
           alert("Nao foi possivel identificar o codigo da ficha tecnica para calcular.");
           return;
@@ -2881,7 +3055,9 @@ export default function Home() {
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
-        const endpointModo1 = config.agruparMaquinas ? "allocate-grouped" : "allocate";
+        const endpointModo1 = usarAllocateIdealApi
+          ? (config.agruparMaquinas ? "allocate-grouped-ideal" : "allocate-ideal")
+          : (config.agruparMaquinas ? "allocate-grouped" : "allocate");
         const resposta = await axios.post(
           `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo1}`,
           payloadBase
@@ -2910,9 +3086,12 @@ export default function Home() {
           r.operationAllocations
         );
 
-        let distribuicao = extrairDistribuicaoDeTableData(r, operacoes, tempoCiclo, operadoresDisponiveis);
+        const operadoresResultado = usarAllocateIdealApi
+          ? extrairOperadoresDosResultadosIdeais(r)
+          : operadoresDisponiveis;
+        let distribuicao = extrairDistribuicaoDeTableData(r, operacoes, tempoCiclo, operadoresResultado);
         if (distribuicao.length === 0 && operationAllocations.length > 0) {
-          distribuicao = extrairDistribuicaoDeOperationAllocations(operationAllocations, operacoes, operadoresDisponiveis, tempoCiclo);
+          distribuicao = extrairDistribuicaoDeOperationAllocations(operationAllocations, operacoes, operadoresResultado, tempoCiclo);
         }
         const mapa: Record<string, { operacoes: Set<string>; tempoTotal: number; temposOperacoes: Record<string, number> }> = {};
 
@@ -3018,7 +3197,7 @@ export default function Home() {
         const dataToPass = {
           resultados: resultadosPorTipo[layoutConfig.tipoLayout] ?? resultadosApi,
           resultadosPorTipo,
-          operadores: operadoresDisponiveis,
+        operadores: operadoresResultado,
           operacoes,
           config,
           layoutConfig,
@@ -3708,7 +3887,7 @@ export default function Home() {
       {config.possibilidade !== 4 && (
         <div className="bg-white rounded-sm border border-gray-200 shadow-sm">
           <div
-            className="p-5 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+            className="p-3 border-b border-gray-200 cursor-pointer select-none hover:bg-gray-50 transition-colors"
             onClick={() => toggleSeccao("grupoArtigo")}
           >
             <div className="flex items-center justify-between">
@@ -3724,8 +3903,8 @@ export default function Home() {
             </div>
           </div>
           {seccoesExpandidas.grupoArtigo && (
-            <div className="p-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label className="text-xs font-semibold uppercase text-gray-600">
                     Grupo de Artigo
@@ -3764,32 +3943,6 @@ export default function Home() {
                   />
                 </div>
               </div>
-              {produto && (
-                <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="text-xs text-gray-500">
-                    Tempo total: <span className="font-mono">{operacoes.reduce((s, op) => s + op.tempo, 0).toFixed(2)} min</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="inline-flex items-center gap-2 rounded-sm border border-gray-200 bg-gray-50 px-2.5 py-1.5">
-                      <Users className="w-3.5 h-3.5 text-teal-600" />
-                      <span className="text-[11px] uppercase tracking-wide text-gray-500">Operadores</span>
-                      <span className="font-mono text-xs font-semibold text-gray-900">{operadoresSelecionados.length}</span>
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-sm border border-gray-200 bg-gray-50 px-2.5 py-1.5">
-                      <Package className="w-3.5 h-3.5 text-blue-600" />
-                      <span className="text-[11px] uppercase tracking-wide text-gray-500">Operacoes</span>
-                      <span className="font-mono text-xs font-semibold text-gray-900">{operacoes.length}</span>
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-sm border border-gray-200 bg-gray-50 px-2.5 py-1.5">
-                      <Factory className="w-3.5 h-3.5 text-purple-600" />
-                      <span className="text-[11px] uppercase tracking-wide text-gray-500">Maquinas</span>
-                      <span className="font-mono text-xs font-semibold text-gray-900">
-                        {operacoes.length > 0 ? new Set(operacoes.map((op) => op.tipoMaquina)).size : 0}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -3812,7 +3965,7 @@ export default function Home() {
           </div>
         </div>
         {seccoesExpandidas.configuracaoDistribuicao && (
-          <div className="p-5">
+           <div className="p-5">
             <ConfiguracaoDistribuicaoComponent
               config={config}
               onChange={handleConfigChange}
@@ -3926,7 +4079,7 @@ export default function Home() {
           type="button"
           size="lg"
                onClick={() => handleCalcular(true)}
-          disabled={(!usarAllocateModo1Api && operadoresSelecionados.length === 0) || operacoes.length === 0}
+           disabled={(!usarAllocateModo1Api && !usarAllocateIdealApi && operadoresSelecionados.length === 0) || operacoes.length === 0}
           className="px-12 py-6 text-sm font-semibold bg-blue-500 hover:bg-blue-600 rounded-sm uppercase tracking-wide"
         >
           <Calculator className="w-5 h-5 mr-2" />
@@ -4011,9 +4164,31 @@ export default function Home() {
                 isAjustando={isAjustando}
                 isGuardandoHistorico={isGuardandoHistorico}
                 showTabela={false}
+                onAtribuirColuna={handleAtribuirColunaIdeal}
+                isIdealSemOle={configAtualInline.possibilidade === 5}
               />
             </div>
           </div>
+
+          {configAtualInline.possibilidade === 5 ? (
+            <div className="rounded-sm border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Progresso de Atribuição</div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    {idealAssignedCollaboratorIds.size} de {idealAssignmentMax} operadores atribuídos
+                  </div>
+                </div>
+                <span className="font-mono text-sm font-semibold text-blue-600">
+                  {Math.round(Math.min(100, (idealAssignedCollaboratorIds.size / idealAssignmentMax) * 100))}%
+                </span>
+              </div>
+              <Progress
+                value={Math.min(100, (idealAssignedCollaboratorIds.size / idealAssignmentMax) * 100)}
+                className="h-2"
+              />
+            </div>
+          ) : null}
 
           <DashboardResultados
             resultados={resultadosAtuaisInline}
@@ -4028,6 +4203,8 @@ export default function Home() {
             isAjustando={isAjustando}
             isGuardandoHistorico={isGuardandoHistorico}
             showOccupacaoCard={false}
+            onAtribuirColuna={handleAtribuirColunaIdeal}
+            isIdealSemOle={configAtualInline.possibilidade === 5}
           />
 
           <VisualizadorFluxo
@@ -4057,6 +4234,59 @@ export default function Home() {
           />
         </section>
       )}
+      <Dialog
+        open={Boolean(idealAssignmentColumn)}
+        onOpenChange={(open) => { if (!open) setIdealAssignmentColumn(null); }}
+      >
+        <DialogContent className="max-w-lg rounded-sm">
+          <DialogHeader>
+            <DialogTitle>Atribuir colaborador a {idealAssignmentColumn || "coluna"}</DialogTitle>
+            <DialogDescription>
+              Escolhe o colaborador que ficará associado a esta coluna.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>Operadores atribuídos</span>
+              <span className="font-mono font-semibold text-gray-900">
+                {idealAssignedCollaboratorIds.size} / {idealAssignmentMax}
+              </span>
+            </div>
+            <Progress
+              value={Math.min(100, (idealAssignedCollaboratorIds.size / idealAssignmentMax) * 100)}
+              className="h-2"
+            />
+          </div>
+          <div className="max-h-96 overflow-y-auto space-y-1">
+            {idealCollaboratorsLoading ? (
+              <div className="py-6 text-center text-sm text-gray-500">A carregar colaboradores...</div>
+            ) : idealCollaborators.length === 0 ? (
+              <div className="py-6 text-center text-sm text-gray-500">Nenhum colaborador encontrado.</div>
+            ) : idealCollaborators.map((collaborator, index) => {
+              const id = pickString(collaborator, ["collaborator_id", "collaboratorId", "id", "operator_id", "operador_id"]);
+              const name = pickString(collaborator, ["collaborator_name", "collaboratorName", "name", "nome"]) || id;
+              const idKey = normalizeKey(id);
+              const currentAssignment = idealSelectedVirtualCode ? idealRenameMap[idealSelectedVirtualCode] : "";
+              const alreadyAssignedElsewhere = idealAssignedCollaboratorIds.has(idKey) && normalizeKey(String(currentAssignment)) !== idKey;
+              if (alreadyAssignedElsewhere) return null;
+              return (
+                <Button
+                  key={`${id}-${index}`}
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start rounded-sm text-left"
+                  disabled={isAjustando}
+                  title={alreadyAssignedElsewhere ? "Este colaborador já está atribuído a outra coluna" : undefined}
+                  onClick={() => void handleConfirmarAtribuicaoIdeal(collaborator)}
+                >
+                  <span className="font-mono text-xs mr-2">{id}</span>
+                  <span>{name}</span>
+                </Button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={confirmarCalculoModal.open}
         onOpenChange={(open) => {

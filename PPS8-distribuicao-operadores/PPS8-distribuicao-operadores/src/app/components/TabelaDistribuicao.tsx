@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { ResultadosBalanceamento, DistribuicaoCarga, OperationAllocation, OperatorSlot } from "../types";
 import { Button } from "./ui/button";
+import { Pencil, UserPlus } from "lucide-react";
 
 interface TabelaDistribuicaoProps {
   resultados: ResultadosBalanceamento;
@@ -16,6 +17,8 @@ interface TabelaDistribuicaoProps {
   onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
   isGuardandoHistorico?: boolean;
+  onAtribuirColuna?: (operatorCode: string) => Promise<void>;
+  isIdealSemOle?: boolean;
 }
 
 type OperationAllocationRow = OperationAllocation & {
@@ -629,6 +632,8 @@ function TabelaAllocacoes({
   onGuardarHistorico,
   isAjustando = false,
   isGuardandoHistorico = false,
+  onAtribuirColuna,
+  isIdealSemOle = false,
 }: {
   resultados: ResultadosBalanceamento;
   operadores: any[];
@@ -640,6 +645,8 @@ function TabelaAllocacoes({
   onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
   isGuardandoHistorico?: boolean;
+  onAtribuirColuna?: (operatorCode: string) => Promise<void>;
+  isIdealSemOle?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -985,7 +992,21 @@ function TabelaAllocacoes({
                   <span className="text-[10px] text-gray-400 shrink-0">A ajustar...</span>
                 )}
               </>
-            ) : null
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                onClick={() => {
+                  setDraftRows(structuredClone(baseRows));
+                  setIsEditing(true);
+                }}
+                disabled={isSaving || isAjustando}
+              >
+                Editar
+              </Button>
+            )
           ) : null}
           {isEditing && !isSaving && !isAjustando ? (
             <span className="text-[10px] text-gray-400 shrink-0">Enter ou clicar fora para confirmar</span>
@@ -1014,18 +1035,33 @@ function TabelaAllocacoes({
           </colgroup>
 
           <thead style={{ position: "sticky", top: 0, zIndex: 30 }}>
-            <tr style={{ height: 32 }}>
+            <tr style={{ height: 52 }}>
               <th style={thBase({ textAlign: "center" })}>SEQ</th>
               <th style={thBase({ textAlign: "center" })}>ID Operação</th>
               <th style={thBase()}>Operação</th>
               <th style={thBase()}>Máquina</th>
               <th style={thBase({ textAlign: "center" })}>Total (s)</th>
               {operatorColumns.map((column) => (
-                <th key={column.key} style={thBase({ textAlign: "center" })} title={column.label}>
+                <th key={column.key} style={thBase({ textAlign: "center", minHeight: 52, paddingTop: 4, paddingBottom: 4 })} title={column.label}>
                   <div className="flex flex-col items-center leading-tight">
-                    <span className="truncate" style={{ maxWidth: Math.max(44, operatorColumnWidth - 14) }}>
-                      {column.code}
-                    </span>
+                    <div className="flex items-center justify-center gap-1">
+                      <span className="truncate" style={{ maxWidth: Math.max(44, operatorColumnWidth - 30) }}>
+                        {column.code}
+                      </span>
+                      {isIdealSemOle && onAtribuirColuna ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 shrink-0 p-0 text-gray-500 hover:bg-gray-100 hover:text-blue-600"
+                          title={column.code.toUpperCase().startsWith("VIRT") ? "Atribuir colaborador" : "Alterar atribuição"}
+                          aria-label={column.code.toUpperCase().startsWith("VIRT") ? "Atribuir colaborador" : "Alterar atribuição"}
+                          onClick={() => void onAtribuirColuna(column.code)}
+                        >
+                          {column.code.toUpperCase().startsWith("VIRT") ? <UserPlus className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                        </Button>
+                      ) : null}
+                    </div>
                     {column.positionLabel || column.positionSide || column.positionNumber != null ? (
                       <span className="text-[9px] font-normal text-gray-400">
                         {[column.positionSide, column.positionLabel, column.positionNumber != null ? String(column.positionNumber) : ""]
@@ -1180,6 +1216,8 @@ export function TabelaDistribuicao({
   onGuardarHistorico,
   isAjustando = false,
   isGuardandoHistorico = false,
+  onAtribuirColuna,
+  isIdealSemOle = false,
 }: TabelaDistribuicaoProps) {
   return (
     <TabelaAllocacoes
@@ -1193,6 +1231,8 @@ export function TabelaDistribuicao({
       onGuardarHistorico={onGuardarHistorico}
       isAjustando={isAjustando}
       isGuardandoHistorico={isGuardandoHistorico}
+      onAtribuirColuna={onAtribuirColuna}
+      isIdealSemOle={isIdealSemOle}
     />
   );
 }

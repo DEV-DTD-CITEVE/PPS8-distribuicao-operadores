@@ -88,7 +88,7 @@ const buildSharePerOperatorSeconds = (distribuicao: any[], cycleTimeSeconds: num
   return Object.keys(perOperator).length > 0 ? perOperator : null;
 };
 
-const parseMetodo = (row: ApiRecord): 1 | 2 | 3 => {
+const parseMetodo = (row: ApiRecord): 1 | 2 | 3 | 4 | 5 => {
   const modeText = pickString(row, ["mode_label", "method_label", "metodo_label", "mode"]);
   const modeKey = modeText
     .toLowerCase()
@@ -104,6 +104,7 @@ const parseMetodo = (row: ApiRecord): 1 | 2 | 3 => {
       modeKey.includes("quantidade")
     ) return 2;
     if (modeKey.includes("fixo") || modeKey.includes("n fixo")) return 3;
+    if (modeKey.includes("sem ole") || modeKey.includes("ideal sem")) return 5;
     if (modeKey.includes("ideal")) return 1;
     if (modeKey.startsWith("2")) return 2;
     if (modeKey.startsWith("3")) return 3;
@@ -112,6 +113,8 @@ const parseMetodo = (row: ApiRecord): 1 | 2 | 3 => {
   const n = pickNumber(row, ["mode", "method", "possibility", "metodo"]);
   if (n === 2) return 2;
   if (n === 3) return 3;
+  if (n === 4) return 4;
+  if (n === 5) return 5;
   return 1;
 };
 
@@ -579,9 +582,11 @@ export default function Historico() {
       }));
   }, [historicoFiltrado]);
 
-  const getMetodoNome = (metodo: 1 | 2 | 3): string => {
+  const getMetodoNome = (metodo: 1 | 2 | 3 | 4 | 5): string => {
     if (metodo === 2) return "Por Quantidade";
     if (metodo === 3) return "N Fixo Operadores";
+    if (metodo === 4) return "Entrada Manual";
+    if (metodo === 5) return "Ideal sem OLE";
     return "Distribuição Ideal";
   };
 

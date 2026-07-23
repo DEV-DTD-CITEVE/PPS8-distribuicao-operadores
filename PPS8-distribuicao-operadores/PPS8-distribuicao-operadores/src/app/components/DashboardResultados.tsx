@@ -19,6 +19,8 @@ interface DashboardResultadosProps {
   isGuardandoHistorico?: boolean;
   showOccupacaoCard?: boolean;
   showTabela?: boolean;
+  onAtribuirColuna?: (operatorCode: string) => Promise<void>;
+  isIdealSemOle?: boolean;
 }
 
 function normalizeKey(value: string): string {
@@ -164,6 +166,8 @@ export function DashboardResultados({
   isGuardandoHistorico = false,
   showOccupacaoCard = true,
   showTabela = true,
+  onAtribuirColuna,
+  isIdealSemOle = false,
 }: DashboardResultadosProps) {
   const [operadorDetalheAberto, setOperadorDetalheAberto] = useState<{
     codigo: string;
@@ -768,6 +772,8 @@ export function DashboardResultados({
           onGuardarHistorico={onGuardarHistorico}
           isAjustando={isAjustando}
           isGuardandoHistorico={isGuardandoHistorico}
+          onAtribuirColuna={onAtribuirColuna}
+          isIdealSemOle={isIdealSemOle}
         />
       </div>
       )}

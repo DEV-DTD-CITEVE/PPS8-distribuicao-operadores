@@ -55,7 +55,7 @@ export interface GrupoArtigo {
 export type Produto = GrupoArtigo;
 
 export interface ConfiguracaoDistribuicao {
-  possibilidade: 1 | 2 | 3 | 4;
+  possibilidade: 1 | 2 | 3 | 4 | 5;
   quantidadeObjetivo?: number; // peças/dia (possibilidade 2)
   numeroOperadores?: number; // (possibilidade 3)
   horasTurno: number; // horas disponíveis no turno (possibilidade 1)
@@ -193,7 +193,7 @@ export interface HistoricoBalanceamento {
   produtoId: string;
   produtoNome: string;
   produtoReferencia: string;
-  metodo: 1 | 2 | 3;
+  metodo: 1 | 2 | 3 | 4 | 5;
   resultados: ResultadosBalanceamento;
   configuracao: ConfiguracaoDistribuicao;
   oleMedia: number;

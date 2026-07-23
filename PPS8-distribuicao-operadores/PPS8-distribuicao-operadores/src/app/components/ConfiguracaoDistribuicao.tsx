@@ -5,7 +5,7 @@ import { Label } from "./ui/label";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
-import { Calculator, Edit3 } from "lucide-react";
+import { Calculator, Edit3, UserRound } from "lucide-react";
 
 interface ConfiguracaoDistribuicaoProps {
   config: ConfiguracaoDistribuicao;
@@ -150,7 +150,7 @@ export function ConfiguracaoDistribuicaoComponent({
           </div>
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-6">
+       <CardContent className="p-4 xl:h-[600px] xl:overflow-y-auto">
         <div className={`grid grid-cols-1 gap-6 ${config.possibilidade !== 4 ? "xl:grid-cols-2" : ""}`}>
         <div className="space-y-3">
           <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
@@ -159,7 +159,7 @@ export function ConfiguracaoDistribuicaoComponent({
           <RadioGroup
             value={config.possibilidade.toString()}
             onValueChange={(value) =>
-              onChange({ ...config, possibilidade: Number(value) as 1 | 2 | 3 | 4 })
+              onChange({ ...config, possibilidade: Number(value) as 1 | 2 | 3 | 4 | 5 })
             }
           >
             <div
@@ -173,6 +173,22 @@ export function ConfiguracaoDistribuicaoComponent({
                 </Label>
                 <p className="text-xs text-gray-500 mt-1">
                   Calcula automaticamente o balanceamento mais eficiente com base nas horas do turno e produtividade estimada
+                </p>
+              </div>
+            </div>
+
+            <div
+              className="flex items-start space-x-3 p-4 border border-gray-200 rounded-sm hover:border-blue-300 transition-colors cursor-pointer"
+              onClick={() => onChange({ ...config, possibilidade: 5 })}
+            >
+              <RadioGroupItem value="5" id="r5" className="mt-0.5" />
+              <div className="flex-1">
+                <Label htmlFor="r5" className="font-medium cursor-pointer text-gray-900 text-sm flex items-center gap-2">
+                  <UserRound className="w-4 h-4 text-teal-600" />
+                  Distribuição Ideal sem OLE
+                </Label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Calcula com operadores virtuais e permite atribuir colaboradores depois, coluna a coluna.
                 </p>
               </div>
             </div>
