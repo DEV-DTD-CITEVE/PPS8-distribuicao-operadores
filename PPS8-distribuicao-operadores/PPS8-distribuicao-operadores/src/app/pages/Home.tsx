@@ -13,6 +13,7 @@ import { salvarHistorico, obterHistorico } from "../utils/historico";
 import { useStorage } from "../contexts/StorageContext";
 import axios from "axios";
 import { Label } from "../components/ui/label";
+import { Input } from "../components/ui/input";
 import { API_BASE_URL } from "../config";
 import { SearchableCombobox } from "../components/SearchableCombobox";
 import { Progress } from "../components/ui/progress";
@@ -1210,6 +1211,7 @@ export default function Home() {
   const [idealCollaborators, setIdealCollaborators] = useState<any[]>([]);
   const [idealCollaboratorsLoading, setIdealCollaboratorsLoading] = useState(false);
   const [idealAssignmentColumn, setIdealAssignmentColumn] = useState<string | null>(null);
+  const [idealCollaboratorSearch, setIdealCollaboratorSearch] = useState("");
 
   const getMaxPostsPayloadInline = useCallback((nextLayoutConfig: LayoutConfig) => {
     const postosInputEl = document.getElementById("lc-postos") as HTMLInputElement | null;
@@ -2664,6 +2666,7 @@ export default function Home() {
 
   const handleAtribuirColunaIdeal = useCallback(async (operatorCode: string) => {
     setIdealAssignmentColumn(operatorCode);
+    setIdealCollaboratorSearch("");
     if (idealCollaborators.length > 0) return;
     setIdealCollaboratorsLoading(true);
     try {
@@ -2789,6 +2792,15 @@ export default function Home() {
             normalizeKey(String(collaboratorCode)) === normalizeKey(idealAssignmentColumn)
           )?.[0] || idealAssignmentColumn)
     : null;
+  const idealCollaboratorsFiltered = idealCollaborators.filter((collaborator) => {
+    const id = pickString(collaborator, ["collaborator_id", "collaboratorId", "id", "operator_id", "operador_id"]);
+    const name = pickString(collaborator, ["collaborator_name", "collaboratorName", "name", "nome"]);
+    const idKey = normalizeKey(id);
+    const currentAssignment = idealSelectedVirtualCode ? idealRenameMap[idealSelectedVirtualCode] : "";
+    const alreadyAssignedElsewhere = idealAssignedCollaboratorIds.has(idKey) && normalizeKey(String(currentAssignment)) !== idKey;
+    const query = normalizeKey(idealCollaboratorSearch);
+    return !alreadyAssignedElsewhere && (!query || normalizeKey(id).includes(query) || normalizeKey(name).includes(query));
+  });
 
   const handleSwapPositionsInline = useCallback(async (positionA: string, positionB: string) => {
     const codigoFicha = taskCodeInline || taskCodeSelecionado || resultadosInlineData?.taskCode;
@@ -4236,7 +4248,12 @@ export default function Home() {
       )}
       <Dialog
         open={Boolean(idealAssignmentColumn)}
-        onOpenChange={(open) => { if (!open) setIdealAssignmentColumn(null); }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIdealAssignmentColumn(null);
+            setIdealCollaboratorSearch("");
+          }
+        }}
       >
         <DialogContent className="max-w-lg rounded-sm">
           <DialogHeader>
@@ -4257,18 +4274,22 @@ export default function Home() {
               className="h-2"
             />
           </div>
+          <Input
+            value={idealCollaboratorSearch}
+            onChange={(event) => setIdealCollaboratorSearch(event.target.value)}
+            placeholder="Pesquisar por ID ou nome..."
+            className="rounded-sm text-sm"
+            disabled={idealCollaboratorsLoading || isAjustando}
+          />
           <div className="max-h-96 overflow-y-auto space-y-1">
             {idealCollaboratorsLoading ? (
               <div className="py-6 text-center text-sm text-gray-500">A carregar colaboradores...</div>
-            ) : idealCollaborators.length === 0 ? (
+            ) : idealCollaboratorsFiltered.length === 0 ? (
               <div className="py-6 text-center text-sm text-gray-500">Nenhum colaborador encontrado.</div>
-            ) : idealCollaborators.map((collaborator, index) => {
+            ) : idealCollaboratorsFiltered.map((collaborator, index) => {
               const id = pickString(collaborator, ["collaborator_id", "collaboratorId", "id", "operator_id", "operador_id"]);
               const name = pickString(collaborator, ["collaborator_name", "collaboratorName", "name", "nome"]) || id;
-              const idKey = normalizeKey(id);
-              const currentAssignment = idealSelectedVirtualCode ? idealRenameMap[idealSelectedVirtualCode] : "";
-              const alreadyAssignedElsewhere = idealAssignedCollaboratorIds.has(idKey) && normalizeKey(String(currentAssignment)) !== idKey;
-              if (alreadyAssignedElsewhere) return null;
+              const alreadyAssignedElsewhere = false;
               return (
                 <Button
                   key={`${id}-${index}`}

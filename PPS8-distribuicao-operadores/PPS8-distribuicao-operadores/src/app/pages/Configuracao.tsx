@@ -91,6 +91,18 @@ const ensureArray = (value: unknown): ApiRecord[] => {
   return [];
 };
 
+const ensureOperationRecords = (value: unknown): ApiRecord[] => {
+  if (Array.isArray(value)) return value as ApiRecord[];
+  if (!value || typeof value !== "object") return [];
+  const record = value as ApiRecord;
+  if (pickString(record, ["operation_id", "operation_code", "operation_name", "name", "id"])) return [record];
+  return Object.entries(record).map(([key, entry]) =>
+    entry && typeof entry === "object"
+      ? { ...(entry as ApiRecord), operation_key: key }
+      : { operation_key: key, ole_percentage: entry }
+  );
+};
+
 const pickString = (obj: ApiRecord, keys: string[]): string => {
   for (const key of keys) {
     const value = obj[key];
@@ -423,12 +435,14 @@ export default function Configuracao() {
         const mapeados: Operador[] = colaboradores.map((colaborador, index) => {
           const id = pickString(colaborador, ["collaborator_id", "operator_id", "id"]) || `OP${String(index + 1).padStart(3, "0")}`;
           const nome = pickString(colaborador, ["collaborator_name", "operator_name", "name"]);
-          const operacoes = ensureArray(colaborador.operations);
+          const operacoes = ensureOperationRecords(
+            colaborador.operations ?? colaborador.operacoes ?? colaborador.operation_oles ?? colaborador.by_operation
+          );
 
           const competencias: Operador["competencias"] = {};
 
           operacoes.forEach((op) => {
-            const operacaoNome = pickString(op, ["operation_name", "operation_id", "operation_code", "id"]);
+            const operacaoNome = pickString(op, ["operation_name", "operation_id", "operation_code", "id", "operation_key"]);
             if (!operacaoNome) return;
             const ole = pickNumber(op, ["ole_percentage", "ole", "ole_percent"]) ?? 0;
             competencias[operacaoNome] = { operacao: operacaoNome, ole };
@@ -451,9 +465,11 @@ export default function Configuracao() {
 
         const lookupOperacoes = new Map<string, { id: string; nome: string }>();
         colaboradores.forEach((colaborador) => {
-          ensureArray(colaborador.operations).forEach((op) => {
-            const operacaoId = pickString(op, ["operation_id", "operation_code", "id", "code"]);
-            const operacaoNome = pickString(op, ["operation_name", "name", "nome"]);
+          ensureOperationRecords(
+            colaborador.operations ?? colaborador.operacoes ?? colaborador.operation_oles ?? colaborador.by_operation
+          ).forEach((op) => {
+            const operacaoId = pickString(op, ["operation_id", "operation_code", "id", "code", "operation_key"]);
+            const operacaoNome = pickString(op, ["operation_name", "name", "nome", "operation_key"]);
             const chaveNome = operacaoNome ? normalizeText(operacaoNome) : "";
             const chaveId = operacaoId ? normalizeText(operacaoId) : "";
             const entrada = {
@@ -978,7 +994,13 @@ export default function Configuracao() {
                         const key = celulaKey(operador.id, pol);
                         const competencia = operador.competencias[pol];
                         return (
-                          <td key={key} className="p-2 text-center">
+                          <td
+                            key={key}
+                            className="p-2 text-center"
+                            title={competencia && Number.isFinite(Number(competencia.ole))
+                              ? `OLE: ${competencia.ole}%`
+                              : undefined}
+                          >
                             {!tabelaSomenteLeitura && editandoCelula === key ? (
                               <div className="space-y-1">
                                 <Input
@@ -1017,7 +1039,7 @@ export default function Configuracao() {
                               </div>
                             ) : (
                               <div
-                                className={`inline-flex flex-col items-center justify-center min-w-[120px] min-h-[36px] rounded-sm cursor-pointer transition-colors ${
+                                className={`group relative inline-flex flex-col items-center justify-center min-w-[120px] min-h-[36px] rounded-sm cursor-pointer transition-colors ${
                                   competencia
                                     ? `px-3 py-2 font-medium text-xs ${getOleColorClasses(competencia.ole)}`
                                     : "w-10 h-10 bg-gray-100 text-gray-400 hover:bg-gray-200"
@@ -1027,6 +1049,11 @@ export default function Configuracao() {
                                 }}
                               >
                                 {competencia ? <span className="text-xs font-mono">{competencia.ole}%</span> : "-"}
+                                {competencia && Number.isFinite(Number(competencia.ole)) ? (
+                                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-sm bg-gray-900 px-2 py-1 text-[10px] font-medium text-white shadow-lg group-hover:block">
+                                    OLE: {competencia.ole}%
+                                  </span>
+                                ) : null}
                               </div>
                             )}
                           </td>
