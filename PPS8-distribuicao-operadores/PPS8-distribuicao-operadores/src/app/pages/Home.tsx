@@ -1212,6 +1212,10 @@ export default function Home() {
   const [idealCollaboratorsLoading, setIdealCollaboratorsLoading] = useState(false);
   const [idealAssignmentColumn, setIdealAssignmentColumn] = useState<string | null>(null);
   const [idealCollaboratorSearch, setIdealCollaboratorSearch] = useState("");
+  const [idealOleDetails, setIdealOleDetails] = useState<Record<string, { media?: number; operacoes: Array<{ id: string; nome?: string; ole?: number }> }>>({});
+  const [idealOleExpanded, setIdealOleExpanded] = useState<Record<string, boolean>>({});
+  const [idealOleDetailsCollaborator, setIdealOleDetailsCollaborator] = useState<{ id: string; name: string } | null>(null);
+  const [idealOperationsByVirtual, setIdealOperationsByVirtual] = useState<Record<string, string[]>>({});
 
   const getMaxPostsPayloadInline = useCallback((nextLayoutConfig: LayoutConfig) => {
     const postosInputEl = document.getElementById("lc-postos") as HTMLInputElement | null;
@@ -2667,6 +2671,140 @@ export default function Home() {
   const handleAtribuirColunaIdeal = useCallback(async (operatorCode: string) => {
     setIdealAssignmentColumn(operatorCode);
     setIdealCollaboratorSearch("");
+    setIdealOleExpanded({});
+    const bodyBase = ajusteBodyBaseInline ?? ajusteBodyBasePorTipoInline[layoutConfig.tipoLayout];
+    const renameMap = ((bodyBase as any)?.rename_map || {}) as Record<string, string>;
+    const virtualCode = operatorCode.toUpperCase().startsWith("VIRT")
+      ? operatorCode
+      : Object.entries(renameMap).find(([, collaboratorCode]) =>
+          normalizeKey(String(collaboratorCode)) === normalizeKey(operatorCode)
+        )?.[0] || operatorCode;
+    const operationsByVirtual: Record<string, string[]> = {};
+    const tableRows = ensureArray(
+      resultadosAtuaisInline?.operation_allocations ??
+      (resultadosAtuaisInline as any)?.table_data ??
+      (resultadosAtuaisInline as any)?.tableData
+    );
+    tableRows.forEach((row: any) => {
+        const refs = new Set<string>([
+          ...Object.keys(row?.operator_times || {}),
+          ...Object.keys(row?.operator_positions || {}),
+          ...ensureArray(row?.operator_allocations).map((allocation: any) =>
+            pickString(allocation, ["operator_code", "operator_id", "operador_id", "operator", "operador", "code"])
+          ),
+        ]);
+        const operationId = pickString(row, ["operation_id", "operation_code", "operation", "code", "id"]);
+        if (!operationId) return;
+        Array.from(refs).forEach((ref) => {
+          const virtualRef = ref.toUpperCase().startsWith("VIRT") ? ref :
+            Object.entries(renameMap).find(([, collaboratorCode]) => normalizeKey(String(collaboratorCode)) === normalizeKey(ref))?.[0] || ref;
+          if (!virtualRef.toUpperCase().startsWith("VIRT")) return;
+          operationsByVirtual[virtualRef] = Array.from(new Set([...(operationsByVirtual[virtualRef] || []), operationId]));
+        });
+      });
+    setIdealOperationsByVirtual(operationsByVirtual);
+    const operationIds = operationsByVirtual[virtualCode] || [];
+
+    setIdealCollaboratorsLoading(true);
+    try {
+      if (operationIds.length === 0) {
+        setIdealCollaborators([]);
+        setIdealOleDetails({});
+        return;
+      }
+
+      const response = await axios.get(`${API_BASE_URL}/polyvalence/candidates/average-ole`, {
+        params: { operation_ids: operationIds.join(",") },
+      });
+      const data = response.data;
+      const candidates = (Array.isArray(data?.candidates) ? data.candidates : ensureArray(data))
+        .filter((candidate: any) => candidate && candidate.active !== false);
+      const operationNames = new Map<string, string>();
+      operacoes.forEach((operation: any) => {
+        const id = pickString(operation, ["operation_id", "operation_code", "id", "code", "referencia"]);
+        const name = pickString(operation, ["operation_name", "name", "nome", "descricao"]);
+        if (id && name) operationNames.set(normalizeKey(id), name);
+      });
+      const details: Record<string, { media?: number; operacoes: Array<{ id: string; nome?: string; ole?: number }> }> = {};
+      candidates.forEach((candidate: any) => {
+        const collaboratorId = pickString(candidate, ["collaborator_id", "collaboratorId", "operator_id", "operator_code", "id", "code"]);
+        if (!collaboratorId) return;
+        const oleByOperation = candidate.ole_by_operation && typeof candidate.ole_by_operation === "object"
+          ? candidate.ole_by_operation
+          : {};
+        const candidateOperations = Object.entries(oleByOperation as Record<string, unknown>).map(([id, ole]) => ({
+          id,
+          nome: operationNames.get(normalizeKey(id)),
+          ole: typeof ole === "number" ? ole : Number(ole),
+        }));
+        details[normalizeKey(collaboratorId)] = {
+          media: pickNumber(candidate, ["average_ole", "average_ole_percentage", "ole_average", "media_ole", "average"]) ?? undefined,
+          operacoes: candidateOperations.filter((operation) => Number.isFinite(operation.ole)),
+        };
+      });
+      setIdealCollaborators(candidates);
+      setIdealOleDetails(details);
+    } catch (error) {
+      setIdealAssignmentColumn(null);
+      setIdealCollaborators([]);
+      setIdealOleDetails({});
+      setErroPopupInline((error as any)?.response?.data?.detail || "NÃ£o foi possÃ­vel obter os candidatos.");
+    } finally {
+      setIdealCollaboratorsLoading(false);
+    }
+    return;
+
+    if (operationIds.length > 0) {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/polyvalence/candidates/average-ole`, {
+          params: {
+            operation_ids: operationIds.join(","),
+          },
+        });
+        const data = response.data;
+        const rows = ensureArray(data).length > 0
+          ? ensureArray(data)
+          : data && typeof data === "object"
+            ? Object.entries(data as Record<string, any>).map(([collaboratorId, value]) => ({
+                ...(value && typeof value === "object" ? value : {}),
+                collaborator_id: collaboratorId,
+              }))
+            : [];
+        const details: Record<string, { media?: number; operacoes: Array<{ id: string; nome?: string; ole?: number }> }> = {};
+        rows.forEach((row: any) => {
+          const collaborator = row.collaborator && typeof row.collaborator === "object" ? row.collaborator : {};
+          const collaboratorId = pickString(row, ["collaborator_id", "collaboratorId", "operator_id", "operator_code", "id", "code"]) ||
+            pickString(collaborator, ["collaborator_id", "collaboratorId", "operator_id", "operator_code", "id", "code"]);
+          if (!collaboratorId) return;
+          const operationSource = row.operations ?? row.operacoes ?? row.operation_oles ?? row.oles ?? row.operations_by_id;
+          const operationRows = Array.isArray(operationSource)
+            ? operationSource
+            : operationSource && typeof operationSource === "object"
+              ? Object.entries(operationSource as Record<string, any>).map(([id, value]) => ({
+                  ...(value && typeof value === "object" ? value : {}),
+                  operation_id: id,
+                }))
+              : [];
+          const operacoes = operationRows.map((operation: any) => ({
+            id: pickString(operation, ["operation_id", "operation_code", "id", "code"]) || "",
+            nome: pickString(operation, ["operation_name", "name", "nome"]) || undefined,
+            ole: pickNumber(operation, ["ole_percentage", "ole_percent", "ole"] ) ?? undefined,
+          })).filter((operation) => operation.id);
+          details[normalizeKey(collaboratorId)] = {
+            media: pickNumber(row, ["average_ole", "average_ole_percentage", "ole_average", "media_ole", "average"]) ??
+              pickNumber(collaborator, ["average_ole", "average_ole_percentage", "ole_average", "media_ole", "average"]) ?? undefined,
+            operacoes,
+          };
+        });
+        setIdealOleDetails(details);
+      } catch (error) {
+        console.warn("Não foi possível carregar os OLEs das operações:", error);
+        setIdealOleDetails({});
+      }
+    } else {
+      setIdealOleDetails({});
+    }
+
     if (idealCollaborators.length > 0) return;
     setIdealCollaboratorsLoading(true);
     try {
@@ -2688,7 +2826,7 @@ export default function Home() {
     } finally {
       setIdealCollaboratorsLoading(false);
     }
-  }, [idealCollaborators.length]);
+  }, [ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, layoutConfig.tipoLayout, resultadosAtuaisInline, operacoes]);
 
   const handleConfirmarAtribuicaoIdeal = useCallback(async (collaborator: any) => {
     const selectedColumnCode = idealAssignmentColumn;
@@ -4255,7 +4393,7 @@ export default function Home() {
           }
         }}
       >
-        <DialogContent className="max-w-lg rounded-sm">
+        <DialogContent className="w-[min(96vw,760px)] max-w-2xl overflow-x-hidden rounded-sm">
           <DialogHeader>
             <DialogTitle>Atribuir colaborador a {idealAssignmentColumn || "coluna"}</DialogTitle>
             <DialogDescription>
@@ -4281,7 +4419,7 @@ export default function Home() {
             className="rounded-sm text-sm"
             disabled={idealCollaboratorsLoading || isAjustando}
           />
-          <div className="max-h-96 overflow-y-auto space-y-1">
+          <div className="max-h-96 min-w-0 max-w-full space-y-1 overflow-x-hidden overflow-y-auto">
             {idealCollaboratorsLoading ? (
               <div className="py-6 text-center text-sm text-gray-500">A carregar colaboradores...</div>
             ) : idealCollaboratorsFiltered.length === 0 ? (
@@ -4289,23 +4427,100 @@ export default function Home() {
             ) : idealCollaboratorsFiltered.map((collaborator, index) => {
               const id = pickString(collaborator, ["collaborator_id", "collaboratorId", "id", "operator_id", "operador_id"]);
               const name = pickString(collaborator, ["collaborator_name", "collaboratorName", "name", "nome"]) || id;
+              const oleDetails = idealOleDetails[normalizeKey(id)] || { operacoes: [] };
+              const isOleExpanded = false;
               const alreadyAssignedElsewhere = false;
               return (
                 <Button
                   key={`${id}-${index}`}
                   type="button"
                   variant="outline"
-                  className="w-full justify-start rounded-sm text-left"
+                  className="w-full min-w-0 justify-start rounded-sm text-left"
                   disabled={isAjustando}
                   title={alreadyAssignedElsewhere ? "Este colaborador já está atribuído a outra coluna" : undefined}
                   onClick={() => void handleConfirmarAtribuicaoIdeal(collaborator)}
                 >
-                  <span className="font-mono text-xs mr-2">{id}</span>
-                  <span>{name}</span>
+                  <span className="flex min-w-0 w-full items-center gap-2">
+                    <span className="font-mono text-xs mr-2">{id}</span>
+                    <span className="min-w-0 flex-1 truncate text-left">{name}</span>
+                    <span className="text-[11px] text-gray-500">
+                      Média OLE: {oleDetails.media != null ? `${oleDetails.media.toFixed(1)}%` : "—"}
+                    </span>
+                    {true ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="text-[11px] text-blue-600 hover:underline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setIdealOleDetailsCollaborator({ id, name });
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setIdealOleDetailsCollaborator({ id, name });
+                          }
+                        }}
+                      >
+                        {isOleExpanded ? "Esconder" : "Ver mais"}
+                      </span>
+                    ) : null}
+                  </span>
+                  {isOleExpanded ? (
+                    <span className="mt-1 w-full border-t border-gray-200 pt-1 text-left text-[11px] font-normal text-gray-600">
+                      <span className="block font-medium text-gray-700">
+                        Média OLE: {oleDetails.media != null ? `${oleDetails.media.toFixed(1)}%` : "—"}
+                      </span>
+                      {oleDetails.operacoes.map((operation) => (
+                        <span key={operation.id} className="block">
+                          {operation.nome || operation.id}: {operation.ole != null ? `${operation.ole.toFixed(1)}%` : "—"}
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
                 </Button>
               );
             })}
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(idealOleDetailsCollaborator)}
+        onOpenChange={(open) => {
+          if (!open) setIdealOleDetailsCollaborator(null);
+        }}
+      >
+        <DialogContent className="max-w-sm rounded-sm">
+          <DialogHeader>
+            <DialogTitle>Operações de {idealOleDetailsCollaborator?.name || "colaborador"}</DialogTitle>
+            <DialogDescription>OLE das operações consideradas para este candidato.</DialogDescription>
+          </DialogHeader>
+          {idealOleDetailsCollaborator ? (() => {
+            const details = idealOleDetails[normalizeKey(idealOleDetailsCollaborator.id)] || { operacoes: [] };
+            return (
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between rounded-sm bg-gray-50 px-3 py-2">
+                  <span className="text-gray-600">Média OLE</span>
+                  <span className="font-semibold text-gray-900">
+                    {details.media != null ? `${details.media.toFixed(1)}%` : "—"}
+                  </span>
+                </div>
+                <div className="max-h-64 space-y-1 overflow-y-auto">
+                  {details.operacoes.length === 0 ? (
+                    <div className="py-4 text-center text-xs text-gray-500">Sem operações disponíveis.</div>
+                  ) : details.operacoes.map((operation) => (
+                    <div key={operation.id} className="flex items-center justify-between rounded-sm border px-3 py-2">
+                      <span className="truncate pr-3">{operation.nome || operation.id}</span>
+                      <span className="font-mono text-xs font-semibold text-gray-700">
+                        {operation.ole != null ? `${operation.ole.toFixed(1)}%` : "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })() : null}
         </DialogContent>
       </Dialog>
       <Dialog

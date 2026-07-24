@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { ConfiguracaoDistribuicao } from "../types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 import { Label } from "./ui/label";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
-import { Calculator, Edit3, UserRound } from "lucide-react";
+import { Edit3, UserRound } from "lucide-react";
 
 interface ConfiguracaoDistribuicaoProps {
   config: ConfiguracaoDistribuicao;
@@ -137,20 +137,7 @@ export function ConfiguracaoDistribuicaoComponent({
 
   return (
     <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
-      <CardHeader className="border-b border-gray-200">
-        <CardTitle className="flex items-center gap-3 text-gray-900">
-          <div className="w-8 h-8 bg-purple-100 rounded-sm flex items-center justify-center">
-            <Calculator className="w-5 h-5 text-purple-600" />
-          </div>
-          <div>
-            <div className="text-base font-semibold">Configuracao de Distribuicao</div>
-            <CardDescription className="text-gray-500 mt-0.5 text-xs">
-              Criterios para o balanceamento da linha de producao
-            </CardDescription>
-          </div>
-        </CardTitle>
-      </CardHeader>
-       <CardContent className="p-4 xl:h-[620px] xl:overflow-y-auto">
+      <CardContent className="p-4">
         <div className={`grid grid-cols-1 gap-6 ${config.possibilidade !== 4 ? "xl:grid-cols-2" : ""}`}>
         <div className="space-y-3">
           <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
@@ -390,7 +377,7 @@ export function ConfiguracaoDistribuicaoComponent({
                 />
               </div>
 
-              {config.possibilidade === 1 && (
+              {(config.possibilidade === 1 || config.possibilidade === 5) && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
                     <div>
@@ -442,7 +429,7 @@ export function ConfiguracaoDistribuicaoComponent({
                     />
                   </div>
 
-                  {!usarAllocateModo1Api && (
+                  {!usarAllocateModo1Api && config.possibilidade !== 5 && (
                     <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-center p-4 border border-gray-200 rounded-sm bg-gray-50">
                       <div>
                         <Label className="font-medium text-gray-900 text-sm">Numero de Operadores</Label>

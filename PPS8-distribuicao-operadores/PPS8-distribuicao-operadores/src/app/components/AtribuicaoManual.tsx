@@ -21,6 +21,20 @@ type ApiRecord = Record<string, unknown>;
 
 const normalizeToken = (value: string): string => value.trim().toUpperCase();
 
+const readNumber = (record: ApiRecord, keys: string[]): number | undefined => {
+  for (const key of keys) {
+    const value = record[key];
+    const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value.replace(",", ".")) : NaN;
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+};
+
+type OleCandidateInfo = {
+  operacao?: number;
+  media?: number;
+};
+
 const extractCollaboratorsArray = (value: unknown): ApiRecord[] => {
   if (Array.isArray(value)) {
     return value.filter((entry): entry is ApiRecord => Boolean(entry) && typeof entry === "object");
@@ -149,6 +163,7 @@ export function AtribuicaoManual({
   >({});
   const [loadingOperadoresCapazes, setLoadingOperadoresCapazes] = useState<Record<string, boolean>>({});
   const [erroOperadoresCapazes, setErroOperadoresCapazes] = useState<Record<string, string | null>>({});
+  const [olePorOperacao, setOlePorOperacao] = useState<Record<string, Record<string, OleCandidateInfo>>>({});
   const [savingAtribuicao, setSavingAtribuicao] = useState(false);
   const [erroAtribuicao, setErroAtribuicao] = useState<string | null>(null);
   const [pesquisaOperacao, setPesquisaOperacao] = useState("");
@@ -190,6 +205,32 @@ export function AtribuicaoManual({
         });
 
         colaboradoresApi = Array.from(colaboradoresMap.values());
+
+        try {
+          const oleResponse = await axios.get(`${API_BASE_URL}/polyvalence/candidates/average-ole`, {
+            params: {
+              operation_id: operationId,
+              ...(familyId ? { family_id: familyId } : {}),
+            },
+          });
+          const oleRows = extractCollaboratorsArray(oleResponse.data);
+          const oleMap: Record<string, OleCandidateInfo> = {};
+          oleRows.forEach((entry) => {
+            const collaboratorId = String(
+              entry.collaborator_id ?? entry.collaborator_code ?? entry.operator_id ?? entry.operator_code ?? entry.id ?? entry.code ?? ""
+            ).trim();
+            if (!collaboratorId) return;
+            const nestedOperation = extractCollaboratorsArray(entry.operations ?? entry.operacoes)[0];
+            const operacaoOle =
+              readNumber(entry, ["ole_percentage", "operation_ole", "operation_ole_percentage", "ole_operation", "ole"]) ??
+              (nestedOperation ? readNumber(nestedOperation, ["ole_percentage", "operation_ole", "ole"]) : undefined);
+            const media = readNumber(entry, ["average_ole", "average_ole_percentage", "ole_average", "media_ole", "average"]);
+            oleMap[normalizeToken(collaboratorId)] = { operacao: operacaoOle, media };
+          });
+          setOlePorOperacao((prev) => ({ ...prev, [operacao.id]: oleMap }));
+        } catch (error) {
+          console.warn("Não foi possível carregar o OLE médio dos candidatos:", error);
+        }
         break;
       } catch (error) {
         ultimaFalha = error;
@@ -389,6 +430,7 @@ export function AtribuicaoManual({
                       ? operacao.tempo / operadoresAtribuidos.length
                       : operacao.tempo;
                   const operadoresDisponiveis = operadoresCapazesPorOperacao[operacao.id] || operadores;
+                  const oleInfo = olePorOperacao[operacao.id]?.[normalizeToken(op.id)];
                   const pesquisaNormalizada = pesquisaOperador.trim().toLowerCase();
                   const operadoresFiltrados = operadoresDisponiveis.filter((op) => {
                     if (!pesquisaNormalizada) return true;
@@ -538,7 +580,12 @@ export function AtribuicaoManual({
                                             {op.nome && (
                                               <div className="text-xs text-gray-600">{op.nome}</div>
                                             )}
-                                            <div className="text-xs text-gray-500">OLE Historico: {op.oleHistorico}%</div>
+                                            <div className="text-xs text-gray-500">
+                                              OLE da operação: {(oleInfo?.operacao ?? op.oleHistorico).toFixed(1)}%
+                                            </div>
+                                            <div className="text-xs text-gray-500">
+                                              Média OLE: {oleInfo?.media != null ? `${oleInfo.media.toFixed(1)}%` : "—"}
+                                            </div>
                                           </div>
 
                                           <div className="text-right">
