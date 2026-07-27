@@ -33,6 +33,7 @@ import {
   FileSpreadsheet,
   Search,
   X,
+  Users,
 } from "lucide-react";
 import { AtribuicaoManual } from "../components/AtribuicaoManual";
 import { SearchableCombobox } from "../components/SearchableCombobox";
@@ -495,6 +496,7 @@ export default function FichaTecnica() {
   );
   const [showNovoProduto, setShowNovoProduto] = useState(false);
   const [showNovaOperacao, setShowNovaOperacao] = useState(false);
+  const [showAtribuicaoManual, setShowAtribuicaoManual] = useState(false);
   const [editandoOperacao, setEditandoOperacao] = useState<string | null>(null);
   const [mensagemGuardado, setMensagemGuardado] = useState<string | null>(null);
   const [atribuicoesManual, setAtribuicoesManual] = useState<{ [operacaoId: string]: string[] }>({});
@@ -1650,9 +1652,9 @@ export default function FichaTecnica() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Ficha Técnica</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Referências</h1>
           <p className="text-gray-500 mt-1 text-sm">
-            Gama operatória por produto — edite e guarde cada ficha técnica
+            Gama operatória por produto — edite e guarde cada referência
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -1662,7 +1664,7 @@ export default function FichaTecnica() {
               className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs gap-2"
             >
               <Save className="w-4 h-4" />
-              Guardar Ficha
+              Guardar Referência
             </Button>
           )}
           <Dialog open={showNovoProduto} onOpenChange={setShowNovoProduto}>
@@ -1774,7 +1776,7 @@ export default function FichaTecnica() {
 
             <div className="space-y-2">
               <Label className="text-xs font-semibold uppercase text-gray-600">
-                Ficha Tecnica
+                Referência
               </Label>
               <SearchableCombobox
                 value={produtoSelecionado || undefined}
@@ -1785,10 +1787,10 @@ export default function FichaTecnica() {
                     ? "A carregar fichas..."
                     : loadingFichaPorCodigo
                       ? "A carregar detalhes..."
-                      : "Selecione uma ficha tecnica"
+                      : "Selecione uma referência"
                 }
-                searchPlaceholder="Pesquisar ficha..."
-                emptyText="Nenhuma ficha encontrada."
+                searchPlaceholder="Pesquisar referência..."
+                emptyText="Nenhuma referência encontrada."
                 disabled={loadingFichas || loadingFichaPorCodigo || produtos.length === 0}
                 triggerClassName="rounded-sm text-sm"
               />
@@ -1805,7 +1807,7 @@ export default function FichaTecnica() {
               <CardContent className="p-16 text-center">
                 <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <div className="text-gray-500 text-sm">
-                  Selecione um produto para ver a ficha técnica
+                  Selecione um produto para ver a referência
                 </div>
                 <div className="text-gray-400 text-xs mt-1">
                   Ou crie um novo produto para começar
@@ -1921,6 +1923,36 @@ export default function FichaTecnica() {
                     >
                       <Search className="w-4 h-4" />
                     </Button>
+                    <Dialog open={showAtribuicaoManual} onOpenChange={setShowAtribuicaoManual}>
+                      <DialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 rounded-sm p-0 text-gray-600 hover:bg-blue-50 hover:text-blue-600"
+                          title="Atribuir operadores às operações"
+                          aria-label="Atribuir operadores às operações"
+                        >
+                          <Users className="w-4 h-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto rounded-sm">
+                        <DialogHeader>
+                          <DialogTitle>Atribuição manual de operações</DialogTitle>
+                          <DialogDescription>
+                            Seleciona os operadores para cada operação desta referência.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <AtribuicaoManual
+                          operadores={operadores}
+                          operacoes={produto.operacoes}
+                          atribuicoesManual={atribuicoesManual}
+                          onAtribuirManualmente={handleAtribuirManualmente}
+                          familyId={grupoArtigoSelecionado}
+                          hideHeader
+                        />
+                      </DialogContent>
+                    </Dialog>
                     <Dialog open={showNovaOperacao} onOpenChange={setShowNovaOperacao}>
                       <DialogTrigger asChild>
                         <Button
@@ -2080,7 +2112,7 @@ export default function FichaTecnica() {
                           <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase">
                             Máquina
                           </th>
-                          <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-32">
+                          <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-48">
                             Ações
                           </th>
                         </tr>
@@ -2149,6 +2181,24 @@ export default function FichaTecnica() {
                                   )}
                                 </div>
                               )}
+                              {atribuicoesManual[operacao.id]?.length > 0 && (
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
+                                  <span className="text-[11px] font-medium text-blue-700">Atribuído a:</span>
+                                  {atribuicoesManual[operacao.id].map((operadorId) => {
+                                    const operador = operadores.find((item) => item.id === operadorId);
+                                    return (
+                                      <span
+                                        key={operadorId}
+                                        className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700"
+                                        title={operador?.nome || operadorId}
+                                      >
+                                        {operador?.nome || "Operador"} ({operadorId})
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </td>
                             <td className="p-3">
                               <Input
@@ -2183,34 +2233,47 @@ export default function FichaTecnica() {
                                 placeholder="—"
                               />
                             </td>
-                            <td className="p-3">
-                              <div className="flex items-center justify-center gap-1">
+                              <td className="p-3">
+                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setShowAtribuicaoManual(true)}
+                                  className="h-7 w-7 rounded-sm p-0 hover:bg-gray-100"
+                                  title="Atribuir operadores a esta operação"
+                                  aria-label={`Atribuir operadores a ${operacao.id}`}
+                                >
+                                  <Users className="h-3.5 w-3.5" />
+                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleReorder(index, "up")}
                                   disabled={index <= 0}
-                                  className="h-7 w-7 p-0 rounded-sm hover:bg-gray-100"
+                                  className="h-7 w-7 rounded-sm p-0 hover:bg-gray-100"
+                                  title="Mover para cima"
                                 >
-                                  <ArrowUp className="w-3 h-3" />
+                                  <ArrowUp className="h-3 w-3" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleReorder(index, "down")}
                                   disabled={index === operacoesTabelaBase.length - 1 || index < 0}
-                                  className="h-7 w-7 p-0 rounded-sm hover:bg-gray-100"
+                                  className="h-7 w-7 rounded-sm p-0 hover:bg-gray-100"
+                                  title="Mover para baixo"
                                 >
-                                  <ArrowDown className="w-3 h-3" />
+                                  <ArrowDown className="h-3 w-3" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => solicitarRemocaoOperacao(operacao)}
                                   disabled={Boolean(removingOperacaoId)}
-                                  className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600"
+                                  className="h-7 w-7 rounded-sm p-0 hover:bg-orange-50 hover:text-orange-600"
+                                  title="Eliminar operação"
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
                             </td>
@@ -2247,17 +2310,6 @@ export default function FichaTecnica() {
           )}
         </div>
       </div>
-
-      {/* Atribuição Manual de Operações */}
-      {produto && produto.operacoes.length > 0 && (
-        <AtribuicaoManual
-          operadores={operadores}
-          operacoes={produto.operacoes}
-          atribuicoesManual={atribuicoesManual}
-          onAtribuirManualmente={handleAtribuirManualmente}
-          familyId={grupoArtigoSelecionado}
-        />
-      )}
 
       <Dialog
         open={Boolean(produtoParaRemover)}

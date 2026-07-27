@@ -1171,6 +1171,11 @@ export default function Home() {
   const [candidatePoolsByOperation, setCandidatePoolsByOperation] = useState<Record<string, string[]>>({});
   const [quantidadeObjetivoInput, setQuantidadeObjetivoInput] = useState("");
   const [numeroOperadoresInput, setNumeroOperadoresInput] = useState("");
+  const [numeroOperadoresCandidates, setNumeroOperadoresCandidates] = useState<any[]>([]);
+  const [numeroOperadoresCandidateIds, setNumeroOperadoresCandidateIds] = useState<string[]>([]);
+  const [numeroOperadoresCandidateSearch, setNumeroOperadoresCandidateSearch] = useState("");
+  const [showNumeroOperadoresCandidates, setShowNumeroOperadoresCandidates] = useState(false);
+  const [loadingNumeroOperadoresCandidates, setLoadingNumeroOperadoresCandidates] = useState(false);
   const [erroApi, setErroApi] = useState<string | null>(null);
   const [confirmarCalculoModal, setConfirmarCalculoModal] = useState<{
     open: boolean;
@@ -1510,7 +1515,7 @@ export default function Home() {
 
   // Sincroniza operadores com a ficha tecnica activa (quando muda de ficha/operacoes)
   useEffect(() => {
-    if (config.possibilidade === 4 || config.possibilidade === 5 || !produto || operacoes.length === 0 || operadores.length === 0) return;
+    if (config.possibilidade === 3 || config.possibilidade === 4 || config.possibilidade === 5 || !produto || operacoes.length === 0 || operadores.length === 0) return;
 
     const nomesOperacoes = new Set(
       operacoes
@@ -1580,6 +1585,50 @@ export default function Home() {
         config: newConfig,
       },
     }));
+  };
+
+  const carregarCandidatosNumeroOperadores = async (numeroOperadores: number) => {
+    if (config.possibilidade !== 3 || !grupoArtigoSelecionado) return;
+    setLoadingNumeroOperadoresCandidates(true);
+    try {
+      const resposta = await axios.get(`${API_BASE_URL}/polyvalence/matrix/by-family`, {
+        params: { family_id: grupoArtigoSelecionado },
+      });
+      const data = resposta.data;
+      const candidates = (Array.isArray(data?.candidates) ? data.candidates : ensureArray(data))
+        .filter((candidate: any) => candidate && candidate.active !== false);
+      setNumeroOperadoresCandidates(candidates);
+      setNumeroOperadoresCandidateIds([]);
+      setNumeroOperadoresCandidateSearch("");
+      setDadosUnidades((prev) => ({
+        ...prev,
+        [unidadeAtiva]: {
+          ...prev[unidadeAtiva],
+          operadoresSelecionados: [],
+        },
+      }));
+      setShowNumeroOperadoresCandidates(true);
+    } catch (error) {
+      setErroApi((error as any)?.response?.data?.detail || "Não foi possível carregar os candidatos da família.");
+      setNumeroOperadoresCandidates([]);
+      setNumeroOperadoresCandidateIds([]);
+    } finally {
+      setLoadingNumeroOperadoresCandidates(false);
+    }
+  };
+
+  const toggleNumeroOperadoresCandidate = (candidate: any) => {
+    const id = pickString(candidate, ["collaborator_id", "collaboratorId", "operator_id", "operator_code", "id", "code"]);
+    if (!id) return;
+    const limite = Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2);
+    setNumeroOperadoresCandidateIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((value) => value !== id) : prev.length < limite ? [...prev, id] : prev;
+      setDadosUnidades((unidades) => ({
+        ...unidades,
+        [unidadeAtiva]: { ...unidades[unidadeAtiva], operadoresSelecionados: next },
+      }));
+      return next;
+    });
   };
 
   const handleCalcularOperadoresNecessarios = (quantidadeObjetivo: number) => {
@@ -3561,6 +3610,15 @@ export default function Home() {
           alert("Defina um numero de operadores valido.");
           return;
         }
+        const colaboradoresNecessarios = numeroOperadoresPedido + 2;
+        if (operadoresSelecionados.length !== colaboradoresNecessarios) {
+          if (numeroOperadoresCandidates.length === 0) {
+            void carregarCandidatosNumeroOperadores(numeroOperadoresPedido);
+          } else {
+            setShowNumeroOperadoresCandidates(true);
+          }
+          return;
+        }
 
         const normalizarRatio = (valor: number) => {
           if (!Number.isFinite(valor)) return 0;
@@ -3578,6 +3636,7 @@ export default function Home() {
           limit_not_divide_lower: limitNotDivideLower,
           max_posts: maxPosts,
           num_operators: numeroOperadoresPedido,
+          collaborator_ids: operadoresSelecionados,
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
@@ -4156,6 +4215,7 @@ export default function Home() {
                 const num = Math.max(1, Math.trunc(typed));
                 setNumeroOperadoresInput(String(num));
                 handleConfigChange({ ...config, numeroOperadores: num });
+                void carregarCandidatosNumeroOperadores(num);
                 }}
               permitirRetrocesso={layoutConfig.permitirRetrocesso}
               distanciaMaxima={layoutConfig.distanciaMaxima}
@@ -4229,15 +4289,91 @@ export default function Home() {
           type="button"
           size="lg"
                onClick={() => handleCalcular(true)}
-           disabled={(!usarAllocateModo1Api && !usarAllocateIdealApi && operadoresSelecionados.length === 0) || operacoes.length === 0}
+           disabled={(!usarAllocateModo1Api && !usarAllocateIdealApi && config.possibilidade !== 3 && operadoresSelecionados.length === 0) || operacoes.length === 0}
           className="px-12 py-6 text-sm font-semibold bg-blue-500 hover:bg-blue-600 rounded-sm uppercase tracking-wide"
         >
           <Calculator className="w-5 h-5 mr-2" />
           Calcular Balanceamento
-        </Button>
-      </div>
+       </Button>
+       </div>
 
-      {resultadosInlineData && resultadosAtuaisInline && configAtualInline && (
+       <Dialog open={showNumeroOperadoresCandidates} onOpenChange={setShowNumeroOperadoresCandidates}>
+         <DialogContent className="max-w-2xl rounded-sm">
+           <DialogHeader>
+             <DialogTitle>Selecionar operadores</DialogTitle>
+             <DialogDescription>
+               Seleciona até {Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2)} operadores para o balanceamento, incluindo a folga.
+             </DialogDescription>
+           </DialogHeader>
+           <div className="space-y-3">
+             <Input
+               value={numeroOperadoresCandidateSearch}
+               onChange={(event) => setNumeroOperadoresCandidateSearch(event.target.value)}
+               placeholder="Pesquisar candidato por ID ou nome..."
+               className="rounded-sm text-sm"
+               disabled={loadingNumeroOperadoresCandidates}
+             />
+             <div className="flex items-center justify-between text-xs text-gray-600">
+               <span>Operadores selecionados</span>
+               <span className="font-mono font-semibold text-gray-900">
+                 {numeroOperadoresCandidateIds.length} / {Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2)}
+               </span>
+             </div>
+             <Progress
+               value={Math.min(100, (numeroOperadoresCandidateIds.length / Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2)) * 100)}
+               className="h-2"
+             />
+             {loadingNumeroOperadoresCandidates ? (
+               <div className="py-6 text-center text-sm text-gray-500">A carregar candidatos...</div>
+             ) : (
+               <div className="max-h-80 space-y-1 overflow-y-auto">
+                  {numeroOperadoresCandidates.filter((candidate) => {
+                    const termo = numeroOperadoresCandidateSearch.trim().toLowerCase();
+                    if (!termo) return true;
+                    const id = pickString(candidate, ["collaborator_id", "collaboratorId", "operator_id", "operator_code", "id", "code"]);
+                    const name = pickString(candidate, ["collaborator_name", "collaboratorName", "operator_name", "name", "nome"]);
+                    return id.toLowerCase().includes(termo) || name.toLowerCase().includes(termo);
+                  }).map((candidate, index) => {
+                   const id = pickString(candidate, ["collaborator_id", "collaboratorId", "operator_id", "operator_code", "id", "code"]);
+                   const name = pickString(candidate, ["collaborator_name", "collaboratorName", "operator_name", "name", "nome"]) || id;
+                   const ole = pickNumber(candidate, ["average_ole_family", "average_ole", "ole_percentage_family", "ole_percentage"]);
+                   const selected = numeroOperadoresCandidateIds.includes(id);
+                   return (
+                     <button
+                       key={`${id}-${index}`}
+                       type="button"
+                       onClick={() => toggleNumeroOperadoresCandidate(candidate)}
+                       className={`flex w-full items-center gap-3 rounded-sm border px-3 py-2 text-left transition-colors ${selected ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}
+                     >
+                       <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[10px] ${selected ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300"}`}>
+                         {selected ? "✓" : ""}
+                       </span>
+                       <span className="font-mono text-xs text-gray-600">{id}</span>
+                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{name}</span>
+                       {ole != null && <span className="text-xs text-gray-500">OLE {ole.toFixed(1)}%</span>}
+                     </button>
+                   );
+                 })}
+               </div>
+             )}
+             <div className="flex justify-end border-t pt-3">
+               <Button
+                 type="button"
+                 size="sm"
+                  onClick={() => {
+                    setShowNumeroOperadoresCandidates(false);
+                    void handleCalcular(true);
+                  }}
+                  disabled={numeroOperadoresCandidateIds.length !== Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2)}
+               >
+                 Confirmar operadores
+               </Button>
+             </div>
+           </div>
+         </DialogContent>
+       </Dialog>
+
+       {resultadosInlineData && resultadosAtuaisInline && configAtualInline && (
         <section ref={resultadosRef} className="pt-4 space-y-6">
           {/* Dialogs de erro/sucesso do inline */}
           <Dialog open={Boolean(erroPopupInline)} onOpenChange={(open) => { if (!open) setErroPopupInline(null); }}>

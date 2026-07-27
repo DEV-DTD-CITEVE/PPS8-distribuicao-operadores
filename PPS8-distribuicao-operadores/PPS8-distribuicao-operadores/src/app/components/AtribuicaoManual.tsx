@@ -147,6 +147,7 @@ interface AtribuicaoManualProps {
   atribuicoesManual: { [operacaoId: string]: string[] };
   onAtribuirManualmente: (operacaoId: string, operadorIds: string[]) => Promise<void>;
   familyId?: string;
+  hideHeader?: boolean;
 }
 
 export function AtribuicaoManual({
@@ -155,6 +156,7 @@ export function AtribuicaoManual({
   atribuicoesManual,
   onAtribuirManualmente,
   familyId,
+  hideHeader = false,
 }: AtribuicaoManualProps) {
   const [operacaoEmEdicao, setOperacaoEmEdicao] = useState<string | null>(null);
   const [operadoresSelecionados, setOperadoresSelecionados] = useState<string[]>([]);
@@ -390,30 +392,46 @@ export function AtribuicaoManual({
           <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
             <CardHeader className="border-b border-gray-200">
               <CardTitle className="flex items-center justify-between gap-3 text-gray-900">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-purple-100 rounded-sm flex items-center justify-center">
-                    <UserCheck className="w-5 h-5 text-purple-600" />
+                {!hideHeader && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-purple-100 rounded-sm flex items-center justify-center">
+                      <UserCheck className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <div className="text-base font-semibold">Atribuicao Manual de Operacoes</div>
+                      <CardDescription className="text-gray-500 mt-0.5 text-xs">
+                        Selecione um ou mais operadores para cada operacao
+                      </CardDescription>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-base font-semibold">Atribuicao Manual de Operacoes</div>
-                    <CardDescription className="text-gray-500 mt-0.5 text-xs">
-                      Selecione um ou mais operadores para cada operacao
-                    </CardDescription>
+                )}
+                {hideHeader && (
+                  <div className="flex min-w-0 flex-1 items-center gap-2 text-[0px] text-gray-700">
+                    <Search className="h-4 w-4 text-gray-500" />
+                    <Input
+                      value={pesquisaOperacao}
+                      onChange={(e) => setPesquisaOperacao(e.target.value)}
+                      placeholder="Pesquisar operações por ID, descrição, máquina ou operador..."
+                      className="h-8 min-w-0 flex-1 rounded-sm bg-white text-sm font-normal"
+                      disabled={operacoes.length === 0}
+                    />
+                    Pesquisar operações
                   </div>
-                </div>
-                <Button
+                )}
+                {!hideHeader && <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 rounded-sm p-0 hover:bg-gray-100"
+                  className="h-8 w-8 rounded-full border-0 bg-transparent p-0 shadow-none hover:bg-gray-100"
                   onClick={() => setShowPesquisaOperacao((current) => !current)}
                 >
                   <Search className="w-4 h-4" />
-                </Button>
+                </Button>}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
-              {showPesquisaOperacao && <div className="mb-4">
+              {showPesquisaOperacao && !hideHeader && <div className="mb-4">
+                {hideHeader && <div className="mb-2 text-xs font-medium text-gray-600">Filtrar por ID, descrição, máquina ou operador</div>}
                 <Input
                   value={pesquisaOperacao}
                   onChange={(e) => setPesquisaOperacao(e.target.value)}
