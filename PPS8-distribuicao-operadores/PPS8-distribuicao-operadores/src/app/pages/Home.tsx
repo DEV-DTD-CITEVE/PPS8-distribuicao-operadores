@@ -8,6 +8,7 @@ import { TabelaOperacoesManual } from "../components/TabelaOperacoesManual";
 import { DashboardResultados } from "../components/DashboardResultados";
 import { ResumoResultados } from "../components/ResumoResultados";
 import { VisualizadorFluxo } from "../components/VisualizadorFluxo";
+import { WaterfallOutputRate } from "../components/WaterfallOutputRate";
 import { calcularBalanceamento } from "../utils/balanceamento";
 import { salvarHistorico, obterHistorico } from "../utils/historico";
 import { useStorage } from "../contexts/StorageContext";
@@ -2729,10 +2730,14 @@ export default function Home() {
           normalizeKey(String(collaboratorCode)) === normalizeKey(operatorCode)
         )?.[0] || operatorCode;
     const operationsByVirtual: Record<string, string[]> = {};
-    const tableRows = ensureArray(
+    const currentTableRows = ensureArray(
       resultadosAtuaisInline?.operation_allocations ??
       (resultadosAtuaisInline as any)?.table_data ??
       (resultadosAtuaisInline as any)?.tableData
+    );
+    const tableRows = currentTableRows.length > 0 ? currentTableRows : ensureArray(
+      (bodyBase as any)?.operation_allocations ??
+      (bodyBase as any)?.operationAllocations
     );
     tableRows.forEach((row: any) => {
         const refs = new Set<string>([
@@ -2920,6 +2925,65 @@ export default function Home() {
           [operatorCode]: collaboratorId,
         },
       };
+      // Algumas respostas de adjust-ideal não incluem novamente os slots nem
+      // as alocações. Nesse caso, substituir o operador no resultado anterior
+      // para a tabela não continuar a mostrar a atribuição antiga.
+      const previousCollaborator = existingRenameMap[operatorCode];
+      {
+        const previousSlots = Array.isArray(rawComAtribuicoes.operator_slots)
+          ? rawComAtribuicoes.operator_slots
+          : Array.isArray((bodyBase as any)?.operator_slots)
+          ? (bodyBase as any).operator_slots
+          : Array.isArray((resultadosAtuaisInline as any)?.operator_slots)
+            ? (resultadosAtuaisInline as any).operator_slots
+            : [];
+        rawComAtribuicoes.operator_slots = previousSlots.map((slot: any) => {
+          const slotId = String(slot?.operator_id ?? slot?.operator_code ?? "").trim();
+          const matches = normalizeKey(slotId) === normalizeKey(operatorCode) ||
+            (previousCollaborator && normalizeKey(slotId) === normalizeKey(String(previousCollaborator)));
+          return matches ? { ...slot, operator_id: collaboratorId } : slot;
+        });
+
+        const shouldReplaceOperator = (value: unknown) => {
+          const normalized = normalizeKey(String(value ?? ""));
+          return normalized === normalizeKey(operatorCode) ||
+            Boolean(previousCollaborator && normalized === normalizeKey(String(previousCollaborator)));
+        };
+        const remapRows = (rows: any[]) => rows.map((row) => {
+          const next = { ...row };
+          if (row?.operator_times && typeof row.operator_times === "object") {
+            next.operator_times = Object.fromEntries(Object.entries(row.operator_times).map(([key, value]) => [
+              shouldReplaceOperator(key) ? collaboratorId : key,
+              value,
+            ]));
+          }
+          if (row?.operator_positions && typeof row.operator_positions === "object") {
+            next.operator_positions = Object.fromEntries(Object.entries(row.operator_positions).map(([key, value]) => [
+              shouldReplaceOperator(key) ? collaboratorId : key,
+              value,
+            ]));
+          }
+          if (Array.isArray(row?.operator_allocations)) {
+            next.operator_allocations = row.operator_allocations.map((allocation: any) => {
+              const ref = allocation?.operator_id ?? allocation?.operator_code ?? allocation?.operator;
+              return shouldReplaceOperator(ref)
+                ? { ...allocation, operator_id: collaboratorId, operator_code: collaboratorId }
+                : allocation;
+            });
+          }
+          return next;
+        });
+        const allocationRows = Array.isArray(rawComAtribuicoes.operation_allocations)
+          ? rawComAtribuicoes.operation_allocations
+          : Array.isArray((bodyBase as any)?.operation_allocations)
+            ? (bodyBase as any).operation_allocations
+            : Array.isArray((resultadosAtuaisInline as any)?.operation_allocations)
+              ? (resultadosAtuaisInline as any).operation_allocations
+              : [];
+        if (allocationRows.length > 0) {
+          rawComAtribuicoes.operation_allocations = remapRows(allocationRows);
+        }
+      }
       const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
       const nextResultsByType = Object.fromEntries(
         tipos.map((tipo) => {
@@ -4437,7 +4501,7 @@ export default function Home() {
               />
             </div>
             <div className="space-y-6 min-w-0">
-              <DashboardResultados
+           <DashboardResultados
                 resultados={resultadosAtuaisInline}
                 operadores={resultadosInlineData.operadores}
                 operacoes={resultadosInlineData.operacoes}
@@ -4490,10 +4554,16 @@ export default function Home() {
             isGuardandoHistorico={isGuardandoHistorico}
             showOccupacaoCard={false}
             onAtribuirColuna={handleAtribuirColunaIdeal}
-            isIdealSemOle={configAtualInline.possibilidade === 5}
-          />
+             isIdealSemOle={configAtualInline.possibilidade === 5}
+           />
 
-          <VisualizadorFluxo
+           <WaterfallOutputRate
+             resultados={resultadosAtuaisInline}
+             operadores={resultadosInlineData.operadores}
+             taskCode={taskCodeInline || taskCodeSelecionado || resultadosInlineData.taskCode || "ficha selecionada"}
+           />
+
+           <VisualizadorFluxo
             resultados={resultadosAtuaisInline}
             operadores={resultadosInlineData.operadores}
             operacoes={resultadosInlineData.operacoes}

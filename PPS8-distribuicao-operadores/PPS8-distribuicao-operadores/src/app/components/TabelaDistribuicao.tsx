@@ -21,11 +21,11 @@ interface TabelaDistribuicaoProps {
   isIdealSemOle?: boolean;
 }
 
-type OperationAllocationRow = OperationAllocation & {
+export type OperationAllocationRow = OperationAllocation & {
   operator_allocations?: Array<Record<string, unknown>>;
 };
 
-type OperatorColumn = {
+export type OperatorColumn = {
   key: string;
   code: string;
   label: string;
@@ -258,7 +258,7 @@ const resolveTableDataTotalPercentageForOperator = (
   return null;
 };
 
-const buildOperatorColumns = (
+export const buildOperatorColumns = (
   rows: OperationAllocationRow[],
   operadores: any[],
   operatorSlots: OperatorSlot[] = [],
@@ -440,7 +440,7 @@ const resolveOperatorShareSeconds = (
 const normalizePercentageValue = (value: number): number =>
   value <= 1 ? value * 100 : value;
 
-const getOperatorPercentage = (
+export const getOperatorPercentage = (
   row: OperationAllocationRow,
   column: OperatorColumn,
   cycleTimeSeconds?: number
@@ -964,6 +964,9 @@ function TabelaAllocacoes({
     try {
       await onConfirmarEdicao(rowsToConfirm);
       setIsEditing(false);
+      setActiveCell(null);
+      setActiveCellValue("");
+      setActiveCellInitialDisplay("");
     } catch {
       // Keep edit mode active if confirmation fails.
     } finally {
@@ -1053,10 +1056,13 @@ function TabelaAllocacoes({
                   variant="outline"
                   size="sm"
                   className="h-6 px-2 text-[10px]"
-                  onClick={() => {
-                    setDraftRows(baseRows);
-                    setIsEditing(false);
-                  }}
+                onClick={() => {
+                  setDraftRows(baseRows);
+                  setIsEditing(false);
+                  setActiveCell(null);
+                  setActiveCellValue("");
+                  setActiveCellInitialDisplay("");
+                }}
                   disabled={isSaving || isAjustando}
                 >
                   Cancelar
@@ -1074,6 +1080,9 @@ function TabelaAllocacoes({
                 onClick={() => {
                   setDraftRows(structuredClone(baseRows));
                   setIsEditing(true);
+                  setActiveCell(null);
+                  setActiveCellValue("");
+                  setActiveCellInitialDisplay("");
                 }}
                 disabled={isSaving || isAjustando}
               >

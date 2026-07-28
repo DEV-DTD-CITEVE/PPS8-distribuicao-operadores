@@ -89,9 +89,16 @@ export function TabelaOperacoesManual({
   // Sincronizar quando as props mudam
   useEffect(() => {
     setLocalOps(operacoes);
+    setEditing((current) => {
+      if (!current) return current;
+      return current.rowIndex < operacoes.length ? current : null;
+    });
   }, [operacoes]);
 
   useEffect(() => {
+    // A alteração da atribuição no pai acontece depois do blur. Não substituir
+    // o valor local enquanto o campo operador ainda está em edição.
+    if (editing?.field === "operador") return;
     setLocalOps_operador((prev) => {
       const next = { ...prev };
       operacoes.forEach((op) => {
@@ -99,7 +106,7 @@ export function TabelaOperacoesManual({
       });
       return next;
     });
-  }, [operacoes, atribuicoes]);
+  }, [operacoes, atribuicoes, editing]);
 
   const handleCellChange = useCallback(
     (rowIndex: number, field: keyof Operacao, value: any) => {
@@ -132,9 +139,9 @@ export function TabelaOperacoesManual({
   );
 
   const commitOperador = useCallback(
-    (rowIndex: number) => {
+    (rowIndex: number, rawValue?: string) => {
       const op = localOps[rowIndex];
-      const raw = localOps_operador[op.id] || "";
+      const raw = rawValue ?? localOps_operador[op.id] ?? "";
       const ids = parseOperatorTokens(raw);
       onAtribuicaoChange && onAtribuicaoChange(op.id, ids);
     },
@@ -142,10 +149,10 @@ export function TabelaOperacoesManual({
   );
 
   const handleBlur = useCallback(
-    (field: keyof Operacao | "operador", rowIndex: number) => {
+    (field: keyof Operacao | "operador", rowIndex: number, rawValue?: string) => {
       setEditing(null);
       if (field === "operador") {
-        commitOperador(rowIndex);
+        commitOperador(rowIndex, rawValue);
       } else {
         onOperacoesChange(localOps);
       }
@@ -193,7 +200,7 @@ export function TabelaOperacoesManual({
         e.preventDefault();
         setEditing(null);
         if (field === "operador") {
-          commitOperador(rowIndex);
+          commitOperador(rowIndex, e.currentTarget.value);
         } else {
           onOperacoesChange(localOps);
         }
@@ -261,7 +268,7 @@ export function TabelaOperacoesManual({
                 type="text"
                 value={val}
                 onChange={(e) => handleOperadorChange(rowIndex, e.target.value)}
-                onBlur={() => handleBlur("operador", rowIndex)}
+                onBlur={(e) => handleBlur("operador", rowIndex, e.currentTarget.value)}
                 onKeyDown={(e) => handleKeyDown(e, rowIndex, "operador")}
                 className="w-full h-full px-2 py-1 text-xs border-2 border-blue-500 outline-none font-mono bg-white"
                 placeholder="OP001, OP002"

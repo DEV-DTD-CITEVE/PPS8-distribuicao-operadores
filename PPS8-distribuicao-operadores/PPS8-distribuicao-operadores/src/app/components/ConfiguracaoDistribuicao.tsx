@@ -5,7 +5,7 @@ import { Label } from "./ui/label";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
-import { Edit3, UserRound } from "lucide-react";
+import { Edit3, Gauge, PackageCheck, UserRound, UsersRound } from "lucide-react";
 
 interface ConfiguracaoDistribuicaoProps {
   config: ConfiguracaoDistribuicao;
@@ -156,7 +156,8 @@ export function ConfiguracaoDistribuicaoComponent({
               <RadioGroupItem value="1" id="r1" className="mt-0.5" />
               <div className="flex-1">
                 <Label htmlFor="r1" className="font-medium cursor-pointer text-gray-900 text-sm">
-                  Distribuicao Ideal (Automatica)
+                  <Gauge className="w-4 h-4 text-emerald-600" />
+                  Distribuição ideal com OLE real
                 </Label>
                 <p className="text-xs text-gray-500 mt-1">
                   Calcula automaticamente o balanceamento mais eficiente com base nas horas do turno e produtividade estimada
@@ -172,7 +173,7 @@ export function ConfiguracaoDistribuicaoComponent({
               <div className="flex-1">
                 <Label htmlFor="r5" className="font-medium cursor-pointer text-gray-900 text-sm flex items-center gap-2">
                   <UserRound className="w-4 h-4 text-teal-600" />
-                  Distribuição Ideal sem OLE
+                  Distribuição ideal sem OLE
                 </Label>
                 <p className="text-xs text-gray-500 mt-1">
                   Calcula com operadores virtuais e permite atribuir colaboradores depois, coluna a coluna.
@@ -187,7 +188,8 @@ export function ConfiguracaoDistribuicaoComponent({
               <RadioGroupItem value="2" id="r2" className="mt-0.5" />
               <div className="flex-1">
                 <Label htmlFor="r2" className="font-medium cursor-pointer text-gray-900 text-sm">
-                  Por Quantidade Objetivo
+                  <PackageCheck className="w-4 h-4 text-orange-600" />
+                  Distribuição por quantidade objetivo
                 </Label>
                 <p className="text-xs text-gray-500 mt-1">
                   Define meta de producao diaria - o sistema calcula o numero de operadores necessarios
@@ -202,10 +204,11 @@ export function ConfiguracaoDistribuicaoComponent({
               <RadioGroupItem value="3" id="r3" className="mt-0.5" />
               <div className="flex-1">
                 <Label htmlFor="r3" className="font-medium cursor-pointer text-gray-900 text-sm">
-                  Por Numero de Operadores
+                  <UsersRound className="w-4 h-4 text-indigo-600" />
+                  Distribuição por número de operadores
                 </Label>
                 <p className="text-xs text-gray-500 mt-1">
-                  Distribui carga com numero fixo de operadores definido por si
+                  Selecciona os operadores desejados no balanceamento
                 </p>
               </div>
             </div>
@@ -218,7 +221,7 @@ export function ConfiguracaoDistribuicaoComponent({
               <div className="flex-1">
                 <Label htmlFor="r4" className="font-medium cursor-pointer text-gray-900 text-sm flex items-center gap-2">
                   <Edit3 className="w-4 h-4 text-blue-600" />
-                  Entrada Manual de Operacoes
+                  Entrada manual de Operações
                 </Label>
                 <p className="text-xs text-gray-500 mt-1">
                   Insere manualmente os dados das operacoes (ID, nome, tempo, maquina) numa tabela editavel
@@ -445,6 +448,60 @@ export function ConfiguracaoDistribuicaoComponent({
                 </>
               )}
 
+              {(config.possibilidade === 2 || config.possibilidade === 3) && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Horas do Turno</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Define a duracao do turno usada no calculo.
+                      </p>
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={24}
+                      step={0.5}
+                      value={horasTurnoInput}
+                      onChange={(e) => setHorasTurnoInput(e.target.value)}
+                      onBlur={commitHorasTurno}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitHorasTurno();
+                        }
+                      }}
+                      className="rounded-sm text-sm font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
+                    <div>
+                      <Label className="font-medium text-gray-900 text-sm">Produtividade Estimada (%)</Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Percentagem esperada de produtividade para o turno.
+                      </p>
+                    </div>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={produtividadeInput}
+                      onChange={(e) => setProdutividadeInput(e.target.value)}
+                      onBlur={commitProdutividade}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitProdutividade();
+                        }
+                      }}
+                      className="rounded-sm text-sm font-mono"
+                    />
+                  </div>
+                </>
+              )}
+
               {config.possibilidade === 2 && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
@@ -475,27 +532,6 @@ export function ConfiguracaoDistribuicaoComponent({
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
-                    <div>
-                      <Label className="font-medium text-gray-900 text-sm">Horas do Turno</Label>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Janela de producao usada para atingir o objetivo.
-                      </p>
-                    </div>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={24}
-                      step={0.5}
-                      value={horasTurno}
-                      onChange={(e) => {
-                        const next = e.currentTarget.valueAsNumber;
-                        if (!Number.isFinite(next)) return;
-                        onHorasTurnoChange(next);
-                      }}
-                      className="rounded-sm text-sm font-mono"
-                    />
-                  </div>
                 </>
               )}
 
@@ -528,30 +564,6 @@ export function ConfiguracaoDistribuicaoComponent({
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
-                    <div>
-                      <Label className="font-medium text-gray-900 text-sm">Horas do Turno</Label>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Duracao do turno usada para avaliar a carga resultante.
-                      </p>
-                    </div>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={24}
-                      step={0.5}
-                      value={horasTurnoInput}
-                      onChange={(e) => setHorasTurnoInput(e.target.value)}
-                      onBlur={commitHorasTurno}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          commitHorasTurno();
-                        }
-                      }}
-                      className="rounded-sm text-sm font-mono"
-                    />
-                  </div>
                 </>
               )}
             </div>

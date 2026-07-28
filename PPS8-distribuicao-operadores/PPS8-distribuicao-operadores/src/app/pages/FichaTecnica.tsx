@@ -40,7 +40,7 @@ import { SearchableCombobox } from "../components/SearchableCombobox";
 import * as XLSX from "xlsx";
 import axios from "axios";
 import { useStorage } from "../contexts/StorageContext";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, ML_SUGGEST_API_BASE_URL } from "../config";
 
 type ApiRecord = Record<string, any>;
 
@@ -487,6 +487,143 @@ const buildImportMetadataFromFileName = (fileName: string): ExcelImportMetadata 
   };
 };
 
+interface AlarmOperation {
+  operationCode: string;
+  timeCmin: number;
+  min: number;
+  max: number;
+  median: number;
+  mean?: number;
+  std?: number;
+  q1?: number;
+  q3?: number;
+  status: "normal" | "warning" | "anomaly" | "anormal" | string;
+  deviationPct?: number;
+}
+
+const mapAlarmOperation = (raw: ApiRecord): AlarmOperation | null => {
+  const operationCode = pickString(raw, ["operation_code", "operation_id", "op_code", "code", "id"]);
+  const timeCmin = pickNumber(raw, ["time_cmin", "tempo_cmin", "current_cmin"]);
+  const min = pickNumber(raw, ["min", "minimum"]);
+  const max = pickNumber(raw, ["max", "maximum"]);
+  const median = pickNumber(raw, ["median", "mediana"]);
+  if (!operationCode || timeCmin == null || min == null || max == null || median == null) return null;
+
+  return {
+    operationCode,
+    timeCmin,
+    min,
+    max,
+    median,
+    mean: pickNumber(raw, ["similar_mean", "mean", "media"] ) ?? undefined,
+    std: pickNumber(raw, ["similar_std", "std", "desvio_padrao"]) ?? undefined,
+    q1: pickNumber(raw, ["q1", "lower_quartile", "quartile_25"]) ?? undefined,
+    q3: pickNumber(raw, ["q3", "upper_quartile", "quartile_75"]) ?? undefined,
+    status: pickString(raw, ["status", "classification", "classificacao"]).toLowerCase() || "normal",
+    deviationPct: pickNumber(raw, ["deviation_pct", "deviation", "desvio_pct"]) ?? undefined,
+  };
+};
+
+const clampAlarmValue = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const AlarmBoxPlot = ({ alarm }: { alarm: AlarmOperation }) => {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const lower = Math.min(alarm.min, alarm.max);
+  const upper = Math.max(alarm.min, alarm.max);
+  const spread = alarm.std != null ? alarm.std * 0.6745 : (upper - lower) / 4;
+  const q1 = clampAlarmValue(alarm.q1 ?? (alarm.mean ?? alarm.median) - spread, lower, upper);
+  const q3 = clampAlarmValue(alarm.q3 ?? (alarm.mean ?? alarm.median) + spread, lower, upper);
+  const boxStart = Math.min(q1, q3);
+  const boxEnd = Math.max(q1, q3);
+  const range = Math.max(upper - lower, 1);
+  const x = (value: number) => 8 + ((value - lower) / range) * 164;
+  const status = alarm.status.toLowerCase();
+  const isAlert = status === "warning" || status === "anomaly" || status === "anormal";
+  const accent = isAlert ? "#d97706" : "#16a34a";
+  const fill = isAlert ? "#fef3c7" : "#dcfce7";
+  const statusLabel = status === "anomaly" || status === "anormal"
+    ? "Anormal"
+    : status === "warning"
+      ? "Warning"
+      : "Normal";
+
+  return (
+    <div
+      className="relative w-[220px] shrink-0 cursor-pointer rounded-sm outline-none hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-blue-400"
+      title="Clique para ver os detalhes da análise"
+      role="button"
+      tabIndex={0}
+      onClick={() => setDetailsOpen(true)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setDetailsOpen(true);
+        }
+      }}
+    >
+      <span
+        className={`absolute right-0 top-0.5 z-10 rounded-full bg-white ${isAlert ? "text-amber-600" : "text-emerald-600"}`}
+        title={`Estado: ${statusLabel}`}
+        aria-label={`Estado: ${statusLabel}`}
+      >
+        {isAlert ? <AlertTriangle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+      </span>
+      <svg viewBox="0 0 180 38" className="h-12 w-full" role="img" aria-label="Box plot do tempo histórico">
+        <line x1={x(lower)} x2={x(upper)} y1="19" y2="19" stroke={accent} strokeWidth="2" />
+        <line x1={x(lower)} x2={x(lower)} y1="11" y2="27" stroke={accent} strokeWidth="1.5" />
+        <line x1={x(upper)} x2={x(upper)} y1="11" y2="27" stroke={accent} strokeWidth="1.5" />
+        <rect x={x(boxStart)} y="9" width={Math.max(x(boxEnd) - x(boxStart), 2)} height="20" rx="2" fill={fill} stroke={accent} strokeWidth="1.5" />
+        <line x1={x(alarm.median)} x2={x(alarm.median)} y1="9" y2="29" stroke={accent} strokeWidth="2" />
+        <circle cx={x(clampAlarmValue(alarm.timeCmin, lower, upper))} cy="19" r="3.5" fill="#1d4ed8" stroke="white" strokeWidth="1.5" />
+      </svg>
+      <div className="flex items-center justify-between gap-2 whitespace-nowrap text-[10px] leading-3">
+        <span className="text-gray-500">Mediana: <b className="text-gray-700">{alarm.median.toFixed(1)}</b></span>
+        <span className="font-semibold text-blue-700">Atual: {alarm.timeCmin.toFixed(1)}</span>
+      </div>
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent
+          className="max-w-md rounded-sm"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-base">Detalhes da análise de tempo</DialogTitle>
+            <DialogDescription>
+              Valores históricos em cmin e comparação com o tempo atual da operação.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
+            <div className="mb-4 flex items-center justify-between text-sm">
+              <div>
+                <span className="text-gray-500">Estado</span>
+                <span className={`ml-2 font-semibold ${isAlert ? "text-amber-700" : "text-emerald-700"}`}>{statusLabel}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Tempo atual</span>
+                <span className="ml-2 font-semibold text-blue-700">{alarm.timeCmin.toFixed(1)} cmin</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-5 gap-2 text-center">
+              {[
+                ["Mínimo", lower],
+                ["Q1", q1],
+                  ["Mediana", alarm.median],
+                ["Q3", q3],
+                ["Máximo", upper],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-sm border border-gray-200 bg-white px-2 py-2">
+                  <div className="text-[10px] font-semibold uppercase text-gray-400">{label}</div>
+                  <div className="mt-1 font-mono text-sm font-semibold text-gray-800">{Number(value).toFixed(1)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
 export default function FichaTecnica() {
   const { dados, salvar } = useStorage();
   const fichaTecnicaGuardada = dados.configuracao.fichaTecnicaSelecionada;
@@ -527,6 +664,8 @@ export default function FichaTecnica() {
   const [produtoParaRemover, setProdutoParaRemover] = useState<Produto | null>(null);
   const [operacaoParaRemover, setOperacaoParaRemover] = useState<Operacao | null>(null);
   const [erroApi, setErroApi] = useState<string | null>(null);
+  const [alarmasPorOperacao, setAlarmasPorOperacao] = useState<Record<string, AlarmOperation>>({});
+  const [loadingAlarmas, setLoadingAlarmas] = useState(false);
   const operacaoPendenteSyncIndexRef = useRef<number | null>(null);
   const operacaoPendenteSyncCodeRef = useRef<string | null>(null);
   const produtosRef = useRef<Produto[]>([]);
@@ -595,6 +734,39 @@ export default function FichaTecnica() {
   });
 
   const produto = produtos.find((p) => p.id === produtoSelecionado);
+
+  useEffect(() => {
+    if (!produto?.id) {
+      setAlarmasPorOperacao({});
+      return;
+    }
+
+    let active = true;
+    const carregarAlarmas = async () => {
+      setLoadingAlarmas(true);
+      try {
+        const resposta = await axios.get(
+          `${ML_SUGGEST_API_BASE_URL}/alarms/${encodeURIComponent(produto.id)}`
+        );
+        const rows = ensureArray(resposta.data)
+          .map(mapAlarmOperation)
+          .filter((alarm): alarm is AlarmOperation => Boolean(alarm));
+        if (!active) return;
+        setAlarmasPorOperacao(
+          Object.fromEntries(rows.map((alarm) => [normalizeToken(alarm.operationCode), alarm]))
+        );
+      } catch (error) {
+        if (active) setAlarmasPorOperacao({});
+        console.warn("Não foi possível carregar os alarmes da ficha técnica:", error);
+      } finally {
+        if (active) setLoadingAlarmas(false);
+      }
+    };
+    void carregarAlarmas();
+    return () => {
+      active = false;
+    };
+  }, [produto?.id]);
 
   useEffect(() => {
     produtosRef.current = produtos;
@@ -2091,28 +2263,34 @@ export default function FichaTecnica() {
                     </div>
                   )}
                   <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
+                    <table className="w-full border-collapse text-left">
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-200">
-                          <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase w-16">
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600 w-16">
                             Seq.
                           </th>
-                          <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase w-20">
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600 w-20">
                             Crítica
                           </th>
-                          <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase w-20">
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600 w-20">
                             ID
                           </th>
-                          <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600">
                             Descrição
                           </th>
-                          <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase w-28">
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600 w-28">
                             Tempo (min)
                           </th>
-                          <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600 w-72">
+                            Análise de tempo
+                          </th>
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600 w-28">
+                            Estado
+                          </th>
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600">
                             Máquina
                           </th>
-                          <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-48">
+                          <th className="p-3 text-left text-xs font-semibold text-gray-600 w-48">
                             Ações
                           </th>
                         </tr>
@@ -2215,8 +2393,45 @@ export default function FichaTecnica() {
                                     index
                                   );
                                 }}
-                                className="h-8 w-24 text-sm font-mono rounded-sm text-right"
+                                className="h-8 w-24 text-sm font-mono rounded-sm text-left"
                               />
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                              {(() => {
+                                const alarme = alarmasPorOperacao[normalizeToken(operacao.id)];
+                                return (
+                                  <div className="flex min-h-[58px] items-center gap-2">
+                                    {alarme ? (
+                                      <AlarmBoxPlot alarm={alarme} />
+                                    ) : (
+                                      <div className="flex items-center text-xs text-gray-400">
+                                        {loadingAlarmas ? "A carregar análise..." : "Sem dados históricos"}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                              </div>
+                            </td>
+                            <td className="p-3 text-left align-middle">
+                              {(() => {
+                                const alarme = alarmasPorOperacao[normalizeToken(operacao.id)];
+                                const estado = alarme?.status.toLowerCase();
+                                const alerta = estado === "warning" || estado === "anomaly" || estado === "anormal";
+                                return alarme ? (
+                                  <span className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-1 text-[10px] font-semibold leading-none ${
+                                    alerta
+                                      ? "border-amber-300 bg-amber-50 text-amber-700"
+                                      : "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                  }`}>
+                                    {alerta ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+                                    {alerta ? (estado === "anomaly" || estado === "anormal" ? "Anormal" : "Warning") : "Normal"}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-gray-400">{loadingAlarmas ? "..." : "—"}</span>
+                                );
+                              })()}
                             </td>
                             <td className="p-3">
                               <Input
@@ -2229,12 +2444,12 @@ export default function FichaTecnica() {
                                     index
                                   )
                                 }
-                                className="h-8 text-sm rounded-sm"
+                                className="h-8 text-sm rounded-sm text-left"
                                 placeholder="—"
                               />
                             </td>
                               <td className="p-3">
-                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                <div className="flex flex-wrap items-center justify-start gap-1">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -2282,13 +2497,13 @@ export default function FichaTecnica() {
                       </tbody>
                       <tfoot>
                         <tr className="bg-gray-50 border-t-2 border-gray-300">
-                          <td colSpan={4} className="p-3 text-xs font-semibold text-gray-700 uppercase">
+                          <td colSpan={4} className="p-3 text-xs font-semibold text-gray-700">
                             Total
                           </td>
                           <td className="p-3 font-mono font-bold text-sm text-gray-900">
                             {tempoTotal.toFixed(2)} min
                           </td>
-                          <td colSpan={2}></td>
+                          <td colSpan={3}></td>
                         </tr>
                       </tfoot>
                     </table>
