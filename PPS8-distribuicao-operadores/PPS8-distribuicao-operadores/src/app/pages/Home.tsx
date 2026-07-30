@@ -37,6 +37,7 @@ const configPadrao: ConfiguracaoDistribuicao = {
   naoDividirMenorQue: 0.9,
   horasTurno: 8,
   produtividadeEstimada: 85,
+  naoSelecionarOperadores: false,
 };
 
 const layoutPadrao: LayoutConfig = {
@@ -1579,11 +1580,21 @@ export default function Home() {
   };
 
   const handleConfigChange = (newConfig: ConfiguracaoDistribuicao) => {
+    const deixarDeSelecionarOperadores =
+      newConfig.possibilidade === 3 && newConfig.naoSelecionarOperadores === true;
+
+    if (deixarDeSelecionarOperadores) {
+      setNumeroOperadoresCandidateIds([]);
+      setShowNumeroOperadoresCandidates(false);
+      setNumeroOperadoresCandidates([]);
+    }
+
     setDadosUnidades((prev) => ({
       ...prev,
       [unidadeAtiva]: {
         ...prev[unidadeAtiva],
         config: newConfig,
+        ...(deixarDeSelecionarOperadores ? { operadoresSelecionados: [] } : {}),
       },
     }));
   };
@@ -1591,9 +1602,11 @@ export default function Home() {
   const carregarCandidatosNumeroOperadores = async (numeroOperadores: number) => {
     if (config.possibilidade !== 3 || !grupoArtigoSelecionado) return;
     setLoadingNumeroOperadoresCandidates(true);
+    setErroApi(null);
     try {
       const resposta = await axios.get(`${API_BASE_URL}/polyvalence/matrix/by-family`, {
         params: { family_id: grupoArtigoSelecionado },
+        timeout: 30000,
       });
       const data = resposta.data;
       const candidates = (Array.isArray(data?.candidates) ? data.candidates : ensureArray(data))
@@ -1611,6 +1624,9 @@ export default function Home() {
       setShowNumeroOperadoresCandidates(true);
     } catch (error) {
       setErroApi((error as any)?.response?.data?.detail || "Não foi possível carregar os candidatos da família.");
+      const mensagem = extrairMensagemErro(error) || "Nao foi possivel carregar os candidatos da familia.";
+      setErroApi(mensagem);
+      setErroCalculoModal(mensagem);
       setNumeroOperadoresCandidates([]);
       setNumeroOperadoresCandidateIds([]);
     } finally {
@@ -3675,8 +3691,10 @@ export default function Home() {
           return;
         }
         const colaboradoresNecessarios = numeroOperadoresPedido + 2;
-        if (operadoresSelecionados.length !== colaboradoresNecessarios) {
+        if (config.naoSelecionarOperadores !== true && operadoresSelecionados.length !== colaboradoresNecessarios) {
           if (numeroOperadoresCandidates.length === 0) {
+            // Abrir já o diálogo enquanto aguardamos a lista de candidatos.
+            setShowNumeroOperadoresCandidates(true);
             void carregarCandidatosNumeroOperadores(numeroOperadoresPedido);
           } else {
             setShowNumeroOperadoresCandidates(true);
@@ -3700,7 +3718,9 @@ export default function Home() {
           limit_not_divide_lower: limitNotDivideLower,
           max_posts: maxPosts,
           num_operators: numeroOperadoresPedido,
-          collaborator_ids: operadoresSelecionados,
+          ...(config.naoSelecionarOperadores !== true
+            ? { collaborator_ids: operadoresSelecionados }
+            : {}),
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
@@ -4279,7 +4299,9 @@ export default function Home() {
                 const num = Math.max(1, Math.trunc(typed));
                 setNumeroOperadoresInput(String(num));
                 handleConfigChange({ ...config, numeroOperadores: num });
-                void carregarCandidatosNumeroOperadores(num);
+                if (config.naoSelecionarOperadores !== true) {
+                  void carregarCandidatosNumeroOperadores(num);
+                }
                 }}
               permitirRetrocesso={layoutConfig.permitirRetrocesso}
               distanciaMaxima={layoutConfig.distanciaMaxima}
@@ -4557,11 +4579,13 @@ export default function Home() {
              isIdealSemOle={configAtualInline.possibilidade === 5}
            />
 
+           {/*
            <WaterfallOutputRate
              resultados={resultadosAtuaisInline}
              operadores={resultadosInlineData.operadores}
              taskCode={taskCodeInline || taskCodeSelecionado || resultadosInlineData.taskCode || "ficha selecionada"}
            />
+           */}
 
            <VisualizadorFluxo
             resultados={resultadosAtuaisInline}

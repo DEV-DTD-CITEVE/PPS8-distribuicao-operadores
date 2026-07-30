@@ -24,7 +24,6 @@ import {
   Save,
   Package,
   AlertTriangle,
-  Pencil,
   ChevronRight,
   Clock,
   Cpu,
@@ -33,9 +32,7 @@ import {
   FileSpreadsheet,
   Search,
   X,
-  Users,
 } from "lucide-react";
-import { AtribuicaoManual } from "../components/AtribuicaoManual";
 import { SearchableCombobox } from "../components/SearchableCombobox";
 import * as XLSX from "xlsx";
 import axios from "axios";
@@ -520,7 +517,7 @@ const mapAlarmOperation = (raw: ApiRecord): AlarmOperation | null => {
     q1: pickNumber(raw, ["q1", "lower_quartile", "quartile_25"]) ?? undefined,
     q3: pickNumber(raw, ["q3", "upper_quartile", "quartile_75"]) ?? undefined,
     status: pickString(raw, ["status", "classification", "classificacao"]).toLowerCase() || "normal",
-    deviationPct: pickNumber(raw, ["deviation_pct", "deviation", "desvio_pct"]) ?? undefined,
+      deviationPct: pickNumber(raw, ["deviation_pct", "deviation", "desvio_pct"]) ?? undefined,
   };
 };
 
@@ -546,6 +543,7 @@ const AlarmBoxPlot = ({ alarm }: { alarm: AlarmOperation }) => {
     : status === "warning"
       ? "Warning"
       : "Normal";
+  const toMinutes = (value: number) => value / 100;
 
   return (
     <div
@@ -577,8 +575,8 @@ const AlarmBoxPlot = ({ alarm }: { alarm: AlarmOperation }) => {
         <circle cx={x(clampAlarmValue(alarm.timeCmin, lower, upper))} cy="19" r="3.5" fill="#1d4ed8" stroke="white" strokeWidth="1.5" />
       </svg>
       <div className="flex items-center justify-between gap-2 whitespace-nowrap text-[10px] leading-3">
-        <span className="text-gray-500">Mediana: <b className="text-gray-700">{alarm.median.toFixed(1)}</b></span>
-        <span className="font-semibold text-blue-700">Atual: {alarm.timeCmin.toFixed(1)}</span>
+        <span className="text-gray-500">Mediana: <b className="text-gray-700">{toMinutes(alarm.median).toFixed(2)} min</b></span>
+        <span className="font-semibold text-blue-700">Atual: {toMinutes(alarm.timeCmin).toFixed(2)} min</span>
       </div>
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogContent
@@ -589,7 +587,7 @@ const AlarmBoxPlot = ({ alarm }: { alarm: AlarmOperation }) => {
           <DialogHeader>
             <DialogTitle className="text-base">Detalhes da análise de tempo</DialogTitle>
             <DialogDescription>
-              Valores históricos em cmin e comparação com o tempo atual da operação.
+              Valores históricos em minutos e comparação com o tempo atual da operação.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
@@ -600,7 +598,7 @@ const AlarmBoxPlot = ({ alarm }: { alarm: AlarmOperation }) => {
               </div>
               <div>
                 <span className="text-gray-500">Tempo atual</span>
-                <span className="ml-2 font-semibold text-blue-700">{alarm.timeCmin.toFixed(1)} cmin</span>
+                <span className="ml-2 font-semibold text-blue-700">{toMinutes(alarm.timeCmin).toFixed(2)} min</span>
               </div>
             </div>
             <div className="grid grid-cols-5 gap-2 text-center">
@@ -613,7 +611,7 @@ const AlarmBoxPlot = ({ alarm }: { alarm: AlarmOperation }) => {
               ].map(([label, value]) => (
                 <div key={label} className="rounded-sm border border-gray-200 bg-white px-2 py-2">
                   <div className="text-[10px] font-semibold uppercase text-gray-400">{label}</div>
-                  <div className="mt-1 font-mono text-sm font-semibold text-gray-800">{Number(value).toFixed(1)}</div>
+                  <div className="mt-1 font-mono text-sm font-semibold text-gray-800">{toMinutes(Number(value)).toFixed(2)} min</div>
                 </div>
               ))}
             </div>
@@ -633,8 +631,6 @@ export default function FichaTecnica() {
   );
   const [showNovoProduto, setShowNovoProduto] = useState(false);
   const [showNovaOperacao, setShowNovaOperacao] = useState(false);
-  const [showAtribuicaoManual, setShowAtribuicaoManual] = useState(false);
-  const [editandoOperacao, setEditandoOperacao] = useState<string | null>(null);
   const [mensagemGuardado, setMensagemGuardado] = useState<string | null>(null);
   const [atribuicoesManual, setAtribuicoesManual] = useState<{ [operacaoId: string]: string[] }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2095,36 +2091,6 @@ export default function FichaTecnica() {
                     >
                       <Search className="w-4 h-4" />
                     </Button>
-                    <Dialog open={showAtribuicaoManual} onOpenChange={setShowAtribuicaoManual}>
-                      <DialogTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 rounded-sm p-0 text-gray-600 hover:bg-blue-50 hover:text-blue-600"
-                          title="Atribuir operadores às operações"
-                          aria-label="Atribuir operadores às operações"
-                        >
-                          <Users className="w-4 h-4" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto rounded-sm">
-                        <DialogHeader>
-                          <DialogTitle>Atribuição manual de operações</DialogTitle>
-                          <DialogDescription>
-                            Seleciona os operadores para cada operação desta referência.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <AtribuicaoManual
-                          operadores={operadores}
-                          operacoes={produto.operacoes}
-                          atribuicoesManual={atribuicoesManual}
-                          onAtribuirManualmente={handleAtribuirManualmente}
-                          familyId={grupoArtigoSelecionado}
-                          hideHeader
-                        />
-                      </DialogContent>
-                    </Dialog>
                     <Dialog open={showNovaOperacao} onOpenChange={setShowNovaOperacao}>
                       <DialogTrigger asChild>
                         <Button
@@ -2327,38 +2293,17 @@ export default function FichaTecnica() {
                               </span>
                             </td>
                             <td className="p-3">
-                              {editandoOperacao === operacao.id ? (
-                                <Input
-                                  value={operacao.nome}
-                                  onChange={(e) =>
-                                    handleEditOperacao(operacao.id, "nome", e.target.value, index)
-                                  }
-                                  onBlur={() => setEditandoOperacao(null)}
-                                  onKeyDown={(e) =>
-                                    e.key === "Enter" && setEditandoOperacao(null)
-                                  }
-                                  autoFocus
-                                  className="h-8 text-sm rounded-sm"
-                                />
-                              ) : (
-                                <div
-                                  className="flex items-center gap-2 cursor-pointer group"
-                                  onClick={() => setEditandoOperacao(operacao.id)}
-                                >
-                                  <span className="text-sm text-gray-700">
-                                    {operacao.nome}
-                                  </span>
-                                  <Pencil className="w-3 h-3 text-gray-300 group-hover:text-gray-500" />
-                                  {operacao.critica && (
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs rounded-sm bg-orange-200 text-orange-800 border border-orange-300"
-                                    >
-                                      CRÍTICA
-                                    </Badge>
-                                  )}
-                                </div>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-700">{operacao.nome}</span>
+                                {operacao.critica && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs rounded-sm bg-orange-200 text-orange-800 border border-orange-300"
+                                  >
+                                    CRÍTICA
+                                  </Badge>
+                                )}
+                              </div>
                               {atribuicoesManual[operacao.id]?.length > 0 && (
                                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                   <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
@@ -2379,22 +2324,7 @@ export default function FichaTecnica() {
                               )}
                             </td>
                             <td className="p-3">
-                              <Input
-                                type="text"
-                                inputMode="decimal"
-                                value={String(operacao.tempo)}
-                                onChange={(e) => {
-                                  const raw = e.target.value.replace(",", ".");
-                                  const parsed = Number(raw);
-                                  handleEditOperacao(
-                                    operacao.id,
-                                    "tempo",
-                                    Number.isFinite(parsed) ? parsed : 0,
-                                    index
-                                  );
-                                }}
-                                className="h-8 w-24 text-sm font-mono rounded-sm text-left"
-                              />
+                              <span className="font-mono text-sm text-gray-700">{operacao.tempo.toFixed(2)} min</span>
                             </td>
                             <td className="p-3">
                               <div className="flex items-center gap-2">
@@ -2450,16 +2380,6 @@ export default function FichaTecnica() {
                             </td>
                               <td className="p-3">
                                 <div className="flex flex-wrap items-center justify-start gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setShowAtribuicaoManual(true)}
-                                  className="h-7 w-7 rounded-sm p-0 hover:bg-gray-100"
-                                  title="Atribuir operadores a esta operação"
-                                  aria-label={`Atribuir operadores a ${operacao.id}`}
-                                >
-                                  <Users className="h-3.5 w-3.5" />
-                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"

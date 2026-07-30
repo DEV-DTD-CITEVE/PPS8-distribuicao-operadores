@@ -537,6 +537,25 @@ export function ConfiguracaoDistribuicaoComponent({
 
               {config.possibilidade === 3 && (
                 <>
+                  <div className="p-4 border border-gray-200 rounded-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        <Label htmlFor="nao-selecionar-operadores" className="font-medium text-gray-900 text-sm cursor-pointer">
+                          Não selecionar operadores
+                        </Label>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Quando ativo, o sistema calcula o balanceamento sem pedir a selecção dos operadores.
+                        </p>
+                      </div>
+                      <Switch
+                        id="nao-selecionar-operadores"
+                        checked={config.naoSelecionarOperadores === true}
+                        onCheckedChange={(checked) => onChange({ ...config, naoSelecionarOperadores: checked })}
+                        className="cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_160px] gap-3 items-end p-4 border border-gray-200 rounded-sm">
                     <div>
                       <Label className="font-medium text-gray-900 text-sm">Numero de Operadores</Label>
