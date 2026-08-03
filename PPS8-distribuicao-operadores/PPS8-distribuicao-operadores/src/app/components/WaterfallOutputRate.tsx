@@ -178,6 +178,59 @@ const getBarColor = (index: number, gap: number): string => {
   return COLORS.SAME;
 };
 
+type OperatorMachineBar = {
+  operator: string;
+  totalSeconds: number;
+  gap: number;
+  segments: Array<{ machine: string; operation: string; seconds: number; gap: number; color: string }>;
+};
+
+const GROUPED_COLORS = ["#4F86C6", "#5FBF9F", "#8B78C8", "#E7A64A", "#5CA7B5", "#D86A73", "#7E9B5B"];
+
+const buildGroupedOperatorBars = (source: any, operadores: any[]): OperatorMachineBar[] => {
+  const grouped = source?.machine_times_per_operator ?? source?.machineTimesPerOperator ?? source?.operator_flow ?? source?.operatorFlow ?? source?.waterfall;
+  const entries: Array<[string, any]> = Array.isArray(grouped)
+    ? grouped.flatMap((row: any) => Array.isArray(row?.operators)
+      ? row.operators.map((operator: any) => [String(operator?.operator_name ?? operator?.operator_id ?? operator?.operator_code ?? operator?.operator ?? "Operador"), operator] as [string, any])
+      : [[String(row?.operator_name ?? row?.operator_id ?? row?.operator_code ?? row?.operator ?? "Operador"), row] as [string, any]])
+    : grouped && typeof grouped === "object"
+      ? Object.entries(grouped)
+      : [];
+  const colorByMachine = new Map<string, string>();
+  const colorFor = (machine: string) => {
+    if (!colorByMachine.has(machine)) colorByMachine.set(machine, GROUPED_COLORS[colorByMachine.size % GROUPED_COLORS.length]);
+    return colorByMachine.get(machine)!;
+  };
+  const resolveName = (key: string) => {
+    const match = operadores.find((operator: any) => String(operator?.id ?? operator?.codigo ?? "").trim() === key);
+    return String(match?.nome ?? match?.name ?? key).trim() || key;
+  };
+  return entries.map(([operatorKey, rawEntries]) => {
+    const list = Array.isArray(rawEntries)
+      ? rawEntries
+      : Array.isArray(rawEntries?.operations)
+        ? rawEntries.operations.map((operation: any) => ({ ...operation, gap: operation?.gap ?? rawEntries?.gap, machine_name: operation?.machine_name ?? rawEntries?.machine_name ?? rawEntries?.machine }))
+        : rawEntries && typeof rawEntries === "object"
+          ? Object.values(rawEntries)
+          : [];
+    const expanded = list.flatMap((entry: any) => Array.isArray(entry?.operations)
+      ? entry.operations.map((operation: any) => ({ ...operation, machine_name: operation?.machine_name ?? entry?.machine_name ?? entry?.machine }))
+      : [entry]);
+    const segments = expanded.map((entry: any) => {
+      const operation = String(entry?.operation_name ?? entry?.operation ?? entry?.operation_code ?? entry?.operation_id ?? entry?.operacao ?? entry?.name ?? "Operação").trim() || "Operação";
+      const machine = String(entry?.machine_name ?? entry?.machine ?? entry?.machine_type ?? entry?.maquina ?? operation).trim() || operation;
+      const hours = Number(entry?.time_hours ?? entry?.hours);
+      const minutes = Number(entry?.time_minutes ?? entry?.time_min ?? entry?.minutes);
+      const seconds = Number(entry?.time_seconds ?? entry?.seconds ?? entry?.tempo_segundos ?? entry?.time ?? entry?.total_time_seconds ?? entry?.work_content);
+      const value = Number.isFinite(seconds) && seconds > 0 ? seconds : Number.isFinite(hours) && hours > 0 ? hours * 3600 : Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : 0;
+      const gap = numberOr(entry?.gap ?? entry?.gap_seconds ?? entry?.delta, 0);
+      return value > 0 ? { machine, operation, seconds: value, gap, color: colorFor(machine) } : null;
+    }).filter((segment): segment is { machine: string; operation: string; seconds: number; gap: number; color: string } => Boolean(segment));
+    const operatorGap = numberOr(rawEntries?.gap ?? rawEntries?.gap_seconds ?? rawEntries?.delta, segments[0]?.gap ?? 0);
+    return { operator: resolveName(operatorKey), totalSeconds: segments.reduce((sum, segment) => sum + segment.seconds, 0), gap: operatorGap, segments };
+  }).filter((bar) => bar.totalSeconds > 0);
+};
+
 export function WaterfallOutputRate({ resultados, taskCode, operadores = [], waterfallData, embedded = false }: { resultados: ResultadosBalanceamento; taskCode: string; operadores?: any[]; waterfallData?: any; embedded?: boolean }) {
   const rawSource = waterfallData && typeof waterfallData === "object" ? waterfallData : resultados;
   const source = rawSource.data && typeof rawSource.data === "object" ? rawSource.data : rawSource;
@@ -206,6 +259,61 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], wat
       })).filter((station: OutputRateStation) => station.outputRate > 0)
     : buildStations(source as ResultadosBalanceamento, operatorColumns);
 
+  const groupedBars = buildGroupedOperatorBars(source, operadores);
+  const groupedReferenceSeconds = numberOr(
+    source.real_share_per_operator_seconds ?? source.share_per_operator_seconds ?? source.sharePerOperatorSeconds ?? source.allocation?.real_share_per_operator_seconds ?? source.allocation?.share_per_operator_seconds ?? (resultados as any).share_per_operator_seconds,
+    0,
+  );
+
+  if (groupedBars.length > 0) {
+    const chartWidth = Math.max(1000, groupedBars.length * (embedded ? 150 : 125));
+    const chartHeight = embedded ? 440 : 430;
+    const margin = embedded
+      ? { top: 16, right: 14, bottom: 76, left: 56 }
+      : { top: 58, right: 24, bottom: 112, left: 78 };
+    const plotWidth = chartWidth - margin.left - margin.right;
+    const plotHeight = chartHeight - margin.top - margin.bottom;
+    const maxTotal = Math.max(...groupedBars.map((bar) => bar.totalSeconds), 1);
+    const maxY = Math.max(maxTotal * (embedded ? 1.25 : 1.35), groupedReferenceSeconds > 0 ? groupedReferenceSeconds * 1.15 : 0);
+    const yFor = (value: number) => margin.top + plotHeight - (value / maxY) * plotHeight;
+    const baseline = yFor(0);
+    const barWidth = Math.min(90, (plotWidth / groupedBars.length) * 0.58);
+    const ticks = [0, maxY / 4, maxY / 2, (maxY * 3) / 4, maxY];
+    const legend = Array.from(new Set(groupedBars.flatMap((bar) => bar.segments.map((segment) => `${segment.machine}|${segment.color}`)))).map((entry) => {
+      const [machine, color] = entry.split("|");
+      return { machine, color };
+    });
+    return (
+      <section className={embedded ? "p-0" : "rounded-sm border border-gray-200 bg-white p-4 shadow-sm"}>
+        {!embedded && <div className="mb-2"><h3 className="text-sm font-semibold text-gray-900">Tempo por Operador x Máquina — {taskCode}</h3><p className="mt-1 text-xs text-gray-500">Eixo X: operador | Eixo Y: segundos empilhados por máquina</p></div>}
+        <div className="flex justify-center overflow-x-auto">
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className={embedded ? "h-[400px] min-h-[400px] w-[90%] min-w-[1000px] max-w-none" : "h-auto min-w-[900px]"} role="img" aria-label={`Tempo por operador e máquina para ${taskCode}`}>
+            {ticks.map((tick) => <g key={tick}><line x1={margin.left} x2={chartWidth - margin.right} y1={yFor(tick)} y2={yFor(tick)} stroke="#e5e7eb" strokeDasharray="3 3" /><text x={margin.left - 10} y={yFor(tick) + 4} textAnchor="end" fontSize={embedded ? 12 : 11} fill="#6b7280">{tick.toFixed(1)}s</text></g>)}
+            <line x1={margin.left} x2={margin.left} y1={margin.top} y2={baseline} stroke="#9ca3af" />
+            <line x1={margin.left} x2={chartWidth - margin.right} y1={baseline} y2={baseline} stroke="#9ca3af" />
+            {groupedBars.map((bar, index) => {
+              const x = margin.left + (plotWidth * (index + 0.5)) / groupedBars.length - barWidth / 2;
+              let currentY = baseline;
+              return <g key={bar.operator}>
+                <text x={x + barWidth / 2} y={Math.max(margin.top + 14, yFor(bar.totalSeconds) - 8)} textAnchor="middle" fontSize={embedded ? 12 : 11} fontWeight="700" fill="#1f2937">{bar.totalSeconds.toFixed(1)}s</text>
+                {bar.gap !== 0 && <text x={x + barWidth / 2} y={Math.max(margin.top + 28, yFor(bar.totalSeconds) - 23)} textAnchor="middle" fontSize={embedded ? 11 : 10} fontWeight="700" fill={bar.gap < 0 ? "#2E9D67" : "#D64545"}>{bar.gap > 0 ? `+${bar.gap.toFixed(1)}s` : `${bar.gap.toFixed(1)}s`}</text>}
+                {bar.segments.map((segment) => {
+                  const height = Math.max(1, (segment.seconds / maxY) * plotHeight);
+                  currentY -= height;
+                  const operationLabel = segment.operation.length > 13 ? `${segment.operation.slice(0, 12)}…` : segment.operation;
+                  return <g key={`${bar.operator}-${segment.machine}-${segment.operation}-${currentY}`}><rect x={x} y={currentY} width={barWidth} height={height} fill={segment.color} /><title>{`${bar.operator} · ${segment.operation} · ${segment.machine} · ${segment.seconds.toFixed(1)}s`}</title>{height > 30 && <text x={x + barWidth / 2} y={currentY + height / 2 - 8} textAnchor="middle" fontSize={embedded ? 9 : 9} fontWeight="700" fill="#fff"><tspan x={x + barWidth / 2} dy="0">{operationLabel}</tspan><tspan x={x + barWidth / 2} dy="12">{segment.seconds.toFixed(1)}s</tspan></text>}{height > 17 && height <= 30 && <text x={x + barWidth / 2} y={currentY + height / 2 - 1} textAnchor="middle" fontSize={embedded ? 10 : 10} fontWeight="700" fill="#fff">{segment.seconds.toFixed(1)}s</text>}</g>;
+                })}
+                <text x={x + barWidth / 2} y={baseline + (embedded ? 25 : 48)} textAnchor="middle" fontSize={embedded ? 12 : 11} fontWeight="600" fill="#333">{bar.operator.length > 18 ? `${bar.operator.slice(0, 17)}…` : bar.operator}</text>
+              </g>;
+            })}
+            {groupedReferenceSeconds > 0 && <g><line x1={margin.left} x2={chartWidth - margin.right} y1={yFor(groupedReferenceSeconds)} y2={yFor(groupedReferenceSeconds)} stroke="#263B63" strokeWidth="1.8" strokeDasharray="7 5" /><rect x={chartWidth - margin.right - 112} y={Math.max(margin.top, yFor(groupedReferenceSeconds) - 11)} width="112" height="20" rx="4" fill="#263B63" /><text x={chartWidth - margin.right - 56} y={Math.max(margin.top + 14, yFor(groupedReferenceSeconds) + 3)} textAnchor="middle" fontSize={embedded ? 11 : 11} fontWeight="700" fill="#fff">100% · {groupedReferenceSeconds.toFixed(1)}s</text></g>}
+          </svg>
+        </div>
+        {legend.length > 0 && <div className="mt-2 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[11px] text-gray-600">{legend.map((item) => <span key={item.machine}><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />{item.machine}</span>)}</div>}
+      </section>
+    );
+  }
+
   if (stations.length === 0) {
     return (
       <section className={embedded ? "p-2" : "rounded-sm border border-gray-200 bg-white p-5 shadow-sm"}>
@@ -216,14 +324,21 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], wat
   }
 
   const chartWidth = Math.max(1000, stations.length * (embedded ? 150 : 125));
-  const chartHeight = embedded ? 400 : 430;
+  const chartHeight = embedded ? 440 : 430;
   const margin = embedded
     ? { top: 16, right: 14, bottom: 58, left: 56 }
     : { top: 58, right: 24, bottom: 112, left: 78 };
   const plotWidth = chartWidth - margin.left - margin.right;
   const plotHeight = chartHeight - margin.top - margin.bottom;
   const maxRate = Math.max(...stations.map((station) => station.outputRate), 1);
-  const maxY = maxRate * (embedded ? 1.4 : 1.35);
+  const referenceSeconds = numberOr(
+    source.real_share_per_operator_seconds ?? source.share_per_operator_seconds ?? source.sharePerOperatorSeconds ?? source.allocation?.real_share_per_operator_seconds ?? source.allocation?.share_per_operator_seconds ?? (resultados as any).share_per_operator_seconds,
+    0,
+  );
+  const maxY = Math.max(
+    maxRate * (embedded ? 1.4 : 1.35),
+    referenceSeconds > 0 ? referenceSeconds * 1.15 : 0,
+  );
   const barWidth = Math.min(embedded ? 76 : 76, (plotWidth / stations.length) * 0.62);
   const xFor = (index: number) => margin.left + (plotWidth * (index + 0.5)) / stations.length;
   const yFor = (value: number) => margin.top + plotHeight - (value / maxY) * plotHeight;
@@ -256,12 +371,12 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], wat
           })}
           <line x1={margin.left} x2={margin.left} y1={margin.top} y2={baseline} stroke="#9ca3af" />
           <line x1={margin.left} x2={chartWidth - margin.right} y1={baseline} y2={baseline} stroke="#9ca3af" />
-          <text transform={`translate(17 ${margin.top + plotHeight / 2}) rotate(-90)`} textAnchor="middle" fontSize="12" fill={COLORS.TEXT}>Output Rate (s/peça)</text>
+          <text transform={`translate(17 ${margin.top + plotHeight / 2}) rotate(-90)`} textAnchor="middle" fontSize="12" fill={COLORS.TEXT}>Segundos</text>
           {stations.map((station, index) => {
             const x = xFor(index) - barWidth / 2;
             const y = yFor(station.outputRate);
             const color = getBarColor(index, station.gap);
-            const gapLabel = station.gap < 0 ? `+${Math.abs(station.gap).toFixed(1)}s` : station.gap > 0 ? `-${station.gap.toFixed(1)}s` : "";
+             const gapLabel = station.gap > 0 ? `+${station.gap.toFixed(1)}s` : station.gap < 0 ? `${station.gap.toFixed(1)}s` : "";
             const labelLines = station.name.length > 22 ? [station.name.slice(0, 21) + "…"] : [station.name];
             return (
               <g key={station.key}>
@@ -274,6 +389,15 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], wat
               </g>
             );
           })}
+          {referenceSeconds > 0 && (
+            <g>
+              <line x1={margin.left} x2={chartWidth - margin.right} y1={yFor(referenceSeconds)} y2={yFor(referenceSeconds)} stroke="#1e3a5f" strokeWidth="1.5" strokeDasharray="7 5" />
+              <rect x={chartWidth - margin.right - 112} y={Math.max(margin.top, yFor(referenceSeconds) - 11)} width="112" height="20" rx="4" fill="#1e3a5f" />
+              <text x={chartWidth - margin.right - 56} y={Math.max(margin.top + 14, yFor(referenceSeconds) + 3)} textAnchor="middle" fontSize={embedded ? 11 : 11} fontWeight="700" fill="#ffffff">
+                100% · {referenceSeconds.toFixed(1)}s
+              </text>
+            </g>
+          )}
         </svg>
       </div>
     </section>

@@ -352,7 +352,7 @@ export default function Configuracao() {
   const [filtroPolivalenciaMin, setFiltroPolivalenciaMin] = useState("");
   const [ordenacaoPolivalencia, setOrdenacaoPolivalencia] = useState<"nenhuma" | "asc" | "desc">("nenhuma");
   const [showFiltros, setShowFiltros] = useState(false);
-  const [vistaPolivalencia, setVistaPolivalencia] = useState<"operadores" | "grupos" | "cobertura">("grupos");
+  const [vistaPolivalencia, setVistaPolivalencia] = useState<"operadores" | "grupos" | "cobertura" | "catalogo">("catalogo");
   const familiaSelecionadaLabel = useMemo(() => {
     if (!filtroFamilia) return "";
     return familias.find((familia) => familia.id === filtroFamilia)?.label || filtroFamilia;
@@ -675,8 +675,9 @@ export default function Configuracao() {
         </div>
       </div>
 
-      <Tabs value={vistaPolivalencia} onValueChange={(value) => setVistaPolivalencia(value as "operadores" | "grupos" | "cobertura")}>
-        <TabsList className="grid w-full max-w-lg grid-cols-2 rounded-sm bg-gray-100 p-1">
+      <Tabs value={vistaPolivalencia} onValueChange={(value) => setVistaPolivalencia(value as "operadores" | "grupos" | "cobertura" | "catalogo")}>
+        <TabsList className="grid w-full max-w-2xl grid-cols-3 rounded-sm bg-gray-100 p-1">
+          <TabsTrigger value="catalogo" className="rounded-sm text-xs">Catálogo de máquinas</TabsTrigger>
           <TabsTrigger value="grupos" className="rounded-sm text-xs">Por grupo de artigo</TabsTrigger>
           <TabsTrigger value="cobertura" className="rounded-sm text-xs">Cobertura geral</TabsTrigger>
         </TabsList>
@@ -1092,17 +1093,18 @@ export default function Configuracao() {
         <TabsContent value="cobertura" className="mt-4">
           <CoberturaGeral />
         </TabsContent>
+        <TabsContent value="catalogo" className="mt-4">
+          <CatalogoMaquinasApi
+            familyId={filtroFamilia}
+            defaultTaskId={dados.configuracao.fichaTecnicaSelecionada?.fichaId || undefined}
+            familyLabel={familiaSelecionadaLabel}
+            familyOptions={familias}
+            onFamilyChange={setFiltroFamilia}
+          />
+        </TabsContent>
       </Tabs>
 
       {/* Catálogo de Máquinas */}
-      <CatalogoMaquinasApi
-        familyId={filtroFamilia}
-        defaultTaskId={dados.configuracao.fichaTecnicaSelecionada?.fichaId || undefined}
-        familyLabel={familiaSelecionadaLabel}
-        familyOptions={familias}
-        onFamilyChange={setFiltroFamilia}
-      />
-
       {/* Configuração de Layout */}
       <ConfiguracaoLayoutComponent layout={layout} onLayoutChange={setLayout} />
     </main>

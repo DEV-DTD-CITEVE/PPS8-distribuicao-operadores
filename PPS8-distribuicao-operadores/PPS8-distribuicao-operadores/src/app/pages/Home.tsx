@@ -1200,6 +1200,7 @@ export default function Home() {
   const resultadosRef = useRef<HTMLDivElement | null>(null);
   const [resultadosAtuaisInline, setResultadosAtuaisInline] = useState<ResultadosBalanceamento | null>(null);
   const [waterfallDataInline, setWaterfallDataInline] = useState<any>(null);
+  const [ocupacaoViewInline, setOcupacaoViewInline] = useState<"pilhas" | "waterfall">("pilhas");
   const [waterfallLoadingInline, setWaterfallLoadingInline] = useState(false);
   const [waterfallErrorInline, setWaterfallErrorInline] = useState<string | null>(null);
   const [resultadosPorTipoInline, setResultadosPorTipoInline] = useState<Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>>({});
@@ -1574,7 +1575,7 @@ export default function Home() {
     return () => { cancelled = true; };
   // O waterfall acompanha um cálculo já concluído. Alterar o método, layout ou
   // os parâmetros do formulário não deve disparar um novo POST antes de calcular.
-  }, [resultadosAtuaisInline, resultadosInlineData?.taskCode, taskCodeInline]);
+  }, [resultadosAtuaisInline, resultadosInlineData?.taskCode, taskCodeInline, temAdjustInline]);
 
   const produto = produtosApi.find((p) => p.id === produtoSelecionado);
   const operacoes = config.possibilidade === 4
@@ -4625,6 +4626,8 @@ export default function Home() {
                 resultados={resultadosAtuaisInline}
                 config={configAtualInline}
                 mostrarTaktTime={Number(configAtualInline?.possibilidade) === 2}
+                realMetrics={waterfallDataInline?.data?.metrics ?? waterfallDataInline?.metrics}
+                showRealMetrics={ocupacaoViewInline === "waterfall"}
                 layout="column"
               />
             </div>
@@ -4645,6 +4648,8 @@ export default function Home() {
                 onAtribuirColuna={handleAtribuirColunaIdeal}
                  isIdealSemOle={configAtualInline.possibilidade === 5}
                  waterfallData={waterfallDataInline}
+                 ocupacaoView={ocupacaoViewInline}
+                 onOcupacaoViewChange={setOcupacaoViewInline}
                  taskCode={taskCodeInline || resultadosInlineData.taskCode || "ficha selecionada"}
                />
             </div>

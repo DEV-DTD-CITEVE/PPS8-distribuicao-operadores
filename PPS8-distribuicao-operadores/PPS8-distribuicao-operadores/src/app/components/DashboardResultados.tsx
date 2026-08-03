@@ -24,6 +24,8 @@ interface DashboardResultadosProps {
   isIdealSemOle?: boolean;
   waterfallData?: any;
   taskCode?: string;
+  ocupacaoView?: "pilhas" | "waterfall";
+  onOcupacaoViewChange?: (view: "pilhas" | "waterfall") => void;
 }
 
 type WaterfallOperatorMetric = {
@@ -229,13 +231,20 @@ export function DashboardResultados({
   isIdealSemOle = false,
   waterfallData,
   taskCode = "",
+  ocupacaoView: ocupacaoViewProp,
+  onOcupacaoViewChange,
 }: DashboardResultadosProps) {
   const [operadorDetalheAberto, setOperadorDetalheAberto] = useState<{
     codigo: string;
     colaboradorLabel: string;
     operacoes: string[];
   } | null>(null);
-  const [ocupacaoView, setOcupacaoView] = useState<"pilhas" | "waterfall">("pilhas");
+  const [ocupacaoViewLocal, setOcupacaoViewLocal] = useState<"pilhas" | "waterfall">("pilhas");
+  const ocupacaoView = ocupacaoViewProp ?? ocupacaoViewLocal;
+  const setOcupacaoView = (view: "pilhas" | "waterfall") => {
+    setOcupacaoViewLocal(view);
+    onOcupacaoViewChange?.(view);
+  };
   const cycleTimeSeconds =
     Number((resultados as any)?.cycle_time_seconds) > 0
       ? Number((resultados as any)?.cycle_time_seconds)
@@ -632,6 +641,8 @@ export function DashboardResultados({
   const waterfallSource = waterfallData?.data && typeof waterfallData.data === "object" ? waterfallData.data : waterfallData;
   const waterfallAllocation = waterfallSource?.allocation && typeof waterfallSource.allocation === "object" ? waterfallSource.allocation : {};
   const waterfallReferenceSeconds = Number(
+    waterfallSource?.real_share_per_operator_seconds ??
+    waterfallAllocation?.real_share_per_operator_seconds ??
     waterfallAllocation?.share_per_operator_seconds ??
     waterfallAllocation?.cycle_time_seconds ?? waterfallAllocation?.real_cycle_time_seconds ?? waterfallAllocation?.tempo_ciclo_segundos,
   ) || 0;
@@ -678,8 +689,8 @@ export function DashboardResultados({
                   : "Ocupação por Trabalhador"}
               </p>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setOcupacaoView("pilhas")} className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "pilhas" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Ocupação</button>
-                <button type="button" onClick={() => setOcupacaoView("waterfall")} className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "waterfall" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Output</button>
+                <button type="button" onClick={() => setOcupacaoView("pilhas")} className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "pilhas" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Teórico</button>
+                <button type="button" onClick={() => setOcupacaoView("waterfall")} className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "waterfall" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Real</button>
               </div>
             </div>
             <div className="content-stretch flex h-[18px] items-start relative shrink-0 w-full">
@@ -690,7 +701,7 @@ export function DashboardResultados({
           </div>
         </div>
 
-        {ocupacaoView === "pilhas" ? <div className="relative min-h-[400px] shrink-0 w-full overflow-x-auto">
+        {ocupacaoView === "pilhas" ? <div className="relative min-h-[440px] shrink-0 w-full overflow-x-auto">
           <div className="content-stretch flex h-full gap-4 items-center justify-center px-5 py-3 md:px-6 min-w-full w-full relative">
             {dadosCarga.map((d) => {
               const cappedOccupancy = Math.min(d.ocupacao, 100);
@@ -836,7 +847,7 @@ export function DashboardResultados({
               </div>
             )}
           </div>
-        </div> : <div className="relative flex min-h-[400px] w-full justify-center px-4 pb-2">
+        </div> : <div className="relative flex min-h-[440px] w-full justify-center px-4 pb-2">
           <WaterfallOutputRate resultados={resultados} operadores={operadores} taskCode={taskCode} waterfallData={waterfallData} embedded />
         </div>}
       </div>

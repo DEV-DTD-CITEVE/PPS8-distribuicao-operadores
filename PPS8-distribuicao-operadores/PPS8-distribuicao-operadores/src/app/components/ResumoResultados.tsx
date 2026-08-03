@@ -14,10 +14,12 @@ interface ResumoResultadosProps {
     naoDividirMenorQue: number;
   };
   mostrarTaktTime?: boolean;
+  realMetrics?: any;
+  showRealMetrics?: boolean;
   layout?: "row" | "column";
 }
 
-export function ResumoResultados({ resultados, config, mostrarTaktTime, layout = "row" }: ResumoResultadosProps) {
+export function ResumoResultados({ resultados, config, mostrarTaktTime, realMetrics, showRealMetrics = true, layout = "row" }: ResumoResultadosProps) {
   const rawKpis = (resultados as any)?.kpis ?? null;
   const resolveNumber = (...values: unknown[]) => {
     for (const value of values) {
@@ -37,6 +39,29 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
   const produtividade = resolveNumber(rawKpis?.productivity_pct, (resultados as any)?.estimated_productivity, resultados.produtividade);
   const perdas = resolveNumber(rawKpis?.balance_loss_pct, (resultados as any)?.balance_loss, resultados.perdas, Math.max(0, 100 - produtividade));
   const numeroOperadores = resolveNumber(rawKpis?.num_operators, resultados.numeroOperadores, config.numeroOperadores);
+  const real = realMetrics && typeof realMetrics === "object" ? realMetrics : null;
+  const resolveRealNumber = (...values: unknown[]) => {
+    for (const value of values) {
+      const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value.replace(",", ".")) : Number.NaN;
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  };
+  const realCycleSeconds = resolveRealNumber(real?.real_cycle_time_seconds, real?.real_cycle_time, real?.real_tempo_ciclo_segundos);
+  const realTempoCicloMin = realCycleSeconds == null ? null : realCycleSeconds > 10 ? realCycleSeconds / 60 : realCycleSeconds;
+  const realCiclosPorHora = resolveRealNumber(real?.real_cycles_per_hour, real?.real_production_per_hour, real?.real_output_per_hour);
+  const realProdutividade = resolveRealNumber(real?.real_productivity_pct, real?.real_productivity, real?.real_estimated_productivity);
+  const realPerdas = resolveRealNumber(real?.real_balance_loss_pct, real?.real_balance_loss, real?.real_loss_pct);
+  const realNumeroOperadores = resolveRealNumber(real?.real_num_operators, real?.real_operators, real?.real_number_of_operators);
+  const comparison = (value: number, realValue: number | null, decimals: number, higherIsBetter: boolean) => {
+    if (realValue == null || Math.abs(value - realValue) <= 0.005) return null;
+    const difference = realValue - value;
+    return {
+      value: realValue.toFixed(decimals),
+      difference: `(${difference > 0 ? "+" : ""}${difference.toFixed(decimals)})`,
+      worse: higherIsBetter ? difference < 0 : difference > 0,
+    };
+  };
   const exibirTaktTime = mostrarTaktTime ?? (config.possibilidade === 2);
   const isColumn = layout === "column";
 
@@ -44,6 +69,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
     {
       label: 'Ciclos/Hora',
       value: ciclosPorHora.toFixed(2),
+      realComparison: comparison(ciclosPorHora, realCiclosPorHora, 2, true),
       unit: '',
       bgColor: 'bg-[#cbfbf1]',
       iconColor: '#009689',
@@ -62,6 +88,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
       ? [{
           label: 'Takt Time',
           value: resultados.taktTime.toFixed(2),
+          realComparison: null,
           unit: 'min',
           bgColor: 'bg-[#dbeafe]',
           iconColor: '#155DFC',
@@ -83,6 +110,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
     {
       label: 'Tempo Ciclo',
       value: tempoCicloMin.toFixed(2),
+      realComparison: comparison(tempoCicloMin, realTempoCicloMin, 2, false),
       unit: 'min',
       bgColor: 'bg-[#f3e8ff]',
       iconColor: '#9810FA',
@@ -99,6 +127,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
     {
       label: 'Produtividade',
       value: produtividade.toFixed(1),
+      realComparison: comparison(produtividade, realProdutividade, 1, true),
       unit: '%',
       bgColor: 'bg-[#dcfce7]',
       iconColor: '#00A63E',
@@ -114,6 +143,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
     {
       label: 'Perdas',
       value: Number.isFinite(perdas) ? perdas.toFixed(1) : '-',
+      realComparison: comparison(perdas, realPerdas, 1, false),
       unit: Number.isFinite(perdas) ? '%' : '',
       bgColor: 'bg-[#fef3c6]',
       iconColor: '#E17100',
@@ -130,6 +160,7 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
     {
       label: 'Operadores',
       value: String(numeroOperadores),
+      realComparison: comparison(numeroOperadores, realNumeroOperadores, 0, false),
       unit: '',
       bgColor: 'bg-[#e0e7ff]',
       iconColor: '#4F39F6',
@@ -169,7 +200,8 @@ export function ResumoResultados({ resultados, config, mostrarTaktTime, layout =
                     {kpi.label}
                   </p>
                   <p className="font-bold leading-7 text-[#101828] text-[18px] tracking-[-0.4395px] whitespace-nowrap">
-                    {kpi.value}
+                    <span>{kpi.value}</span>
+                    {showRealMetrics && kpi.realComparison && <><span className="mx-2 text-[13px] font-normal text-gray-300">|</span><span className={kpi.realComparison.worse ? "text-[#c2413b]" : "text-[#2e8b68]"} title="Valor real e diferença para o teórico">{kpi.realComparison.value} <span className="text-[11px] font-medium">{kpi.realComparison.difference}</span></span></>}
                     {kpi.unit && (
                       <span className="font-normal leading-[15.556px] text-[#6a7282] text-[10px] tracking-[0.1172px]">
                         {kpi.unit}

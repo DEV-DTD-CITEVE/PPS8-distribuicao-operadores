@@ -11,7 +11,7 @@ const array = (value: unknown): RecordApi[] => Array.isArray(value) ? value as R
 const text = (item: RecordApi, keys: string[]) => { for (const key of keys) { if (item[key] != null && String(item[key]).trim()) return String(item[key]).trim(); } return ""; };
 const number = (item: RecordApi, keys: string[]) => { for (const key of keys) { const value = Number(item[key]); if (Number.isFinite(value)) return value; } return 0; };
 
-const levelColors: Record<string, string> = { "1": "#d98970", "2": "#d8ad66", "3": "#6d95bc", "4": "#8fb294" };
+const levelColors: Record<string, string> = { "1": "#F26B6B", "2": "#F2B84B", "3": "#4F8EDC", "4": "#35B779" };
 
 function Donut({ counts }: { counts: Record<string, number> }) {
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
