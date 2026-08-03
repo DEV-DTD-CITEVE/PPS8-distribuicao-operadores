@@ -848,7 +848,7 @@ export function DashboardResultados({
             )}
           </div>
         </div> : <div className="relative flex min-h-[440px] w-full justify-center px-4 pb-2">
-          <WaterfallOutputRate resultados={resultados} operadores={operadores} taskCode={taskCode} waterfallData={waterfallData} embedded />
+          <WaterfallOutputRate resultados={resultados} operadores={operadores} operatorOrder={dadosCarga.map((item) => item.colaboradorLabel)} taskCode={taskCode} waterfallData={waterfallData} embedded />
         </div>}
       </div>
       )}

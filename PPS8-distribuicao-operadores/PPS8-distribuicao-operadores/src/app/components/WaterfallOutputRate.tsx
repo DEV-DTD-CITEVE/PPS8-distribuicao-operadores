@@ -187,7 +187,7 @@ type OperatorMachineBar = {
 
 const GROUPED_COLORS = ["#4F86C6", "#5FBF9F", "#8B78C8", "#E7A64A", "#5CA7B5", "#D86A73", "#7E9B5B"];
 
-const buildGroupedOperatorBars = (source: any, operadores: any[]): OperatorMachineBar[] => {
+const buildGroupedOperatorBars = (source: any, operadores: any[], desiredOrder: string[] = []): OperatorMachineBar[] => {
   const grouped = source?.machine_times_per_operator ?? source?.machineTimesPerOperator ?? source?.operator_flow ?? source?.operatorFlow ?? source?.waterfall;
   const entries: Array<[string, any]> = Array.isArray(grouped)
     ? grouped.flatMap((row: any) => Array.isArray(row?.operators)
@@ -205,6 +205,10 @@ const buildGroupedOperatorBars = (source: any, operadores: any[]): OperatorMachi
     const match = operadores.find((operator: any) => String(operator?.id ?? operator?.codigo ?? "").trim() === key);
     return String(match?.nome ?? match?.name ?? key).trim() || key;
   };
+  const operatorOrder = new Map(operadores.flatMap((operator: any, index: number) => [
+    [String(operator?.id ?? operator?.codigo ?? "").trim().toLowerCase(), index],
+    [String(operator?.nome ?? operator?.name ?? "").trim().toLowerCase(), index],
+  ]).concat(desiredOrder.map((label, index) => [String(label).trim().toLowerCase(), index])));
   return entries.map(([operatorKey, rawEntries]) => {
     const list = Array.isArray(rawEntries)
       ? rawEntries
@@ -228,10 +232,14 @@ const buildGroupedOperatorBars = (source: any, operadores: any[]): OperatorMachi
     }).filter((segment): segment is { machine: string; operation: string; seconds: number; gap: number; color: string } => Boolean(segment));
     const operatorGap = numberOr(rawEntries?.gap ?? rawEntries?.gap_seconds ?? rawEntries?.delta, segments[0]?.gap ?? 0);
     return { operator: resolveName(operatorKey), totalSeconds: segments.reduce((sum, segment) => sum + segment.seconds, 0), gap: operatorGap, segments };
-  }).filter((bar) => bar.totalSeconds > 0);
+  }).filter((bar) => bar.totalSeconds > 0).sort((a, b) => {
+    const orderA = operatorOrder.get(a.operator.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+    const orderB = operatorOrder.get(b.operator.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+    return orderA === orderB ? 0 : orderA - orderB;
+  });
 };
 
-export function WaterfallOutputRate({ resultados, taskCode, operadores = [], waterfallData, embedded = false }: { resultados: ResultadosBalanceamento; taskCode: string; operadores?: any[]; waterfallData?: any; embedded?: boolean }) {
+export function WaterfallOutputRate({ resultados, taskCode, operadores = [], operatorOrder = [], waterfallData, embedded = false }: { resultados: ResultadosBalanceamento; taskCode: string; operadores?: any[]; operatorOrder?: string[]; waterfallData?: any; embedded?: boolean }) {
   const rawSource = waterfallData && typeof waterfallData === "object" ? waterfallData : resultados;
   const source = rawSource.data && typeof rawSource.data === "object" ? rawSource.data : rawSource;
   const rows = Array.isArray(source.operation_allocations)
@@ -259,7 +267,7 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], wat
       })).filter((station: OutputRateStation) => station.outputRate > 0)
     : buildStations(source as ResultadosBalanceamento, operatorColumns);
 
-  const groupedBars = buildGroupedOperatorBars(source, operadores);
+  const groupedBars = buildGroupedOperatorBars(source, operadores, operatorOrder);
   const groupedReferenceSeconds = numberOr(
     source.real_share_per_operator_seconds ?? source.share_per_operator_seconds ?? source.sharePerOperatorSeconds ?? source.allocation?.real_share_per_operator_seconds ?? source.allocation?.share_per_operator_seconds ?? (resultados as any).share_per_operator_seconds,
     0,
@@ -286,7 +294,7 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], wat
     return (
       <section className={embedded ? "p-0" : "rounded-sm border border-gray-200 bg-white p-4 shadow-sm"}>
         {!embedded && <div className="mb-2"><h3 className="text-sm font-semibold text-gray-900">Tempo por Operador x Máquina — {taskCode}</h3><p className="mt-1 text-xs text-gray-500">Eixo X: operador | Eixo Y: segundos empilhados por máquina</p></div>}
-        <div className="flex justify-center overflow-x-auto">
+        <div className="flex justify-center overflow-x-auto [&>svg]:!h-[440px] [&>svg]:!min-h-[440px]">
           <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className={embedded ? "h-[400px] min-h-[400px] w-[90%] min-w-[1000px] max-w-none" : "h-auto min-w-[900px]"} role="img" aria-label={`Tempo por operador e máquina para ${taskCode}`}>
             {ticks.map((tick) => <g key={tick}><line x1={margin.left} x2={chartWidth - margin.right} y1={yFor(tick)} y2={yFor(tick)} stroke="#e5e7eb" strokeDasharray="3 3" /><text x={margin.left - 10} y={yFor(tick) + 4} textAnchor="end" fontSize={embedded ? 12 : 11} fill="#6b7280">{tick.toFixed(1)}s</text></g>)}
             <line x1={margin.left} x2={margin.left} y1={margin.top} y2={baseline} stroke="#9ca3af" />
@@ -358,7 +366,7 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], wat
           <span><i className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: COLORS.FASTER }} />Mais rápida</span>
         </div>
       </div>}
-         <div className="flex justify-center overflow-x-auto">
+         <div className="flex justify-center overflow-x-auto [&>svg]:!h-[440px] [&>svg]:!min-h-[440px]">
          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className={embedded ? "h-[400px] min-h-[400px] w-[90%] min-w-[1000px] max-w-none" : "h-auto min-w-[900px]"} role="img" aria-label={`Waterfall de ocupação por trabalhador para ${taskCode}`}>
           {ticks.map((tick) => {
             const y = yFor(tick);
