@@ -15,7 +15,7 @@ import { useStorage } from "../contexts/StorageContext";
 import axios from "axios";
 import { Label } from "../components/ui/label";
 import { Input } from "../components/ui/input";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, ML_SUGGEST_API_BASE_URL } from "../config";
 import { SearchableCombobox } from "../components/SearchableCombobox";
 import { Progress } from "../components/ui/progress";
 import {
@@ -1199,6 +1199,9 @@ export default function Home() {
   } | null>(null);
   const resultadosRef = useRef<HTMLDivElement | null>(null);
   const [resultadosAtuaisInline, setResultadosAtuaisInline] = useState<ResultadosBalanceamento | null>(null);
+  const [waterfallDataInline, setWaterfallDataInline] = useState<any>(null);
+  const [waterfallLoadingInline, setWaterfallLoadingInline] = useState(false);
+  const [waterfallErrorInline, setWaterfallErrorInline] = useState<string | null>(null);
   const [resultadosPorTipoInline, setResultadosPorTipoInline] = useState<Partial<Record<"linha" | "espinha", ResultadosBalanceamento>>>({});
   const [configAtualInline, setConfigAtualInline] = useState<ConfiguracaoDistribuicao | null>(null);
   const [viewModeInline, setViewModeInline] = useState<"tempo" | "percentagem" | "ole">("tempo");
@@ -1471,6 +1474,107 @@ export default function Home() {
   const operadoresSelecionados = dadosUnidades[unidadeAtiva].operadoresSelecionados;
   const atribuicoesManual = dadosUnidades[unidadeAtiva].atribuicoesManual;
   const config = dadosUnidades[unidadeAtiva].config;
+
+  useEffect(() => {
+    const taskCode = taskCodeInline || resultadosInlineData?.taskCode || "";
+    if (!taskCode || !resultadosAtuaisInline) {
+      setWaterfallDataInline(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadWaterfall = async () => {
+      setWaterfallLoadingInline(true);
+      setWaterfallErrorInline(null);
+      try {
+        const efficiency = Number(configAtualInline?.produtividadeEstimada ?? config.produtividadeEstimada ?? 85);
+        const waterfallMode = Number(configAtualInline?.possibilidade ?? config.possibilidade);
+        const waterfallEndpoint = waterfallMode === 2
+          ? "waterfall-objective"
+          : waterfallMode === 3
+            ? "waterfall-manual"
+            : waterfallMode === 4
+              ? "waterfall-custom"
+              : waterfallMode === 5
+                ? (temAdjustInline ? "waterfall-adjust-ideal" : "waterfall-ideal")
+                : (temAdjustInline ? "waterfall-adjust" : "waterfall");
+        const maxPostsValue = Number(getMaxPostsPayloadInline(layoutConfig));
+        const maxPositionDeviationValue = Math.trunc(Number(layoutConfig.distanciaMaxima));
+        const commonWaterfallBody = {
+          efficiency: efficiency > 1 ? efficiency / 100 : efficiency,
+          work_hours: Math.max(1, Math.trunc(Number(configAtualInline?.horasTurno ?? config.horasTurno ?? 8))),
+          limit_not_assign: Number(configAtualInline?.cargaMaximaOperador ?? config.cargaMaximaOperador ?? 95) > 1
+            ? Number(configAtualInline?.cargaMaximaOperador ?? config.cargaMaximaOperador ?? 95) / 100
+            : Number(configAtualInline?.cargaMaximaOperador ?? config.cargaMaximaOperador ?? 0.95),
+          limit_not_divide_lower: Number(configAtualInline?.naoDividirMenorQue ?? config.naoDividirMenorQue ?? 0.9),
+          limit_not_divide_upper: Number(configAtualInline?.naoDividirMaiorQue ?? config.naoDividirMaiorQue ?? 1.1),
+          line_type: layoutConfig.tipoLayout,
+          max_posts: maxPostsValue >= 1 ? Math.trunc(maxPostsValue) : null,
+          max_position_deviation: maxPositionDeviationValue >= 1 ? maxPositionDeviationValue : null,
+          position_deviation_mode: "both",
+        };
+        const allocationRows = Array.isArray(resultadosAtuaisInline.operation_allocations)
+          ? resultadosAtuaisInline.operation_allocations
+          : [];
+        const customAssignments = allocationRows.flatMap((row: any) =>
+          (Array.isArray(row.operator_allocations) ? row.operator_allocations : []).map((item: any) => ({
+            operator_id: String(item.operator_id ?? item.operator_code ?? item.operador_id ?? item.operator ?? ""),
+            operation_code: String(row.operation_code ?? row.operation_id ?? ""),
+            operation_name: row.operation_name ?? null,
+            time_seconds: Number(item.time_seconds ?? item.tempo_segundos ?? item.seconds ?? item.time ?? 0),
+            machine_name: row.machine_type ?? null,
+          })).filter((item: any) => item.operator_id && item.operation_code && item.time_seconds > 0),
+        );
+        const waterfallBody = temAdjustInline
+          ? {
+              ...(structuredClone(ajusteBodyBaseInline || {}) || {}),
+              line_type: layoutConfig.tipoLayout,
+              max_posts: commonWaterfallBody.max_posts,
+              max_position_deviation: commonWaterfallBody.max_position_deviation,
+              position_deviation_mode: commonWaterfallBody.position_deviation_mode,
+            }
+          : waterfallMode === 4
+          ? { work_hours: commonWaterfallBody.work_hours, line_type: commonWaterfallBody.line_type, assignments: customAssignments }
+          : waterfallMode === 5 && !temAdjustInline
+            ? commonWaterfallBody
+            : {
+                ...commonWaterfallBody,
+                ...(waterfallMode === 2
+                  ? { objective_pieces: Math.max(1, Math.trunc(Number(configAtualInline?.quantidadeObjetivo ?? config.quantidadeObjetivo ?? 0))) }
+                  : {}),
+                ...(waterfallMode === 3
+                  ? {
+                      num_operators: Math.max(1, Math.trunc(Number(configAtualInline?.numeroOperadores ?? config.numeroOperadores ?? operadoresSelecionados.length ?? 0))),
+                      collaborator_ids: configAtualInline?.naoSelecionarOperadores === true ? null : operadoresSelecionados,
+                    }
+                  : {}),
+                forced_allocations: {},
+                candidate_pools: {},
+              };
+        const response = await axios.post(
+          `${ML_SUGGEST_API_BASE_URL}/bottleneck/${encodeURIComponent(taskCode)}/${waterfallEndpoint}`,
+          waterfallBody,
+        );
+        if (!cancelled) setWaterfallDataInline(response.data);
+      } catch (error: any) {
+        const detail = error?.response?.data?.detail;
+        const detailMessage = Array.isArray(detail)
+          ? detail.map((item: any) => typeof item === "string" ? item : item?.msg || JSON.stringify(item)).join("; ")
+          : typeof detail === "string"
+            ? detail
+            : detail && typeof detail === "object"
+              ? JSON.stringify(detail)
+              : "Não foi possível carregar o waterfall.";
+        if (!cancelled) setWaterfallErrorInline(detailMessage);
+      } finally {
+        if (!cancelled) setWaterfallLoadingInline(false);
+      }
+    };
+    void loadWaterfall();
+    return () => { cancelled = true; };
+  // O waterfall acompanha um cálculo já concluído. Alterar o método, layout ou
+  // os parâmetros do formulário não deve disparar um novo POST antes de calcular.
+  }, [resultadosAtuaisInline, resultadosInlineData?.taskCode, taskCodeInline]);
 
   const produto = produtosApi.find((p) => p.id === produtoSelecionado);
   const operacoes = config.possibilidade === 4
@@ -2559,7 +2663,9 @@ export default function Home() {
     setExportPdfBodyInline(data.ajusteBodyBase ?? data.swapBaseRaw ?? null);
     setSwapBaseRawPorTipoInline(data.swapBaseRawPorTipo ?? {});
     setSwapBaseRawInline(data.swapBaseRaw ?? null);
-    setTemAdjustInline(Boolean(data.ajusteBodyBase || data.ajusteBodyBasePorTipo));
+    // O resultado de allocate também guarda ajusteBodyBase para permitir um
+    // ajuste posterior; isso não significa que o resultado já seja ajustado.
+    setTemAdjustInline(false);
     if (suppressResultadosScrollRef.current) {
       suppressResultadosScrollRef.current = false;
       return;
@@ -4513,8 +4619,8 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-6 items-start xl:items-stretch">
-            <div className="sticky top-[95px] z-30 bg-gray-50 xl:h-full">
+          <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-6 items-start xl:items-start">
+            <div className="sticky top-[95px] z-30 self-start bg-gray-50">
               <ResumoResultados
                 resultados={resultadosAtuaisInline}
                 config={configAtualInline}
@@ -4537,8 +4643,10 @@ export default function Home() {
                 isGuardandoHistorico={isGuardandoHistorico}
                 showTabela={false}
                 onAtribuirColuna={handleAtribuirColunaIdeal}
-                isIdealSemOle={configAtualInline.possibilidade === 5}
-              />
+                 isIdealSemOle={configAtualInline.possibilidade === 5}
+                 waterfallData={waterfallDataInline}
+                 taskCode={taskCodeInline || resultadosInlineData.taskCode || "ficha selecionada"}
+               />
             </div>
           </div>
 
@@ -4579,13 +4687,8 @@ export default function Home() {
              isIdealSemOle={configAtualInline.possibilidade === 5}
            />
 
-           {/*
-           <WaterfallOutputRate
-             resultados={resultadosAtuaisInline}
-             operadores={resultadosInlineData.operadores}
-             taskCode={taskCodeInline || taskCodeSelecionado || resultadosInlineData.taskCode || "ficha selecionada"}
-           />
-           */}
+           {waterfallLoadingInline ? <p className="text-xs text-gray-500">A carregar dados do waterfall…</p> : null}
+           {waterfallErrorInline ? <p className="text-xs text-amber-700">{waterfallErrorInline} A mostrar os dados locais disponíveis.</p> : null}
 
            <VisualizadorFluxo
             resultados={resultadosAtuaisInline}

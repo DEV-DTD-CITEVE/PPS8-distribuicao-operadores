@@ -1,382 +1,60 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
 import { SearchableCombobox } from "./SearchableCombobox";
 import { GrupoArtigo, Operador } from "../types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
-import { Grid3X3 } from "lucide-react";
+import { Grid3X3, X } from "lucide-react";
 
 type ApiRecord = Record<string, any>;
+interface Props { operadores: Operador[]; grupos: GrupoArtigo[]; modo?: "local" | "api"; }
+interface Operation { id: string; name: string; ole: number | null; lastYear: number | null; }
+interface Cell { ole: number | null; done: number; total: number; executions: number | null; operations: Operation[]; }
+interface Family { code: string; name: string; totalOperations: number; }
+interface Row { collaborator_id: string; collaborator_name: string; ole_historico: number; by_family: Record<string, Cell>; }
 
-interface MatrizPolivalenciaGruposProps {
-  operadores: Operador[];
-  grupos: GrupoArtigo[];
-  modo?: "local" | "api";
-}
+const arr = (value: unknown): ApiRecord[] => Array.isArray(value) ? value as ApiRecord[] : [];
+const str = (obj: ApiRecord, keys: string[]) => { for (const key of keys) { const value = obj[key]; if (typeof value === "string" && value.trim()) return value.trim(); if (typeof value === "number" && Number.isFinite(value)) return String(value); } return ""; };
+const num = (obj: ApiRecord, keys: string[]): number | null => { for (const key of keys) { const value = obj[key]; if (typeof value === "number" && Number.isFinite(value)) return value; if (typeof value === "string" && value.trim() && Number.isFinite(Number(value.replace(",", ".")))) return Number(value.replace(",", ".")); } return null; };
+const operation = (value: unknown, index: number): Operation => { const item = value && typeof value === "object" ? value as ApiRecord : {}; return { id: str(item, ["operation_id", "operation_code", "code", "id"]) || `OP${index + 1}`, name: str(item, ["operation_name", "name", "label", "description"]) || `Operação ${index + 1}`, ole: num(item, ["ole_percentage", "ole_percent", "ole", "average_ole", "ole_medio"]), lastYear: num(item, ["executions_last_year", "last_year", "lastYear", "executions", "annual_executions"]) }; };
+const cell = (value: unknown, fallbackTotal: number, operationValue?: unknown): Cell => { const raw = value && typeof value === "object" ? value as ApiRecord : {}; const ops = arr(operationValue ?? raw.operations ?? raw.operacoes ?? raw.operation_oles).map(operation); const total = num(raw, ["total_operations", "totalOperations", "family_total_operations", "total", "operations_count"]) ?? fallbackTotal; const done = num(raw, ["operations_done", "operationsDone", "completed_operations", "covered_operations", "done", "executed_operations", "coverage_count", "coverage_completed", "completed"]) ?? ops.length; return { ole: typeof value === "number" ? value : num(raw, ["ole_percentage", "ole_percent", "ole", "average_ole", "ole_medio"]), done: Math.max(0, done || 0), total: Math.max(0, total || 0), executions: num(raw, ["executions_per_year", "executionsPerYear", "annual_executions", "executions"]), operations: ops }; };
+const oleClass = (ole: number | null) => ole == null ? "text-gray-400" : ole >= 85 ? "text-emerald-600" : ole >= 75 ? "text-amber-600" : "text-red-600";
 
-interface ApiFamilyOption {
-  code: string;
-  name: string;
-}
-
-interface ApiMatrixRow {
-  collaborator_id: string;
-  collaborator_name: string;
-  ole_historico: number;
-  by_family: Record<string, number | null | undefined>;
-}
-
-const ensureArray = (value: unknown): ApiRecord[] => {
-  if (Array.isArray(value)) return value as ApiRecord[];
-  return [];
-};
-
-const pickString = (obj: ApiRecord, keys: string[]): string => {
-  for (const key of keys) {
-    const value = obj[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  }
-  return "";
-};
-
-const getOleColor = (ole: number) => {
-  if (ole >= 85) return "bg-green-100 text-green-800 border-green-200";
-  if (ole >= 75) return "bg-yellow-100 text-yellow-800 border-yellow-200";
-  return "bg-red-100 text-red-800 border-red-200";
-};
-
-function LocalView({ operadores, grupos }: Pick<MatrizPolivalenciaGruposProps, "operadores" | "grupos">) {
-  return (
-    <>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 sticky left-0 bg-gray-50 z-20 min-w-[180px]">
-                Grupo
-              </th>
-              {operadores.map((operador) => (
-                <th
-                  key={operador.id}
-                  className="p-3 text-center text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 min-w-[140px]"
-                >
-                  <div className="text-xs font-semibold text-gray-900">{operador.id}</div>
-                  {operador.nome && <div className="mt-0.5 text-[10px] font-normal text-gray-500 normal-case">{operador.nome}</div>}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {grupos.map((grupo, idx) => (
-              <tr
-                key={grupo.id}
-                className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                  idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"
-                }`}
-              >
-                <td className="p-3 sticky left-0 bg-inherit z-10 border-r border-gray-200">
-                  <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">{grupo.referencia}</div>
-                  <div className="mt-1 font-semibold text-sm text-gray-900" title={grupo.nome}>
-                    {grupo.nome}
-                  </div>
-                </td>
-                {operadores.map((operador) => {
-                  const oleGrupo = operador.competenciasPorGrupo?.[grupo.id];
-                  return (
-                    <td key={`${grupo.id}-${operador.id}`} className="p-3 text-center border-r border-gray-200">
-                      {oleGrupo !== undefined ? (
-                        <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(oleGrupo)}`}>
-                          {oleGrupo}%
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-xs">—</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-4 flex items-center gap-6 text-xs">
-        <span className="font-semibold text-gray-600">Legenda:</span>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded-sm bg-green-100 border border-green-200" />
-          <span className="text-gray-600">≥ 85% (Excelente)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded-sm bg-yellow-100 border border-yellow-200" />
-          <span className="text-gray-600">75-84% (Bom)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded-sm bg-red-100 border border-red-200" />
-          <span className="text-gray-600">&lt; 75% (A melhorar)</span>
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-4 pt-4 border-t border-gray-200">
-        <div className="bg-gray-50 p-3 rounded-sm">
-          <div className="text-xs text-gray-500 uppercase mb-1">Total Operadores</div>
-          <div className="text-lg font-bold text-gray-900">{operadores.length}</div>
-        </div>
-        <div className="bg-gray-50 p-3 rounded-sm">
-          <div className="text-xs text-gray-500 uppercase mb-1">Total Grupos</div>
-          <div className="text-lg font-bold text-gray-900">{grupos.length}</div>
-        </div>
-        <div className="bg-gray-50 p-3 rounded-sm">
-          <div className="text-xs text-gray-500 uppercase mb-1">OLE Médio Geral</div>
-          <div className="text-lg font-bold text-gray-900">
-            {operadores.length > 0
-              ? (operadores.reduce((sum, op) => sum + op.oleHistorico, 0) / operadores.length).toFixed(1)
-              : "0.0"}
-            %
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
+function LocalView({ operadores, grupos }: Pick<Props, "operadores" | "grupos">) { return <div className="overflow-x-auto"><table className="w-full border-collapse"><thead><tr className="border-b bg-gray-50"><th className="p-3 text-left text-xs font-semibold uppercase text-gray-600">Grupo</th>{operadores.map((op) => <th key={op.id} className="p-3 text-center text-xs font-semibold uppercase text-gray-600">{op.nome || op.id}</th>)}</tr></thead><tbody>{grupos.map((grupo) => <tr key={grupo.id} className="border-b border-gray-100"><td className="p-3 text-sm font-semibold">{grupo.nome}</td>{operadores.map((op) => <td key={`${grupo.id}-${op.id}`} className="p-3 text-center">{op.competenciasPorGrupo?.[grupo.id] !== undefined ? `${op.competenciasPorGrupo[grupo.id]}%` : "—"}</td>)}</tr>)}</tbody></table></div>; }
 
 function ApiView() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [families, setFamilies] = useState<ApiFamilyOption[]>([]);
-  const [rows, setRows] = useState<ApiMatrixRow[]>([]);
-  const [filtroFamilia, setFiltroFamilia] = useState("");
-  const [filtroOperador, setFiltroOperador] = useState("");
-
-  useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await axios.get(`${API_BASE_URL}/polyvalence/matrix/by-family`);
-        const record = response.data && typeof response.data === "object" ? (response.data as ApiRecord) : null;
-        const loadedFamilies = ensureArray(record?.families).map((family, index) => ({
-          code: pickString(family, ["code", "id", "family_id", "familyCode"]) || `FAM-${String(index + 1).padStart(3, "0")}`,
-          name: pickString(family, ["name", "label", "family_name"]) || pickString(family, ["code", "id"]) || "Família",
-        }));
-        const loadedRows = ensureArray(record?.rows).map((row) => ({
-          collaborator_id: pickString(row, ["collaborator_id", "id", "operator_id"]),
-          collaborator_name: pickString(row, ["collaborator_name", "name", "operator_name"]),
-          ole_historico: Number(row?.ole_historico ?? row?.oleHistorico ?? 0) || 0,
-          by_family: (row?.by_family as Record<string, number | null | undefined>) || {},
-        }));
-        if (!active) return;
-        const familyScores = new Map<string, number>();
-        loadedFamilies.forEach((family) => familyScores.set(family.code, 0));
-        loadedRows.forEach((row) => {
-          Object.entries(row.by_family).forEach(([code, value]) => {
-            if (value !== null && value !== undefined) familyScores.set(code, (familyScores.get(code) || 0) + 1);
-          });
-        });
-
-        setFamilies(
-          loadedFamilies.sort((a, b) => {
-            const diff = (familyScores.get(b.code) || 0) - (familyScores.get(a.code) || 0);
-            return diff !== 0 ? diff : a.name.localeCompare(b.name, "pt-PT", { sensitivity: "base" });
-          })
-        );
-        setRows(
-          loadedRows.sort((a, b) => {
-            const aCount = Object.values(a.by_family).filter((value) => value !== null && value !== undefined).length;
-            const bCount = Object.values(b.by_family).filter((value) => value !== null && value !== undefined).length;
-            if (bCount !== aCount) return bCount - aCount;
-            if (b.ole_historico !== a.ole_historico) return b.ole_historico - a.ole_historico;
-            return a.collaborator_id.localeCompare(b.collaborator_id, "pt-PT", { sensitivity: "base" });
-          })
-        );
-      } catch (err) {
-        if (!active) return;
-        console.error("Erro ao carregar matriz por familia:", err);
-        setError("Não foi possível carregar a matriz por grupo de artigo.");
-        setFamilies([]);
-        setRows([]);
-      } finally {
-        if (active) setLoading(false);
+  const [loading, setLoading] = useState(false), [error, setError] = useState<string | null>(null), [families, setFamilies] = useState<Family[]>([]), [rows, setRows] = useState<Row[]>([]), [familyFilter, setFamilyFilter] = useState(""), [operatorFilter, setOperatorFilter] = useState("");
+  const [selected, setSelected] = useState<{ family: Family; row: Row; cell: Cell } | null>(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
+  const openCell = async (row: Row, family: Family, matrixCell: Cell) => {
+    setSelected({ family, row, cell: { ...matrixCell, operations: [] } });
+    setDrawerLoading(true); setDrawerError(null);
+    try {
+      const operationResponse = await axios.get(`${API_BASE_URL}/polyvalence/${encodeURIComponent(row.collaborator_id)}`, { params: { family_id: family.code, include_operation_names: true } });
+      const operations = arr(operationResponse.data?.operations ?? operationResponse.data?.operacoes).map(operation);
+      const operationIds = operations.map((item) => item.id).filter(Boolean);
+      let executionsByOperation: Record<string, number> = {};
+      if (operationIds.length) {
+        const executionsResponse = await axios.get(`${API_BASE_URL}/polyvalence/candidates/average-ole`, { params: { operation_ids: operationIds.join(",") } });
+        const candidate = arr(executionsResponse.data?.candidates ?? executionsResponse.data).find((item) => str(item, ["collaborator_id", "operator_id", "id"]) === row.collaborator_id);
+        executionsByOperation = candidate?.times_last_year_by_operation ?? {};
       }
-    };
-
-    void load();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const visibleFamilies = useMemo(() => {
-    if (!filtroFamilia) return families;
-    return families.filter((family) => family.code === filtroFamilia);
-  }, [families, filtroFamilia]);
-
-  const visibleCollaborators = useMemo(() => {
-    const termo = filtroOperador.trim().toLowerCase();
-    if (!termo) return rows;
-
-    return rows.filter((row) => {
-      const haystack = [row.collaborator_id, row.collaborator_name].filter(Boolean).join(" ").toLowerCase();
-      return haystack.includes(termo);
-    });
-  }, [rows, filtroOperador]);
-
-  return (
-    <>
-      {error && <div className="mb-4 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{error}</div>}
-
-      <div className="mb-4 rounded-sm border border-gray-200 bg-gray-50 p-3">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] lg:items-end">
-          <div>
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-600">Familia de artigos</div>
-            <SearchableCombobox
-              value={filtroFamilia}
-              onValueChange={setFiltroFamilia}
-              options={families.map((family) => ({
-                value: family.code,
-                label: family.name,
-                keywords: [family.code],
-              }))}
-              placeholder="Todas as famílias"
-              searchPlaceholder="Pesquisar família..."
-              emptyText="Nenhuma família encontrada"
-              disabled={families.length === 0}
-              triggerClassName="rounded-sm text-xs h-8 bg-white cursor-pointer"
-            />
-          </div>
-          <div>
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-600">Pesquisar operador</div>
-            <Input
-              value={filtroOperador}
-              onChange={(e) => setFiltroOperador(e.target.value)}
-              placeholder="ID ou nome do operador"
-              className="h-8 rounded-sm bg-white text-xs"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setFiltroFamilia("");
-              setFiltroOperador("");
-            }}
-            className="h-8 rounded-sm border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
-          >
-            Limpar filtros
-          </button>
-        </div>
-      </div>
-
-      <div className="overflow-auto max-h-[65vh] rounded-sm border border-gray-200">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 sticky left-0 bg-gray-50 z-20 min-w-[180px]">
-                Familia de artigos
-              </th>
-              {visibleCollaborators.map((row) => (
-                <th
-                  key={row.collaborator_id}
-                  className="p-3 text-center text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 min-w-[150px]"
-                >
-                  <div className="text-xs font-semibold text-gray-900">{row.collaborator_id}</div>
-                  {row.collaborator_name && <div className="mt-0.5 text-[10px] font-normal text-gray-500 normal-case">{row.collaborator_name}</div>}
-                  <div className="mt-2">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(row.ole_historico)}`}>
-                      {row.ole_historico}%
-                    </span>
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleFamilies.map((family, idx) => (
-              <tr
-                key={family.code}
-                className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                  idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"
-                }`}
-              >
-                <td className="p-3 sticky left-0 bg-inherit z-10 border-r border-gray-200">
-                  <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">{family.code}</div>
-                  <div className="mt-1 font-semibold text-sm text-gray-900" title={family.name}>
-                    {family.name}
-                  </div>
-                </td>
-                {visibleCollaborators.map((row) => {
-                  const oleFamily = row.by_family?.[family.code];
-                  return (
-                    <td key={`${family.code}-${row.collaborator_id}`} className="p-3 text-center border-r border-gray-200">
-                      {oleFamily !== undefined && oleFamily !== null ? (
-                        <span
-                          title={`Percentagem OLE: ${oleFamily}%`}
-                          className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold font-mono border ${getOleColor(oleFamily)}`}
-                        >
-                          {oleFamily}%
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-xs">—</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {loading ? (
-        <div className="mt-4 rounded-sm border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">A carregar matriz por grupo de artigo...</div>
-      ) : (
-        <div className="mt-4 grid grid-cols-3 gap-4 pt-4 border-t border-gray-200">
-          <div className="bg-gray-50 p-3 rounded-sm">
-            <div className="text-xs text-gray-500 uppercase mb-1">Total Operadores</div>
-            <div className="text-lg font-bold text-gray-900">{visibleCollaborators.length}</div>
-          </div>
-          <div className="bg-gray-50 p-3 rounded-sm">
-            <div className="text-xs text-gray-500 uppercase mb-1">Total Grupos</div>
-            <div className="text-lg font-bold text-gray-900">{visibleFamilies.length}</div>
-          </div>
-          <div className="bg-gray-50 p-3 rounded-sm">
-            <div className="text-xs text-gray-500 uppercase mb-1">OLE Médio Geral</div>
-            <div className="text-lg font-bold text-gray-900">
-              {visibleCollaborators.length > 0
-                ? (visibleCollaborators.reduce((sum, row) => sum + row.ole_historico, 0) / visibleCollaborators.length).toFixed(1)
-                : "0.0"}%
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
+      const enrichedOperations = operations.map((item) => ({ ...item, lastYear: num(executionsByOperation, [item.id]) ?? 0 }));
+      setSelected({ family, row, cell: { ...matrixCell, operations: enrichedOperations, executions: enrichedOperations.reduce((sum, item) => sum + (item.lastYear || 0), 0) } });
+    } catch (err) { console.error("Erro ao carregar detalhe de polivalência:", err); setDrawerError("Não foi possível carregar as operações deste grupo."); }
+    finally { setDrawerLoading(false); }
+  };
+  useEffect(() => { let active = true; const load = async () => { setLoading(true); setError(null); try { const response = await axios.get(`${API_BASE_URL}/polyvalence/matrix/by-family`); const data = response.data && typeof response.data === "object" ? response.data as ApiRecord : {}; const familyRecords = arr(data.families ?? data.family_options ?? data.data?.families); const rawRows = arr(data.rows ?? data.collaborators ?? data.operators ?? data.data?.rows ?? response.data); const loadedFamilies = familyRecords.map((item, i) => ({ code: str(item, ["code", "id", "family_id", "family_code", "fam_code"]) || `FAM-${i + 1}`, name: str(item, ["name", "label", "family_name", "fam_name"]) || "Família", totalOperations: num(item, ["total_operations", "totalOperations", "operations_count", "total"]) || 0 })); const totals = new Map(loadedFamilies.map((item) => [item.code, item.totalOperations])); const loadedRows = rawRows.map((item) => { const byFamily = (item.by_family ?? item.byFamily ?? item.families ?? {}) as ApiRecord; const operationsByFamily = (item.operations_by_family ?? item.operationsByFamily ?? {}) as ApiRecord; const doneByFamily = item.operations_done ?? item.operationsDone ?? {}; const totalByFamily = item.family_total_operations ?? item.familyTotalOperations ?? {}; const metric = (source: unknown, code: string) => source && typeof source === "object" ? (source as ApiRecord)[code] : source; const mapped: Record<string, Cell> = {}; Object.entries(byFamily).forEach(([code, value]) => { const familyMetrics = operationsByFamily[code] && typeof operationsByFamily[code] === "object" ? operationsByFamily[code] as ApiRecord : {}; const normalizedValue = { ...(typeof value === "number" ? { ole_percentage: value } : value as ApiRecord), ...familyMetrics, operations_done: familyMetrics.operations_done ?? metric(doneByFamily, code), family_total_operations: familyMetrics.family_total_operations ?? metric(totalByFamily, code) }; mapped[code] = cell(normalizedValue, Number(normalizedValue.family_total_operations ?? totals.get(code) ?? 0)); }); return { collaborator_id: str(item, ["collaborator_id", "operator_id", "id", "code"]), collaborator_name: str(item, ["collaborator_name", "operator_name", "name"]), ole_historico: num(item, ["ole_historico", "oleHistorico", "historical_ole", "average_ole"]) || 0, by_family: mapped }; }).filter((item) => item.collaborator_id); if (!active) return; setFamilies(loadedFamilies.sort((a, b) => a.name.localeCompare(b.name, "pt-PT"))); setRows(loadedRows); } catch (err) { if (!active) return; console.error("Erro ao carregar matriz por família:", err); setError("Não foi possível carregar a matriz por grupo de artigo."); setFamilies([]); setRows([]); } finally { if (active) setLoading(false); } }; void load(); return () => { active = false; }; }, []);
+  const visibleFamilies = useMemo(() => familyFilter ? families.filter((item) => item.code === familyFilter) : families, [families, familyFilter]); const visibleRows = useMemo(() => { const term = operatorFilter.trim().toLowerCase(); return term ? rows.filter((item) => `${item.collaborator_id} ${item.collaborator_name}`.toLowerCase().includes(term)) : rows; }, [rows, operatorFilter]);
+  return <>
+    {error && <div className="mb-4 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{error}</div>}
+    <div className="mb-4 rounded-sm border border-gray-200 bg-gray-50 p-3"><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end"><div><div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-600">Grupo de artigos</div><SearchableCombobox value={familyFilter} onValueChange={setFamilyFilter} options={families.map((item) => ({ value: item.code, label: item.name, keywords: [item.code] }))} placeholder="Todos os grupos" searchPlaceholder="Pesquisar grupo..." emptyText="Nenhum grupo encontrado" disabled={!families.length} triggerClassName="h-8 rounded-sm bg-white text-xs" /></div><div><div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-600">Pesquisar operador</div><Input value={operatorFilter} onChange={(event) => setOperatorFilter(event.target.value)} placeholder="ID ou nome do operador" className="h-8 rounded-sm bg-white text-xs" /></div><button type="button" onClick={() => { setFamilyFilter(""); setOperatorFilter(""); }} className="h-8 rounded-sm border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-100">Limpar filtros</button></div></div>
+    <div className="overflow-auto max-h-[65vh] rounded-sm border border-gray-200"><table className="w-full min-w-[760px] border-collapse"><thead><tr className="border-b border-gray-200 bg-gray-50"><th className="sticky left-0 z-20 min-w-[180px] border-r border-gray-200 bg-gray-50 p-3 text-left text-xs font-semibold uppercase text-gray-600">Grupo de artigo</th>{visibleRows.map((row) => <th key={row.collaborator_id} className="min-w-[150px] border-r border-gray-200 p-3 text-center text-xs font-semibold uppercase text-gray-600"><div>{row.collaborator_name || row.collaborator_id}</div><div className="mt-1 text-[10px] font-normal normal-case text-gray-500">{row.collaborator_id}</div><div className="mt-2 text-[10px] font-semibold normal-case text-slate-500">OLE histórico {row.ole_historico.toFixed(1)}%</div></th>)}</tr></thead><tbody>{visibleFamilies.map((family, index) => <tr key={family.code} className={`border-b border-gray-100 ${index % 2 ? "bg-gray-50/50" : "bg-white"}`}><td className="sticky left-0 z-10 border-r border-gray-200 bg-inherit p-3"><div className="text-sm font-semibold text-gray-900">{family.name}</div></td>{visibleRows.map((row) => { const item = row.by_family[family.code]; if (!item || item.ole == null) return <td key={row.collaborator_id} className="border-r border-gray-200 p-3 text-center"><span className="inline-flex rounded-full border border-dashed border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">N/D</span></td>; const total = item.total || family.totalOperations; const percent = total ? Math.round((item.done / total) * 100) : 0; return <td key={row.collaborator_id} className="border-r border-gray-200 p-2"><button type="button" onClick={() => void openCell(row, family, item)} className="w-full rounded-sm p-2 text-center transition-colors hover:bg-slate-100" title="Ver operações deste grupo"><div className={`text-base font-bold ${oleClass(item.ole)}`}>{item.ole.toFixed(1)}%</div><div className="text-[10px] text-gray-500"><span className={oleClass(item.ole)}>{item.done}</span>/{total || "—"}</div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-200"><div className={`h-full rounded-full ${percent >= 85 ? "bg-emerald-500" : percent >= 60 ? "bg-amber-500" : "bg-red-400"}`} style={{ width: `${Math.min(100, percent)}%` }} /></div></button></td>; })}</tr>)}</tbody></table></div>
+    {loading && <div className="mt-4 rounded-sm border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">A carregar matriz por grupo de artigo...</div>}{!loading && !visibleRows.length && <div className="mt-4 rounded-sm border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Não existem dados para os filtros selecionados.</div>}
+    {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}><div className="w-full max-w-xl overflow-hidden rounded-sm border border-gray-200 bg-white shadow-xl"><div className="flex items-start justify-between border-b border-gray-200 bg-gray-50 p-5"><div><div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{selected.family.name}</div><h2 className="mt-1 text-2xl font-bold text-gray-900">{selected.row.collaborator_name || selected.row.collaborator_id}</h2><div className="mt-1 text-xs text-gray-500">{selected.row.collaborator_id}</div></div><button type="button" onClick={() => setSelected(null)} className="rounded-full border border-gray-300 p-1.5 text-gray-500 hover:bg-gray-100" aria-label="Fechar"><X className="h-4 w-4" /></button></div><div className="grid grid-cols-3 gap-3 border-b border-gray-200 bg-white p-4"><div className="rounded-sm border border-teal-200 border-l-2 bg-teal-50/40 p-4"><div className="text-2xl font-bold text-teal-700">{selected.cell.ole != null ? `${selected.cell.ole.toFixed(1)}%` : "N/D"}</div><div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-teal-700/70">OLE médio</div></div><div className="rounded-sm border border-blue-200 border-l-2 bg-blue-50/40 p-4"><div className="text-2xl font-bold text-blue-700">{selected.cell.done}/{selected.cell.total || "—"}</div><div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-blue-700/70">Cobertura</div></div><div className="rounded-sm border border-slate-200 border-l-2 bg-slate-50 p-4"><div className="text-2xl font-bold text-slate-700">{selected.cell.executions ?? "—"}</div><div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Execuções / ano</div></div></div>{drawerError && <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-800">{drawerError}</div>}<div className="max-h-[50vh] overflow-y-auto">{drawerLoading ? <div className="p-8 text-center text-sm text-gray-500">A carregar operações e execuções...</div> : selected.cell.operations.length ? selected.cell.operations.map((item) => <div key={`${item.id}-${item.name}`} className="flex items-center justify-between border-b border-gray-100 px-6 py-4 transition-colors hover:bg-gray-50"><div><div className="text-sm font-semibold text-gray-800">{item.name}</div><span className="mt-1 inline-flex rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">{item.id}</span></div><div className="flex items-center gap-6 text-right"><div><div className="text-lg font-bold text-teal-700">{item.ole != null ? `${item.ole.toFixed(1)}%` : "N/D"}</div><div className="text-[10px] font-semibold uppercase text-gray-400">OLE</div></div><div><div className="text-lg font-bold text-gray-700">{item.lastYear ?? 0}</div><div className="text-[10px] font-semibold uppercase text-gray-400">últ. ano</div></div></div></div>) : <div className="p-8 text-center text-sm text-gray-500">O endpoint não devolveu operações detalhadas para esta célula.</div>}</div></div></div>}
+  </>;
 }
 
-export function MatrizPolivalenciaGrupos({ operadores, grupos, modo = "local" }: MatrizPolivalenciaGruposProps) {
-  return (
-    <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
-      <CardHeader className="border-b border-gray-200">
-        <CardTitle className="flex items-center justify-between text-gray-900">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-teal-100 rounded-sm flex items-center justify-center">
-              <Grid3X3 className="w-5 h-5 text-teal-600" />
-            </div>
-            <div>
-              <div className="text-base font-semibold">Matriz de Polivalência por Grupos de Artigos</div>
-              <CardDescription className="text-gray-500 mt-0.5 text-xs">
-                OLE% médio por operador e por grupo de artigo
-              </CardDescription>
-            </div>
-          </div>
-        </CardTitle>
-      </CardHeader>
-
-      <CardContent className="p-6">
-        {modo === "api" ? <ApiView /> : <LocalView operadores={operadores} grupos={grupos} />}
-      </CardContent>
-    </Card>
-  );
-}
+export function MatrizPolivalenciaGrupos({ operadores: _operadores, grupos: _grupos, modo: _modo = "api" }: Props) { return <Card className="rounded-sm border border-gray-200 bg-white shadow-sm"><CardHeader className="border-b border-gray-200"><CardTitle className="flex items-center gap-3 text-gray-900"><div className="flex h-8 w-8 items-center justify-center rounded-sm bg-teal-100"><Grid3X3 className="h-5 w-5 text-teal-600" /></div><div><div className="text-base font-semibold">Matriz de Polivalência por Grupos de Artigos</div><CardDescription className="mt-0.5 text-xs text-gray-500">Percentagem de operações executadas, cobertura e OLE por operador</CardDescription></div></CardTitle></CardHeader><CardContent className="p-6"><ApiView /></CardContent></Card>; }

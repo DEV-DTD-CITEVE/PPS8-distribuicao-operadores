@@ -5,6 +5,7 @@ import { useStorage } from "../contexts/StorageContext";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
 import { MatrizPolivalenciaGrupos } from "../components/MatrizPolivalenciaGrupos";
+import { CoberturaGeral } from "../components/CoberturaGeral";
 import { ConfiguracaoLayoutComponent } from "../components/ConfiguracaoLayout";
 import { CatalogoMaquinasApi } from "../components/CatalogoMaquinasApi";
 import { SearchableCombobox } from "../components/SearchableCombobox";
@@ -351,7 +352,7 @@ export default function Configuracao() {
   const [filtroPolivalenciaMin, setFiltroPolivalenciaMin] = useState("");
   const [ordenacaoPolivalencia, setOrdenacaoPolivalencia] = useState<"nenhuma" | "asc" | "desc">("nenhuma");
   const [showFiltros, setShowFiltros] = useState(false);
-  const [vistaPolivalencia, setVistaPolivalencia] = useState<"operadores" | "grupos">("operadores");
+  const [vistaPolivalencia, setVistaPolivalencia] = useState<"operadores" | "grupos" | "cobertura">("grupos");
   const familiaSelecionadaLabel = useMemo(() => {
     if (!filtroFamilia) return "";
     return familias.find((familia) => familia.id === filtroFamilia)?.label || filtroFamilia;
@@ -674,10 +675,10 @@ export default function Configuracao() {
         </div>
       </div>
 
-      <Tabs value={vistaPolivalencia} onValueChange={(value) => setVistaPolivalencia(value as "operadores" | "grupos")}>
-        <TabsList className="grid w-full max-w-md grid-cols-2 rounded-sm bg-gray-100 p-1">
-          <TabsTrigger value="operadores" className="rounded-sm text-xs">Vista default</TabsTrigger>
+      <Tabs value={vistaPolivalencia} onValueChange={(value) => setVistaPolivalencia(value as "operadores" | "grupos" | "cobertura")}>
+        <TabsList className="grid w-full max-w-lg grid-cols-2 rounded-sm bg-gray-100 p-1">
           <TabsTrigger value="grupos" className="rounded-sm text-xs">Por grupo de artigo</TabsTrigger>
+          <TabsTrigger value="cobertura" className="rounded-sm text-xs">Cobertura geral</TabsTrigger>
         </TabsList>
 
         <TabsContent value="operadores" className="mt-4 space-y-8">
@@ -1087,6 +1088,9 @@ export default function Configuracao() {
 
         <TabsContent value="grupos" className="mt-4">
           <MatrizPolivalenciaGrupos operadores={operadores} grupos={produtosMock} modo="api" />
+        </TabsContent>
+        <TabsContent value="cobertura" className="mt-4">
+          <CoberturaGeral />
         </TabsContent>
       </Tabs>
 

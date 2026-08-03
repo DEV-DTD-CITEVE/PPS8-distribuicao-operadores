@@ -178,59 +178,79 @@ const getBarColor = (index: number, gap: number): string => {
   return COLORS.SAME;
 };
 
-export function WaterfallOutputRate({ resultados, taskCode, operadores = [] }: { resultados: ResultadosBalanceamento; taskCode: string; operadores?: any[] }) {
-  const rows = Array.isArray(resultados.operation_allocations) ? resultados.operation_allocations : [];
+export function WaterfallOutputRate({ resultados, taskCode, operadores = [], waterfallData, embedded = false }: { resultados: ResultadosBalanceamento; taskCode: string; operadores?: any[]; waterfallData?: any; embedded?: boolean }) {
+  const rawSource = waterfallData && typeof waterfallData === "object" ? waterfallData : resultados;
+  const source = rawSource.data && typeof rawSource.data === "object" ? rawSource.data : rawSource;
+  const rows = Array.isArray(source.operation_allocations)
+    ? source.operation_allocations
+    : Array.isArray(source.operationAllocations)
+      ? source.operationAllocations
+      : [];
   const operatorColumns = buildOperatorColumns(
     rows as any,
     operadores,
     Array.isArray(resultados.operator_slots) ? resultados.operator_slots : [],
     [],
   );
-  const stations = buildStations(resultados, operatorColumns);
+  const stationSource = source.stations ?? source.waterfall ?? source.waterfall_data ?? source.chart_data;
+  const stations = Array.isArray(stationSource)
+    ? stationSource.map((station: any, index: number) => ({
+        key: String(station.key ?? station.id ?? index),
+        seq: numberOr(station.seq ?? station.sequence, index + 1),
+        name: String(station.name ?? station.station_name ?? station.operation_name ?? station.operation_code ?? `Estação ${index + 1}`),
+        code: String(station.code ?? station.station_code ?? station.operation_code ?? ""),
+        totalTime: numberOr(station.total_time_seconds ?? station.output_rate ?? station.outputRate, 0),
+        splitCount: Math.max(1, Math.trunc(numberOr(station.split_count, 1))),
+        outputRate: numberOr(station.output_rate ?? station.outputRate ?? station.rate, 0),
+        gap: numberOr(station.gap ?? station.delta ?? station.change, 0),
+      })).filter((station: OutputRateStation) => station.outputRate > 0)
+    : buildStations(source as ResultadosBalanceamento, operatorColumns);
 
   if (stations.length === 0) {
     return (
-      <section className="rounded-sm border border-gray-200 bg-white p-5 shadow-sm">
+      <section className={embedded ? "p-2" : "rounded-sm border border-gray-200 bg-white p-5 shadow-sm"}>
         <h3 className="text-sm font-semibold text-gray-900">Waterfall por Estação — {taskCode}</h3>
         <p className="mt-3 text-xs text-gray-500">Não existem dados de output rate disponíveis para este balanceamento.</p>
       </section>
     );
   }
 
-  const chartWidth = Math.max(900, stations.length * 125);
-  const chartHeight = 430;
-  const margin = { top: 58, right: 24, bottom: 112, left: 78 };
+  const chartWidth = Math.max(1000, stations.length * (embedded ? 150 : 125));
+  const chartHeight = embedded ? 400 : 430;
+  const margin = embedded
+    ? { top: 16, right: 14, bottom: 58, left: 56 }
+    : { top: 58, right: 24, bottom: 112, left: 78 };
   const plotWidth = chartWidth - margin.left - margin.right;
   const plotHeight = chartHeight - margin.top - margin.bottom;
   const maxRate = Math.max(...stations.map((station) => station.outputRate), 1);
-  const maxY = maxRate * 1.35;
-  const barWidth = Math.min(76, (plotWidth / stations.length) * 0.62);
+  const maxY = maxRate * (embedded ? 1.4 : 1.35);
+  const barWidth = Math.min(embedded ? 76 : 76, (plotWidth / stations.length) * 0.62);
   const xFor = (index: number) => margin.left + (plotWidth * (index + 0.5)) / stations.length;
   const yFor = (value: number) => margin.top + plotHeight - (value / maxY) * plotHeight;
   const baseline = yFor(0);
   const ticks = [0, maxY / 4, maxY / 2, (maxY * 3) / 4, maxY];
 
   return (
-    <section className="rounded-sm border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+    <section className={embedded ? "p-0" : "rounded-sm border border-gray-200 bg-white p-4 shadow-sm"}>
+      {!embedded && <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Waterfall por Estação — {taskCode}</h3>
-          <p className="mt-1 text-xs text-gray-500">Output Rate (s/peça) na sequência da linha</p>
+        <h3 className="text-sm font-semibold text-gray-900">Ocupação por Trabalhador — Waterfall por Estação — {taskCode}</h3>
+        <p className="mt-1 text-xs text-gray-500">Estações/operações atribuídas a cada trabalhador, na sequência da linha</p>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
           <span><i className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: COLORS.FIRST }} />Referência</span>
           <span><i className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: COLORS.SLOWER }} />Mais lenta</span>
           <span><i className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: COLORS.FASTER }} />Mais rápida</span>
         </div>
-      </div>
-      <div className="overflow-x-auto">
-        <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-auto min-w-[900px]" role="img" aria-label={`Waterfall de output rate por estação para ${taskCode}`}>
+      </div>}
+         <div className="flex justify-center overflow-x-auto">
+         <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className={embedded ? "h-[400px] min-h-[400px] w-[90%] min-w-[1000px] max-w-none" : "h-auto min-w-[900px]"} role="img" aria-label={`Waterfall de ocupação por trabalhador para ${taskCode}`}>
           {ticks.map((tick) => {
             const y = yFor(tick);
             return (
               <g key={tick}>
                 <line x1={margin.left} x2={chartWidth - margin.right} y1={y} y2={y} stroke="#e5e7eb" strokeDasharray="3 3" />
-                <text x={margin.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#6b7280">{tick.toFixed(1)}</text>
+                <text x={margin.left - 10} y={y + 4} textAnchor="end" fontSize={embedded ? 12 : 11} fill="#6b7280">{tick.toFixed(1)}</text>
               </g>
             );
           })}
@@ -246,11 +266,11 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [] }: {
             return (
               <g key={station.key}>
                 <title>{`${station.name}: ${station.outputRate.toFixed(1)}s/peça${gapLabel ? `, gap ${gapLabel}` : ""}`}</title>
-                {gapLabel ? <text x={xFor(index)} y={Math.max(18, y - 27)} textAnchor="middle" fontSize="11" fontWeight="600" fill={color}>{gapLabel}</text> : null}
-                <text x={xFor(index)} y={Math.max(34, y - 9)} textAnchor="middle" fontSize="11" fontWeight="600" fill={COLORS.TEXT}>{station.outputRate.toFixed(1)}s</text>
+                {gapLabel ? <text x={xFor(index)} y={Math.max(18, y - 27)} textAnchor="middle" fontSize={embedded ? 13 : 11} fontWeight="700" fill={color}>{gapLabel}</text> : null}
+                <text x={xFor(index)} y={Math.max(34, y - 9)} textAnchor="middle" fontSize={embedded ? 13 : 11} fontWeight="700" fill={COLORS.TEXT}>{station.outputRate.toFixed(1)}s</text>
                 <rect x={x} y={y} width={barWidth} height={Math.max(1, baseline - y)} rx="2" fill={color} />
-                {labelLines.map((line, lineIndex) => <text key={line} x={xFor(index)} y={baseline + 48 + lineIndex * 14} textAnchor="middle" fontSize="11" fill={COLORS.TEXT}>{line}</text>)}
-                <text x={xFor(index)} y={baseline + 76} textAnchor="middle" fontSize="10" fill="#6b7280">(seq {station.seq}{station.splitCount > 1 ? `, ×${station.splitCount}` : ""})</text>
+                {labelLines.map((line, lineIndex) => <text key={line} x={xFor(index)} y={baseline + (embedded ? 24 : 48) + lineIndex * (embedded ? 13 : 14)} textAnchor="middle" fontSize={embedded ? 12 : 11} fontWeight="600" fill={COLORS.TEXT}>{line}</text>)}
+                <text x={xFor(index)} y={baseline + (embedded ? 44 : 76)} textAnchor="middle" fontSize={embedded ? 11 : 10} fill="#6b7280">(seq {station.seq}{station.splitCount > 1 ? `, ×${station.splitCount}` : ""})</text>
               </g>
             );
           })}

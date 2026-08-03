@@ -1,5 +1,6 @@
 ﻿import { ResultadosBalanceamento, ConfiguracaoDistribuicao, DistribuicaoCarga } from "../types";
 import { TabelaDistribuicao } from "./TabelaDistribuicao";
+import { WaterfallOutputRate } from "./WaterfallOutputRate";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import svgPaths from "../../imports/Card-2/svg-8qif09w5n2";
 import { useState } from "react";
@@ -21,7 +22,65 @@ interface DashboardResultadosProps {
   showTabela?: boolean;
   onAtribuirColuna?: (operatorCode: string) => Promise<void>;
   isIdealSemOle?: boolean;
+  waterfallData?: any;
+  taskCode?: string;
 }
+
+type WaterfallOperatorMetric = {
+  refs: string[];
+  seconds: number;
+  occupancy: number | null;
+  operations: string[];
+};
+
+const numberFromWaterfall = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim().replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const normalizeWaterfallPercentage = (value: number): number => value <= 1 ? value * 100 : value;
+
+const getWaterfallOperatorMetrics = (raw: any): WaterfallOperatorMetric[] => {
+  const source = raw?.data && typeof raw.data === "object" ? raw.data : raw;
+  const rows = Array.isArray(source?.waterfall) ? source.waterfall : [];
+  const grouped = new Map<string, WaterfallOperatorMetric>();
+  rows.forEach((row: any) => {
+    const candidates = Array.isArray(row?.operators) ? row.operators : [row];
+    candidates.forEach((entry: any) => {
+      const operator = entry?.operator && typeof entry.operator === "object" ? entry.operator : entry;
+      const refs = [
+        operator?.operator_id, operator?.operator_code, operator?.operador_id,
+        operator?.operator, operator?.operador, operator?.code,
+        operator?.operator_name, operator?.name, row?.operator_id, row?.operator_name,
+      ].filter((value): value is string | number => typeof value === "string" || typeof value === "number").map(String);
+      const key = refs[0]?.trim().toLowerCase();
+      if (!key) return;
+      const current = grouped.get(key) || { refs: [], seconds: 0, occupancy: null, operations: [] };
+      current.refs = Array.from(new Set([...current.refs, ...refs]));
+      const seconds = numberFromWaterfall(
+        operator?.total_time_seconds ?? operator?.allocated_time_seconds ?? operator?.workload_seconds ??
+        operator?.occupied_seconds ?? operator?.total_seconds ?? operator?.work_seconds,
+      );
+      if (seconds != null) current.seconds += seconds;
+      const occupancy = numberFromWaterfall(
+        operator?.occupancy_percentage ?? operator?.occupancy_percent ?? operator?.occupancy ??
+        operator?.ocupacao ?? operator?.percentage ?? row?.occupancy_percentage ?? row?.ocupacao,
+      );
+      if (occupancy != null) current.occupancy = normalizeWaterfallPercentage(occupancy);
+      const operationValues = [
+        operator?.operation_name, operator?.operation_code, operator?.operation_id,
+        row?.operation_name, row?.operation_code, row?.station_name, row?.station_code,
+      ].filter((value): value is string | number => typeof value === "string" || typeof value === "number");
+      current.operations = Array.from(new Set([...current.operations, ...operationValues.map(String)]));
+      grouped.set(key, current);
+    });
+  });
+  return Array.from(grouped.values());
+};
 
 function normalizeKey(value: string): string {
   return value
@@ -168,12 +227,15 @@ export function DashboardResultados({
   showTabela = true,
   onAtribuirColuna,
   isIdealSemOle = false,
+  waterfallData,
+  taskCode = "",
 }: DashboardResultadosProps) {
   const [operadorDetalheAberto, setOperadorDetalheAberto] = useState<{
     codigo: string;
     colaboradorLabel: string;
     operacoes: string[];
   } | null>(null);
+  const [ocupacaoView, setOcupacaoView] = useState<"pilhas" | "waterfall">("pilhas");
   const cycleTimeSeconds =
     Number((resultados as any)?.cycle_time_seconds) > 0
       ? Number((resultados as any)?.cycle_time_seconds)
@@ -480,7 +542,7 @@ export function DashboardResultados({
     }
   });
   const hasOccupancyFromTable = Array.from(occupancyByOperator.values()).some((value) => value > 0);
-  const dadosCarga = orderedOperatorCodes.map((operatorCode, index) => {
+  const dadosCargaBase = orderedOperatorCodes.map((operatorCode, index) => {
     const normalizedOperatorCode = normalizeKey(operatorCode);
     const dist = distribuicaoByOperator.get(normalizedOperatorCode);
     const codigo = resolveOperatorCode(String(dist?.operadorId || operatorCode), operadores) || operatorCode;
@@ -566,6 +628,38 @@ export function DashboardResultados({
     if (safeA !== safeB) return safeA - safeB;
     return a.codigo.localeCompare(b.codigo);
   });
+  const waterfallMetrics = getWaterfallOperatorMetrics(waterfallData);
+  const waterfallSource = waterfallData?.data && typeof waterfallData.data === "object" ? waterfallData.data : waterfallData;
+  const waterfallAllocation = waterfallSource?.allocation && typeof waterfallSource.allocation === "object" ? waterfallSource.allocation : {};
+  const waterfallReferenceSeconds = Number(
+    waterfallAllocation?.share_per_operator_seconds ??
+    waterfallAllocation?.cycle_time_seconds ?? waterfallAllocation?.real_cycle_time_seconds ?? waterfallAllocation?.tempo_ciclo_segundos,
+  ) || 0;
+  const referenceSeconds = waterfallReferenceSeconds > 0
+      ? waterfallReferenceSeconds
+      : Number.isFinite(sharePerOperatorSecondsScalar as number) && (sharePerOperatorSecondsScalar as number) > 0
+        ? (sharePerOperatorSecondsScalar as number)
+        : Number(resultados.cycle_time_seconds ?? resultados.tempoCiclo * 60) || 0;
+  const dadosCarga = dadosCargaBase.map((item) => {
+    const metric = waterfallMetrics.find((candidate) => candidate.refs.some((ref) => {
+      const normalized = normalizeKey(ref);
+      return normalized === normalizeKey(item.codigo) || normalized === normalizeKey(item.colaboradorLabel);
+    }));
+    if (!metric) return item;
+    const hasEndpointLoad = metric.seconds > 0 || metric.occupancy != null;
+    if (!hasEndpointLoad) return item;
+    const endpointSeconds = metric.seconds > 0 ? metric.seconds : item.totalTimeSeconds;
+    const endpointOccupancy = metric.occupancy != null
+      ? metric.occupancy
+      : waterfallReferenceSeconds > 0 ? (endpointSeconds / waterfallReferenceSeconds) * 100 : item.ocupacao;
+    return {
+      ...item,
+      operacoesAtribuidas: metric.operations.length > 0 ? metric.operations : item.operacoesAtribuidas,
+      totalTimeSeconds: endpointSeconds,
+      ocupacao: normalizeOccupancyForDisplay(endpointOccupancy),
+      ocupacaoDisplay: Math.round(normalizeOccupancyForDisplay(endpointOccupancy)),
+    };
+  });
   const showTaktTimeLine = Number(config?.possibilidade) === 2;
 
   return (
@@ -576,22 +670,28 @@ export function DashboardResultados({
 
         <div className="relative shrink-0 w-full">
           <div aria-hidden="true" className="absolute border-[#e5e7eb] border-b border-solid inset-0 pointer-events-none" />
-          <div className="content-stretch flex flex-col gap-[8px] items-start p-[26px] relative w-full">
-            <div className="h-[24px] relative shrink-0 w-full">
-              <p className="absolute font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[24px] left-0 not-italic text-[#101828] text-[16px] top-0 tracking-[-0.1504px] whitespace-nowrap">
-                Ocupação por Trabalhador
+          <div className="content-stretch flex flex-col gap-[4px] items-start p-[26px] relative w-full">
+            <div className="flex min-h-[24px] items-center justify-between gap-3 relative shrink-0 w-full">
+              <p className="font-['Inter:Semi_Bold',sans-serif] text-[14px] font-semibold leading-[20px] tracking-[-0.1px] text-[#101828] whitespace-nowrap">
+                {ocupacaoView === "waterfall"
+                  ? `Ocupação por Trabalhador — Waterfall por Estação${taskCode ? ` — ${taskCode}` : ""}`
+                  : "Ocupação por Trabalhador"}
               </p>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setOcupacaoView("pilhas")} className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "pilhas" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Ocupação</button>
+                <button type="button" onClick={() => setOcupacaoView("waterfall")} className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "waterfall" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Output</button>
+              </div>
             </div>
             <div className="content-stretch flex h-[18px] items-start relative shrink-0 w-full">
-              <p className="flex-[1_0_0] font-['Inter:Regular',sans-serif] font-normal leading-[18px] min-h-px min-w-px not-italic relative text-[#717182] text-[13px]">
-                Percentagem de carga horaria atribuida
+              <p className="flex-[1_0_0] font-['Inter:Regular',sans-serif] text-[12px] font-normal leading-[16px] min-h-px min-w-px text-[#717182]">
+                {ocupacaoView === "waterfall" ? "Estações/operações atribuídas a cada trabalhador, na sequência da linha" : "Percentagem de carga horaria atribuida"}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="relative shrink-0 w-full overflow-x-auto">
-          <div className="content-stretch flex gap-4 items-start justify-center px-5 md:px-6 min-w-full w-full relative">
+        {ocupacaoView === "pilhas" ? <div className="relative min-h-[400px] shrink-0 w-full overflow-x-auto">
+          <div className="content-stretch flex h-full gap-4 items-center justify-center px-5 py-3 md:px-6 min-w-full w-full relative">
             {dadosCarga.map((d) => {
               const cappedOccupancy = Math.min(d.ocupacao, 100);
               const fillHeight = (cappedOccupancy / 100) * BATTERY_TOTAL_HEIGHT;
@@ -613,6 +713,12 @@ export function DashboardResultados({
                 top: batteryInnerBottom - segmentHeight * (idx + 1),
                 height: segmentHeight,
               }));
+              const deltaSeconds = referenceSeconds > 0 ? d.totalTimeSeconds - referenceSeconds : 0;
+              const deltaLabel = d.ocupacao > 100
+                ? `+${Math.max(0, deltaSeconds).toFixed(1)}s`
+                : d.ocupacao < 100 && deltaSeconds < -0.05
+                  ? `${deltaSeconds.toFixed(1)}s`
+                  : "";
               const separatorTops =
                 operationLabels.length <= 1
                   ? []
@@ -621,7 +727,10 @@ export function DashboardResultados({
                     });
 
               return (
-                <div key={d.idx} className="content-stretch flex flex-col gap-2 items-center relative shrink-0 w-[110px] md:w-[118px]">
+                <div key={d.idx} className="content-stretch flex flex-col gap-2 items-center relative shrink-0 w-[120px] md:w-[128px]">
+                  <div className={`h-5 text-center text-[13px] font-bold leading-5 whitespace-nowrap ${deltaSeconds > 0 ? "text-red-600" : "text-amber-600"}`}>
+                    {deltaLabel}
+                  </div>
                   <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
                     <div className="col-1 h-[7px] ml-[18px] mt-0 relative row-1 w-[22px]">
                       <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 17.4545 6.54545">
@@ -629,7 +738,7 @@ export function DashboardResultados({
                       </svg>
                     </div>
 
-                  <div className="col-1 h-[198px] ml-0 mt-[6.55px] relative row-1 w-[58px]">
+                  <div className="col-1 h-[198px] ml-0 mt-[6.55px] relative row-1 w-[64px]">
                     <div className="absolute inset-[-0.47%_-1.87%_-0.47%_-1.88%]">
                       <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 45.2727 176.182">
                         <path d={svgPaths.p3d6b6400} fill="#F9FAFB" stroke="#D1D5DB" strokeWidth="1.63636" />
@@ -639,7 +748,7 @@ export function DashboardResultados({
 
                   {fillHeight > 2 && (
                     <div
-                      className="col-1 ml-[3px] relative row-1 w-[52px]"
+                      className="col-1 ml-[3px] relative row-1 w-[58px]"
                       style={{ height: `${fillHeight}px`, marginTop: `${fillMT}px` }}
                     >
                       <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox={`0 0 39.2727 ${fillHeight}`}>
@@ -649,7 +758,7 @@ export function DashboardResultados({
                   )}
 
                   {separatorTops.map((mt, idx) => (
-                    <div key={idx} className="col-1 h-0 ml-[5px] relative row-1 w-[48px]" style={{ marginTop: `${mt}px` }}>
+                    <div key={idx} className="col-1 h-0 ml-[5px] relative row-1 w-[54px]" style={{ marginTop: `${mt}px` }}>
                       <div className="absolute inset-[-0.27px_0]">
                         <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 37.0909 0.545455">
                           <path d="M0 0.272727H37.0909" stroke="#E5E7EB" strokeDasharray="2.18 2.18" strokeWidth="0.545455" />
@@ -661,7 +770,7 @@ export function DashboardResultados({
                   {operationSegments.map((segment, i) => (
                     <div
                       key={`${d.idx}-${segment.label}-${i}`}
-                      className="col-1 relative row-1 ml-[5px] w-[48px] flex items-center justify-center"
+                      className="col-1 relative row-1 ml-[5px] w-[54px] flex items-center justify-center"
                       style={{ marginTop: `${segment.top}px`, height: `${segment.height}px` }}
                     >
                       <p
@@ -727,7 +836,9 @@ export function DashboardResultados({
               </div>
             )}
           </div>
-        </div>
+        </div> : <div className="relative flex min-h-[400px] w-full justify-center px-4 pb-2">
+          <WaterfallOutputRate resultados={resultados} operadores={operadores} taskCode={taskCode} waterfallData={waterfallData} embedded />
+        </div>}
       </div>
       )}
       <Dialog open={Boolean(operadorDetalheAberto)} onOpenChange={(open) => { if (!open) setOperadorDetalheAberto(null); }}>
