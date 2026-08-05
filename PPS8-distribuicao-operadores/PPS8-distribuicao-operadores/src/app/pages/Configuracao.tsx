@@ -678,7 +678,7 @@ export default function Configuracao() {
       <Tabs value={vistaPolivalencia} onValueChange={(value) => setVistaPolivalencia(value as "operadores" | "grupos" | "cobertura" | "catalogo")}>
         <TabsList className="grid w-full max-w-2xl grid-cols-3 rounded-sm bg-gray-100 p-1">
           <TabsTrigger value="catalogo" className="rounded-sm text-xs">Catálogo de máquinas</TabsTrigger>
-          <TabsTrigger value="grupos" className="rounded-sm text-xs">Por grupo de artigo</TabsTrigger>
+          <TabsTrigger value="grupos" className="rounded-sm text-xs">Polivalência</TabsTrigger>
           <TabsTrigger value="cobertura" className="rounded-sm text-xs">Cobertura geral</TabsTrigger>
         </TabsList>
 

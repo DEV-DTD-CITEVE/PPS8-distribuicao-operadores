@@ -1140,7 +1140,7 @@ function TabelaAllocacoes({
                           aria-label={column.code.toUpperCase().startsWith("VIRT") ? "Atribuir colaborador" : "Alterar atribuição"}
                           onClick={() => void onAtribuirColuna(column.code)}
                         >
-                          {column.code.toUpperCase().startsWith("VIRT") ? <UserPlus className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                          {column.code.toUpperCase().startsWith("VIRT") || isIdealSemOle ? <UserPlus className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
                         </Button>
                       ) : null}
                     </div>

@@ -59,6 +59,7 @@ export interface ConfiguracaoDistribuicao {
   quantidadeObjetivo?: number; // peças/dia (possibilidade 2)
   numeroOperadores?: number; // (possibilidade 3)
   naoSelecionarOperadores?: boolean; // (possibilidade 3)
+  idealManual?: boolean; // (possibilidade 3)
   horasTurno: number; // horas disponíveis no turno (possibilidade 1)
   produtividadeEstimada: number; // percentagem estimada (possibilidade 1)
   agruparMaquinas: boolean;

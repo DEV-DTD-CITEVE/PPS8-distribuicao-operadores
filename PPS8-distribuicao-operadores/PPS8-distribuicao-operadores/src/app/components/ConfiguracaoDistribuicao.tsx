@@ -550,7 +550,34 @@ export function ConfiguracaoDistribuicaoComponent({
                       <Switch
                         id="nao-selecionar-operadores"
                         checked={config.naoSelecionarOperadores === true}
-                        onCheckedChange={(checked) => onChange({ ...config, naoSelecionarOperadores: checked })}
+                        onCheckedChange={(checked) => onChange({
+                          ...config,
+                          naoSelecionarOperadores: checked,
+                          ...(checked ? { idealManual: false } : {}),
+                        })}
+                        className="cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-4 border border-gray-200 rounded-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        <Label htmlFor="ideal-manual" className="font-medium text-gray-900 text-sm cursor-pointer">
+                          Ideal
+                        </Label>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Usa o cálculo manual ideal sem enviar operadores selecionados.
+                        </p>
+                      </div>
+                      <Switch
+                        id="ideal-manual"
+                        checked={config.idealManual === true}
+                        onCheckedChange={(checked) => onChange({
+                          ...config,
+                          idealManual: checked,
+                          ...(checked ? { naoSelecionarOperadores: false } : {}),
+                        })}
                         className="cursor-pointer"
                       />
                     </div>

@@ -185,26 +185,40 @@ type OperatorMachineBar = {
   segments: Array<{ machine: string; operation: string; seconds: number; gap: number; color: string }>;
 };
 
-const GROUPED_COLORS = ["#4F86C6", "#5FBF9F", "#8B78C8", "#E7A64A", "#5CA7B5", "#D86A73", "#7E9B5B"];
+const GROUPED_COLORS = [
+  "#1d4ed8", "#7c3aed", "#0891b2", "#059669",
+  "#d97706", "#6366f1", "#ec4899", "#14b8a6",
+  "#f59e0b", "#8b5cf6", "#06b6d4", "#10b981",
+];
 
 const buildGroupedOperatorBars = (source: any, operadores: any[], desiredOrder: string[] = []): OperatorMachineBar[] => {
   const grouped = source?.machine_times_per_operator ?? source?.machineTimesPerOperator ?? source?.operator_flow ?? source?.operatorFlow ?? source?.waterfall;
   const entries: Array<[string, any]> = Array.isArray(grouped)
-    ? grouped.flatMap((row: any) => Array.isArray(row?.operators)
-      ? row.operators.map((operator: any) => [String(operator?.operator_name ?? operator?.operator_id ?? operator?.operator_code ?? operator?.operator ?? "Operador"), operator] as [string, any])
-      : [[String(row?.operator_name ?? row?.operator_id ?? row?.operator_code ?? row?.operator ?? "Operador"), row] as [string, any]])
+      ? grouped.flatMap((row: any) => Array.isArray(row?.operators)
+      ? row.operators.map((operator: any) => [String(operator?.operator_id ?? operator?.operator_code ?? operator?.operator ?? operator?.operator_name ?? operator?.name ?? "Operador"), operator] as [string, any])
+      : [[String(row?.operator_id ?? row?.operator_code ?? row?.operator ?? row?.operator_name ?? row?.name ?? "Operador"), row] as [string, any]])
     : grouped && typeof grouped === "object"
       ? Object.entries(grouped)
       : [];
-  const colorByMachine = new Map<string, string>();
-  const colorFor = (machine: string) => {
-    if (!colorByMachine.has(machine)) colorByMachine.set(machine, GROUPED_COLORS[colorByMachine.size % GROUPED_COLORS.length]);
-    return colorByMachine.get(machine)!;
+  const operationKeyOf = (entry: any) => String(entry?.operation_name ?? entry?.operation ?? entry?.operation_code ?? entry?.operation_id ?? entry?.operacao ?? entry?.name ?? "Operação").trim().toLowerCase();
+  const operationKeys = Array.from(new Set(entries.flatMap(([, rawEntries]) => {
+    const list = Array.isArray(rawEntries)
+      ? rawEntries
+      : Array.isArray(rawEntries?.operations)
+        ? rawEntries.operations
+        : rawEntries && typeof rawEntries === "object"
+          ? Object.values(rawEntries)
+          : [];
+    return list.flatMap((entry: any) => Array.isArray(entry?.operations) ? entry.operations : [entry]).map(operationKeyOf);
+  }))).sort();
+  const colorFor = (operation: string) => {
+    const index = operationKeys.indexOf(operation.trim().toLowerCase());
+    return GROUPED_COLORS[(index >= 0 ? index : 0) % GROUPED_COLORS.length];
   };
-  const resolveName = (key: string) => {
-    const match = operadores.find((operator: any) => String(operator?.id ?? operator?.codigo ?? "").trim() === key);
-    return String(match?.nome ?? match?.name ?? key).trim() || key;
-  };
+  // O waterfall deve manter o identificador devolvido pela API. Em particular,
+  // depois de substituir um operador virtual, o nome é apenas metadado e não
+  // pode substituir o ID usado na alocação.
+  const resolveName = (key: string) => key;
   const operatorOrder = new Map(operadores.flatMap((operator: any, index: number) => [
     [String(operator?.id ?? operator?.codigo ?? "").trim().toLowerCase(), index],
     [String(operator?.nome ?? operator?.name ?? "").trim().toLowerCase(), index],
@@ -228,7 +242,7 @@ const buildGroupedOperatorBars = (source: any, operadores: any[], desiredOrder: 
       const seconds = Number(entry?.time_seconds ?? entry?.seconds ?? entry?.tempo_segundos ?? entry?.time ?? entry?.total_time_seconds ?? entry?.work_content);
       const value = Number.isFinite(seconds) && seconds > 0 ? seconds : Number.isFinite(hours) && hours > 0 ? hours * 3600 : Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : 0;
       const gap = numberOr(entry?.gap ?? entry?.gap_seconds ?? entry?.delta, 0);
-      return value > 0 ? { machine, operation, seconds: value, gap, color: colorFor(machine) } : null;
+      return value > 0 ? { machine, operation, seconds: value, gap, color: colorFor(operation) } : null;
     }).filter((segment): segment is { machine: string; operation: string; seconds: number; gap: number; color: string } => Boolean(segment));
     const operatorGap = numberOr(rawEntries?.gap ?? rawEntries?.gap_seconds ?? rawEntries?.delta, segments[0]?.gap ?? 0);
     return { operator: resolveName(operatorKey), totalSeconds: segments.reduce((sum, segment) => sum + segment.seconds, 0), gap: operatorGap, segments };
@@ -269,20 +283,21 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], ope
 
   const groupedBars = buildGroupedOperatorBars(source, operadores, operatorOrder);
   const groupedReferenceSeconds = numberOr(
-    source.real_share_per_operator_seconds ?? source.share_per_operator_seconds ?? source.sharePerOperatorSeconds ?? source.allocation?.real_share_per_operator_seconds ?? source.allocation?.share_per_operator_seconds ?? (resultados as any).share_per_operator_seconds,
+    rawSource.allocation?.share_per_operator_seconds_real,
     0,
   );
 
   if (groupedBars.length > 0) {
+    const isTheoretical = Boolean(source?.theoretical);
     const chartWidth = Math.max(1000, groupedBars.length * (embedded ? 150 : 125));
-    const chartHeight = embedded ? 440 : 430;
+    const chartHeight = embedded ? 520 : 480;
     const margin = embedded
-      ? { top: 16, right: 14, bottom: 76, left: 56 }
+      ? { top: 36, right: 130, bottom: 76, left: 56 }
       : { top: 58, right: 24, bottom: 112, left: 78 };
     const plotWidth = chartWidth - margin.left - margin.right;
     const plotHeight = chartHeight - margin.top - margin.bottom;
     const maxTotal = Math.max(...groupedBars.map((bar) => bar.totalSeconds), 1);
-    const maxY = Math.max(maxTotal * (embedded ? 1.25 : 1.35), groupedReferenceSeconds > 0 ? groupedReferenceSeconds * 1.15 : 0);
+    const maxY = Math.max(maxTotal * (embedded ? 1.28 : 1.35), groupedReferenceSeconds > 0 ? groupedReferenceSeconds * 1.2 : 0);
     const yFor = (value: number) => margin.top + plotHeight - (value / maxY) * plotHeight;
     const baseline = yFor(0);
     const barWidth = Math.min(90, (plotWidth / groupedBars.length) * 0.58);
@@ -294,27 +309,47 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], ope
     return (
       <section className={embedded ? "p-0" : "rounded-sm border border-gray-200 bg-white p-4 shadow-sm"}>
         {!embedded && <div className="mb-2"><h3 className="text-sm font-semibold text-gray-900">Tempo por Operador x Máquina — {taskCode}</h3><p className="mt-1 text-xs text-gray-500">Eixo X: operador | Eixo Y: segundos empilhados por máquina</p></div>}
-        <div className="flex justify-center overflow-x-auto [&>svg]:!h-[440px] [&>svg]:!min-h-[440px]">
-          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className={embedded ? "h-[400px] min-h-[400px] w-[90%] min-w-[1000px] max-w-none" : "h-auto min-w-[900px]"} role="img" aria-label={`Tempo por operador e máquina para ${taskCode}`}>
+        <div className="flex justify-center overflow-x-auto [&>svg]:!h-[520px] [&>svg]:!min-h-[520px]">
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className={embedded ? "h-[500px] min-h-[500px] w-[90%] min-w-[1000px] max-w-none" : "h-auto min-w-[900px]"} role="img" aria-label={`Tempo por operador e máquina para ${taskCode}`}>
             {ticks.map((tick) => <g key={tick}><line x1={margin.left} x2={chartWidth - margin.right} y1={yFor(tick)} y2={yFor(tick)} stroke="#e5e7eb" strokeDasharray="3 3" /><text x={margin.left - 10} y={yFor(tick) + 4} textAnchor="end" fontSize={embedded ? 12 : 11} fill="#6b7280">{tick.toFixed(1)}s</text></g>)}
             <line x1={margin.left} x2={margin.left} y1={margin.top} y2={baseline} stroke="#9ca3af" />
             <line x1={margin.left} x2={chartWidth - margin.right} y1={baseline} y2={baseline} stroke="#9ca3af" />
             {groupedBars.map((bar, index) => {
               const x = margin.left + (plotWidth * (index + 0.5)) / groupedBars.length - barWidth / 2;
+              const occupancyMatch = bar.operator.match(/\((-?\d+(?:\.\d+)?)%\)$/);
+              const occupancy = isTheoretical && groupedReferenceSeconds > 0
+                ? (bar.totalSeconds / groupedReferenceSeconds) * 100
+                : occupancyMatch ? Number(occupancyMatch[1]) : null;
+              const operatorLabelColor = occupancy == null ? "#333" : occupancy > 100.05 ? "#D64545" : occupancy >= 99.95 ? "#2E9D67" : "#C58A27";
+              const operatorName = occupancyMatch ? bar.operator.replace(/\s*\((-?\d+(?:\.\d+)?)%\)$/, "") : bar.operator;
+              const targetBarHeight = (bar.totalSeconds / maxY) * plotHeight;
+              const minimumSegmentHeight = 24;
+              const minimumTotalHeight = bar.segments.length * minimumSegmentHeight;
+              const segmentHeights = targetBarHeight >= minimumTotalHeight
+                ? bar.segments.map((segment) => minimumSegmentHeight + (targetBarHeight - minimumTotalHeight) * (segment.seconds / bar.totalSeconds))
+                : bar.segments.map((segment) => targetBarHeight * (segment.seconds / bar.totalSeconds));
+              const visualBarHeight = segmentHeights.reduce((height, segmentHeight) => height + segmentHeight, 0);
+              const stackTop = baseline - visualBarHeight;
+              const valueLabelY = stackTop - 10;
+              const gapLabelY = valueLabelY - 22;
               let currentY = baseline;
               return <g key={bar.operator}>
-                <text x={x + barWidth / 2} y={Math.max(margin.top + 14, yFor(bar.totalSeconds) - 8)} textAnchor="middle" fontSize={embedded ? 12 : 11} fontWeight="700" fill="#1f2937">{bar.totalSeconds.toFixed(1)}s</text>
-                {bar.gap !== 0 && <text x={x + barWidth / 2} y={Math.max(margin.top + 28, yFor(bar.totalSeconds) - 23)} textAnchor="middle" fontSize={embedded ? 11 : 10} fontWeight="700" fill={bar.gap < 0 ? "#2E9D67" : "#D64545"}>{bar.gap > 0 ? `+${bar.gap.toFixed(1)}s` : `${bar.gap.toFixed(1)}s`}</text>}
-                {bar.segments.map((segment) => {
-                  const height = Math.max(1, (segment.seconds / maxY) * plotHeight);
+                <text x={x + barWidth / 2} y={valueLabelY} textAnchor="middle" fontSize={embedded ? 11 : 10} fontWeight="700">
+                  {occupancy != null && <><tspan fill={operatorLabelColor}>{occupancy.toFixed(0)}%</tspan><tspan fill="#9ca3af"> · </tspan></>}
+                  <tspan fill="#374151">{bar.totalSeconds.toFixed(1)}s</tspan>
+                </text>
+                {Math.abs(bar.gap) >= 0.05 && <text x={x + barWidth / 2} y={gapLabelY} textAnchor="middle" fontSize={embedded ? 11 : 10} fontWeight="700" fill={bar.gap < 0 ? "#2E9D67" : "#D64545"}>{bar.gap > 0 ? `+${bar.gap.toFixed(1)}s` : `${bar.gap.toFixed(1)}s`}</text>}
+                {bar.segments.map((segment, segmentIndex) => {
+                  const height = segmentHeights[segmentIndex];
                   currentY -= height;
                   const operationLabel = segment.operation.length > 13 ? `${segment.operation.slice(0, 12)}…` : segment.operation;
-                  return <g key={`${bar.operator}-${segment.machine}-${segment.operation}-${currentY}`}><rect x={x} y={currentY} width={barWidth} height={height} fill={segment.color} /><title>{`${bar.operator} · ${segment.operation} · ${segment.machine} · ${segment.seconds.toFixed(1)}s`}</title>{height > 30 && <text x={x + barWidth / 2} y={currentY + height / 2 - 8} textAnchor="middle" fontSize={embedded ? 9 : 9} fontWeight="700" fill="#fff"><tspan x={x + barWidth / 2} dy="0">{operationLabel}</tspan><tspan x={x + barWidth / 2} dy="12">{segment.seconds.toFixed(1)}s</tspan></text>}{height > 17 && height <= 30 && <text x={x + barWidth / 2} y={currentY + height / 2 - 1} textAnchor="middle" fontSize={embedded ? 10 : 10} fontWeight="700" fill="#fff">{segment.seconds.toFixed(1)}s</text>}</g>;
+                  return <g key={`${bar.operator}-${segment.machine}-${segment.operation}-${currentY}`}><rect x={x} y={currentY} width={barWidth} height={height} fill={segment.color} /><title>{`${bar.operator} · ${segment.operation} · ${segment.machine} · ${segment.seconds.toFixed(1)}s`}</title>{height > 30 ? <text x={x + barWidth / 2} y={currentY + height / 2 - 8} textAnchor="middle" fontSize={embedded ? 9 : 9} fontWeight="700" fill="#fff"><tspan x={x + barWidth / 2} dy="0">{operationLabel}</tspan><tspan x={x + barWidth / 2} dy="12">{segment.seconds.toFixed(1)}s</tspan></text> : <text x={x + barWidth / 2} y={currentY + height / 2 - 3} textAnchor="middle" fontSize={embedded ? 8 : 8} fontWeight="700" fill="#fff"><tspan x={x + barWidth / 2} dy="0">{operationLabel}</tspan><tspan x={x + barWidth / 2} dy="10">{segment.seconds.toFixed(1)}s</tspan></text>}</g>;
                 })}
-                <text x={x + barWidth / 2} y={baseline + (embedded ? 25 : 48)} textAnchor="middle" fontSize={embedded ? 12 : 11} fontWeight="600" fill="#333">{bar.operator.length > 18 ? `${bar.operator.slice(0, 17)}…` : bar.operator}</text>
+                {isTheoretical && <rect x={x} y={stackTop} width={barWidth} height={visualBarHeight} fill="none" stroke={operatorLabelColor} strokeWidth="1.2" strokeOpacity="0.8" rx="2" />}
+                <text x={x + barWidth / 2} y={baseline + (embedded ? 23 : 48)} textAnchor="middle" fontSize={embedded ? 12 : 11} fontWeight="600" fill="#333">{operatorName.length > 20 ? `${operatorName.slice(0, 19)}…` : operatorName}</text>
               </g>;
             })}
-            {groupedReferenceSeconds > 0 && <g><line x1={margin.left} x2={chartWidth - margin.right} y1={yFor(groupedReferenceSeconds)} y2={yFor(groupedReferenceSeconds)} stroke="#263B63" strokeWidth="1.8" strokeDasharray="7 5" /><rect x={chartWidth - margin.right - 112} y={Math.max(margin.top, yFor(groupedReferenceSeconds) - 11)} width="112" height="20" rx="4" fill="#263B63" /><text x={chartWidth - margin.right - 56} y={Math.max(margin.top + 14, yFor(groupedReferenceSeconds) + 3)} textAnchor="middle" fontSize={embedded ? 11 : 11} fontWeight="700" fill="#fff">100% · {groupedReferenceSeconds.toFixed(1)}s</text></g>}
+            {groupedReferenceSeconds > 0 && <g><line x1={margin.left} x2={chartWidth - margin.right} y1={yFor(groupedReferenceSeconds)} y2={yFor(groupedReferenceSeconds)} stroke="#263B63" strokeOpacity="0.4" strokeWidth="1.6" strokeDasharray="9 8" /><rect x={chartWidth - 145} y={Math.max(margin.top, yFor(groupedReferenceSeconds) - 11)} width="137" height="20" rx="4" fill="#263B63" fillOpacity="0.9" /><text x={chartWidth - 76} y={Math.max(margin.top + 14, yFor(groupedReferenceSeconds) + 3)} textAnchor="middle" fontSize={embedded ? 11 : 11} fontWeight="700" fill="#fff">{isTheoretical ? "Tempo teórico:" : "Tempo Real:"} {groupedReferenceSeconds.toFixed(1)}s</text></g>}
           </svg>
         </div>
         {legend.length > 0 && <div className="mt-2 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[11px] text-gray-600">{legend.map((item) => <span key={item.machine}><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />{item.machine}</span>)}</div>}
@@ -340,7 +375,7 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], ope
   const plotHeight = chartHeight - margin.top - margin.bottom;
   const maxRate = Math.max(...stations.map((station) => station.outputRate), 1);
   const referenceSeconds = numberOr(
-    source.real_share_per_operator_seconds ?? source.share_per_operator_seconds ?? source.sharePerOperatorSeconds ?? source.allocation?.real_share_per_operator_seconds ?? source.allocation?.share_per_operator_seconds ?? (resultados as any).share_per_operator_seconds,
+    rawSource.allocation?.share_per_operator_seconds_real,
     0,
   );
   const maxY = Math.max(
@@ -384,6 +419,7 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], ope
             const x = xFor(index) - barWidth / 2;
             const y = yFor(station.outputRate);
             const color = getBarColor(index, station.gap);
+            const numericLabel = station.code.trim() || String(station.seq);
              const gapLabel = station.gap > 0 ? `+${station.gap.toFixed(1)}s` : station.gap < 0 ? `${station.gap.toFixed(1)}s` : "";
             const labelLines = station.name.length > 22 ? [station.name.slice(0, 21) + "…"] : [station.name];
             return (
@@ -392,7 +428,7 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], ope
                 {gapLabel ? <text x={xFor(index)} y={Math.max(18, y - 27)} textAnchor="middle" fontSize={embedded ? 13 : 11} fontWeight="700" fill={color}>{gapLabel}</text> : null}
                 <text x={xFor(index)} y={Math.max(34, y - 9)} textAnchor="middle" fontSize={embedded ? 13 : 11} fontWeight="700" fill={COLORS.TEXT}>{station.outputRate.toFixed(1)}s</text>
                 <rect x={x} y={y} width={barWidth} height={Math.max(1, baseline - y)} rx="2" fill={color} />
-                {labelLines.map((line, lineIndex) => <text key={line} x={xFor(index)} y={baseline + (embedded ? 24 : 48) + lineIndex * (embedded ? 13 : 14)} textAnchor="middle" fontSize={embedded ? 12 : 11} fontWeight="600" fill={COLORS.TEXT}>{line}</text>)}
+                 {[numericLabel].map((line) => <text key={line} x={xFor(index)} y={baseline + (embedded ? 24 : 48)} textAnchor="middle" fontSize={embedded ? 12 : 11} fontWeight="600" fill={COLORS.TEXT}>{line}</text>)}
                 <text x={xFor(index)} y={baseline + (embedded ? 44 : 76)} textAnchor="middle" fontSize={embedded ? 11 : 10} fill="#6b7280">(seq {station.seq}{station.splitCount > 1 ? `, ×${station.splitCount}` : ""})</text>
               </g>
             );

@@ -641,6 +641,9 @@ export function DashboardResultados({
   const waterfallSource = waterfallData?.data && typeof waterfallData.data === "object" ? waterfallData.data : waterfallData;
   const waterfallAllocation = waterfallSource?.allocation && typeof waterfallSource.allocation === "object" ? waterfallSource.allocation : {};
   const waterfallReferenceSeconds = Number(
+    waterfallSource?.share_per_operator_seconds_real ??
+    waterfallSource?.metrics?.share_per_operator_seconds_real ??
+    waterfallSource?.metrics?.real_share_per_operator_seconds ??
     waterfallSource?.real_share_per_operator_seconds ??
     waterfallAllocation?.real_share_per_operator_seconds ??
     waterfallAllocation?.share_per_operator_seconds ??
@@ -672,6 +675,41 @@ export function DashboardResultados({
     };
   });
   const showTaktTimeLine = Number(config?.possibilidade) === 2;
+  const theoreticalReferenceSeconds = Number(
+    (resultados as any)?.share_per_operator_seconds ?? sharePerOperatorSecondsScalar ?? cycleTimeSeconds,
+  ) || 0;
+  const theoreticalOperationTimes = new Map<string, number>();
+  operationAllocations.forEach((row: any) => {
+    const operationRefs = [row?.operation_id, row?.operation_code, row?.operation_name].map((value) => normalizeKey(String(value ?? ""))).filter(Boolean);
+    const operatorAllocations = Array.isArray(row?.operator_allocations) ? row.operator_allocations : [];
+    operatorAllocations.forEach((allocation: any) => {
+      const operatorRefs = [allocation?.operator_id, allocation?.operator_code, allocation?.operator_name, allocation?.operator].map((value) => normalizeKey(String(value ?? ""))).filter(Boolean);
+      const seconds = Number(allocation?.time_seconds ?? allocation?.tempo_segundos ?? allocation?.seconds ?? allocation?.time ?? 0);
+      if (seconds <= 0 || operatorRefs.length === 0 || operationRefs.length === 0) return;
+      operatorRefs.forEach((operatorRef) => operationRefs.forEach((operationRef) => theoreticalOperationTimes.set(`${operatorRef}|${operationRef}`, seconds)));
+    });
+  });
+  const theoreticalWaterfallData = {
+    theoretical: true,
+    allocation: {
+      share_per_operator_seconds: theoreticalReferenceSeconds,
+      share_per_operator_seconds_real: theoreticalReferenceSeconds,
+    },
+    waterfall: dadosCargaBase.map((item) => {
+      const operationCount = Math.max(1, item.operacoesAtribuidas.length);
+      return {
+        name: `${item.colaboradorLabel} (${item.ocupacaoDisplay}%)`,
+        operator_id: item.codigo,
+        work_content: item.totalTimeSeconds,
+        gap: item.totalTimeSeconds - theoreticalReferenceSeconds,
+        operations: item.operacoesAtribuidas.map((operation, index) => ({
+          name: operation,
+          seq: index + 1,
+          work_content: theoreticalOperationTimes.get(`${normalizeKey(item.codigo)}|${normalizeKey(operation)}`) ?? item.totalTimeSeconds / operationCount,
+        })),
+      };
+    }),
+  };
 
   return (
     <div className="flex flex-col gap-4 items-start w-full">
@@ -701,7 +739,7 @@ export function DashboardResultados({
           </div>
         </div>
 
-        {ocupacaoView === "pilhas" ? <div className="relative min-h-[440px] shrink-0 w-full overflow-x-auto">
+        {ocupacaoView === "pilhas" && false ? <div className="relative min-h-[440px] shrink-0 w-full overflow-x-auto">
           <div className="content-stretch flex h-full gap-4 items-center justify-center px-5 py-3 md:px-6 min-w-full w-full relative">
             {dadosCarga.map((d) => {
               const cappedOccupancy = Math.min(d.ocupacao, 100);
@@ -848,7 +886,7 @@ export function DashboardResultados({
             )}
           </div>
         </div> : <div className="relative flex min-h-[440px] w-full justify-center px-4 pb-2">
-          <WaterfallOutputRate resultados={resultados} operadores={operadores} operatorOrder={dadosCarga.map((item) => item.colaboradorLabel)} taskCode={taskCode} waterfallData={waterfallData} embedded />
+          <WaterfallOutputRate resultados={resultados} operadores={operadores} operatorOrder={(ocupacaoView === "pilhas" ? dadosCargaBase : dadosCarga).map((item) => ocupacaoView === "pilhas" ? `${item.colaboradorLabel} (${item.ocupacaoDisplay}%)` : item.colaboradorLabel)} taskCode={taskCode} waterfallData={ocupacaoView === "pilhas" ? theoreticalWaterfallData : waterfallData} embedded />
         </div>}
       </div>
       )}
