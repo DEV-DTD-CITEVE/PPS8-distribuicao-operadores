@@ -17,7 +17,9 @@ function Donut({ counts }: { counts: Record<string, number> }) {
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
   let offset = 0;
   const parts = Object.entries(counts).map(([level, value]) => { const start = offset; offset += total ? value / total * 100 : 0; return `${levelColors[level]} ${start}% ${offset}%`; });
-  const level3 = counts["3"] || 0;
+  const dominantLevel = Object.entries(counts).sort(([, countA], [, countB]) => countB - countA)[0];
+  const level3 = dominantLevel?.[1] || 0;
+  return <div className="relative h-24 w-24 shrink-0 rounded-full" style={{ background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb" }}><div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center"><span className="text-lg font-bold text-slate-700">{total ? `${Math.round(level3 / total * 100)}%` : "N/D"}</span><span className="text-[8px] uppercase leading-tight text-slate-500">nível {total ? dominantLevel?.[0] : "—"}</span></div></div>;
   return <div className="relative h-24 w-24 shrink-0 rounded-full" style={{ background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb" }}><div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center"><span className="text-lg font-bold text-slate-700">{total ? `${Math.round(level3 / total * 100)}%` : "N/D"}</span><span className="text-[8px] uppercase leading-tight text-slate-500">nível 3</span></div></div>;
 }
 

@@ -6,6 +6,7 @@ import { Badge } from "./ui/badge";
 import { Label } from "./ui/label";
 import { Loader2, Factory, Search } from "lucide-react";
 import { SearchableCombobox } from "./SearchableCombobox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 type ApiRecord = Record<string, any>;
 
@@ -101,6 +102,7 @@ export function CatalogoMaquinasApi({ familyId, defaultTaskId, familyLabel, fami
   const [taskOptions, setTaskOptions] = useState<TaskOption[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedMachineType, setSelectedMachineType] = useState("ALL");
+  const [catalogView, setCatalogView] = useState<"machines" | "by-type">("machines");
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -259,6 +261,53 @@ export function CatalogoMaquinasApi({ familyId, defaultTaskId, familyLabel, fami
         ? machineEntries
         : machineEntries.filter((machine) => machine.type === selectedMachineType),
     [machineEntries, selectedMachineType]
+  );
+
+  const operationMatrix = useMemo(() => {
+    const operationMap = new Map<string, {
+      operation_code: string;
+      operation_name: string;
+      sequence_order: string;
+      byType: Map<string, Array<MachineOperationRow & { machineCode: string; machineName: string }>>;
+    }>();
+
+    filteredMachineEntries.forEach((machine) => {
+      machine.operations.forEach((operation) => {
+        const type = operation.machine_type || machine.type || "Sem tipo";
+        const operationKey = operation.operation_code || operation.operation_name || `${machine.code}-${operation.sequence_order}`;
+        const row = operationMap.get(operationKey) || {
+          operation_code: operation.operation_code || "N/D",
+          operation_name: operation.operation_name || "N/D",
+          sequence_order: operation.sequence_order || "N/D",
+          byType: new Map(),
+        };
+        const typeRows = row.byType.get(type) || [];
+
+        if (!typeRows.some((entry) => entry.machineCode === machine.code)) {
+          typeRows.push({ ...operation, machineCode: machine.code, machineName: machine.name });
+        }
+
+        row.byType.set(type, typeRows);
+        operationMap.set(operationKey, row);
+      });
+    });
+
+    const types = Array.from(new Set(Array.from(operationMap.values()).flatMap((row) => Array.from(row.byType.keys())))).sort((a, b) => a.localeCompare(b));
+    const rows = Array.from(operationMap.values()).sort((a, b) => a.operation_code.localeCompare(b.operation_code));
+
+    return { types, rows };
+  }, [filteredMachineEntries]);
+
+  const expandedMachineOperations = useMemo(
+    () =>
+      filteredMachineEntries.flatMap((machine) =>
+        machine.operations.map((operation, index) => ({
+          machine,
+          operation,
+          key: `${machine.code}-${operation.operation_code || operation.operation_name || index}`,
+        }))
+      ),
+    [filteredMachineEntries]
   );
 
   useEffect(() => {
@@ -444,7 +493,17 @@ export function CatalogoMaquinasApi({ familyId, defaultTaskId, familyLabel, fami
           </div>
         )}
 
-        <div className="space-y-3">
+        <Tabs
+          value={catalogView}
+          onValueChange={(value) => setCatalogView(value as "machines" | "by-type")}
+          className="space-y-4"
+        >
+          <TabsList className="grid w-full max-w-md grid-cols-2 rounded-sm bg-gray-100 p-1">
+            <TabsTrigger value="machines" className="rounded-sm text-xs">Por máquina</TabsTrigger>
+            <TabsTrigger value="by-type" className="rounded-sm text-xs">Por tipo de máquina</TabsTrigger>
+          </TabsList>
+          <TabsContent value="machines" className="mt-0">
+            <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-gray-900">Catálogo por máquina</div>
@@ -518,7 +577,77 @@ export function CatalogoMaquinasApi({ familyId, defaultTaskId, familyLabel, fami
               {loadingCatalog ? "A carregar catálogo..." : "Nenhuma maquina compatível encontrada para este task_id."}
             </div>
           )}
-        </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="by-type" className="mt-0">
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900">Catálogo por tipo de máquina</div>
+                <div className="text-xs text-gray-500">
+                  Uma tabela expandida com todas as máquinas e operações do tipo selecionado.
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-end justify-between gap-3 rounded-sm border border-gray-200 bg-gray-50 p-3">
+                <div>
+                  <div className="text-xs font-semibold text-gray-800">Tipo de máquina</div>
+                  <div className="text-[11px] text-gray-500">Escolha um tipo para ver todas as máquinas e operações numa só tabela.</div>
+                </div>
+                <select
+                  value={selectedMachineType}
+                  onChange={(event) => setSelectedMachineType(event.target.value)}
+                  className="h-9 min-w-[220px] rounded-sm border border-gray-300 bg-white px-3 text-xs text-gray-800 outline-none focus:border-blue-400"
+                >
+                  <option value="ALL">Todos os tipos</option>
+                  {machineTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </div>
+
+              {expandedMachineOperations.length > 0 ? (
+                <div className="max-h-[70vh] overflow-auto rounded-sm border border-gray-200 bg-white">
+                  <table className="w-full min-w-[1050px] border-collapse">
+                    <thead className="sticky top-0 z-10 bg-gray-50">
+                      <tr className="border-b border-gray-200">
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Máquina</th>
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Código</th>
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Seq</th>
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Operação</th>
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Tipo</th>
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Ponto</th>
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Largura</th>
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">p_cm</th>
+                        <th className="p-3 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Guia</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expandedMachineOperations.map(({ machine, operation, key }) => (
+                        <tr key={key} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="p-3 text-xs text-gray-700">
+                            <div className="font-semibold text-gray-900">{machine.code}</div>
+                            <div className="text-[11px] text-gray-500">{machine.name}</div>
+                          </td>
+                          <td className="p-3 text-xs text-gray-600">{operation.operation_code || "N/D"}</td>
+                          <td className="p-3 text-xs text-gray-600">{operation.sequence_order || "N/D"}</td>
+                          <td className="p-3 text-xs font-medium text-gray-900">{operation.operation_name || "N/D"}</td>
+                          <td className="p-3 text-xs text-gray-600">{operation.machine_type || machine.type || "N/D"}</td>
+                          <td className="p-3 text-xs text-gray-600">{operation.ponto || "N/D"}</td>
+                          <td className="p-3 text-xs text-gray-600">{operation.largura || "N/D"}</td>
+                          <td className="p-3 text-xs text-gray-600">{operation.p_cm || "N/D"}</td>
+                          <td className="p-3 text-xs text-gray-600">{operation.guia || "N/D"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="rounded-sm border border-gray-200 bg-white p-4 text-sm text-gray-500">
+                  {loadingCatalog ? "A carregar catálogo..." : "Nenhuma máquina compatível encontrada para este task_id."}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );

@@ -712,7 +712,7 @@ export function DashboardResultados({
   };
 
   return (
-    <div className="flex flex-col gap-4 items-start w-full">
+    <div className="flex min-w-0 flex-col gap-4 items-start w-full">
       {showOccupacaoCard && (
         <div className="bg-white content-stretch flex flex-col gap-8 items-center pb-[28px] pt-px px-px relative rounded-[6px] w-full min-w-0">
         <div aria-hidden="true" className="absolute border border-[#e5e7eb] border-solid inset-0 pointer-events-none rounded-[6px] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_0px_rgba(0,0,0,0.1)]" />
@@ -885,7 +885,7 @@ export function DashboardResultados({
               </div>
             )}
           </div>
-        </div> : <div className="relative flex min-h-[440px] w-full justify-center px-4 pb-2">
+        </div> : <div className="relative flex min-h-[440px] min-w-0 w-full max-w-full justify-center overflow-hidden px-4 pb-2 [&>section]:min-w-0 [&>section]:w-full [&>section]:max-w-full">
           <WaterfallOutputRate resultados={resultados} operadores={operadores} operatorOrder={(ocupacaoView === "pilhas" ? dadosCargaBase : dadosCarga).map((item) => ocupacaoView === "pilhas" ? `${item.colaboradorLabel} (${item.ocupacaoDisplay}%)` : item.colaboradorLabel)} taskCode={taskCode} waterfallData={ocupacaoView === "pilhas" ? theoreticalWaterfallData : waterfallData} embedded />
         </div>}
       </div>

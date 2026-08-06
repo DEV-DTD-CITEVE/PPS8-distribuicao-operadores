@@ -307,9 +307,10 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], ope
       return { machine, color };
     });
     return (
-      <section className={embedded ? "p-0" : "rounded-sm border border-gray-200 bg-white p-4 shadow-sm"}>
+      <section className={embedded ? "w-full min-w-0 max-w-full p-0" : "w-full min-w-0 max-w-full rounded-sm border border-gray-200 bg-white p-4 shadow-sm"}>
         {!embedded && <div className="mb-2"><h3 className="text-sm font-semibold text-gray-900">Tempo por Operador x Máquina — {taskCode}</h3><p className="mt-1 text-xs text-gray-500">Eixo X: operador | Eixo Y: segundos empilhados por máquina</p></div>}
-        <div className="flex justify-center overflow-x-auto [&>svg]:!h-[520px] [&>svg]:!min-h-[520px]">
+        <style>{`.operator-machine-chart > svg { width: ${chartWidth}px !important; min-width: ${chartWidth}px !important; }`}</style>
+        <div className="operator-machine-chart flex min-w-0 w-full max-w-full overflow-x-scroll overflow-y-hidden [&>svg]:!h-[520px] [&>svg]:!min-h-[520px]" style={{ width: "100%", justifyContent: "safe center" }}>
           <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className={embedded ? "h-[500px] min-h-[500px] w-[90%] min-w-[1000px] max-w-none" : "h-auto min-w-[900px]"} role="img" aria-label={`Tempo por operador e máquina para ${taskCode}`}>
             {ticks.map((tick) => <g key={tick}><line x1={margin.left} x2={chartWidth - margin.right} y1={yFor(tick)} y2={yFor(tick)} stroke="#e5e7eb" strokeDasharray="3 3" /><text x={margin.left - 10} y={yFor(tick) + 4} textAnchor="end" fontSize={embedded ? 12 : 11} fill="#6b7280">{tick.toFixed(1)}s</text></g>)}
             <line x1={margin.left} x2={margin.left} y1={margin.top} y2={baseline} stroke="#9ca3af" />
@@ -401,7 +402,7 @@ export function WaterfallOutputRate({ resultados, taskCode, operadores = [], ope
           <span><i className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: COLORS.FASTER }} />Mais rápida</span>
         </div>
       </div>}
-         <div className="flex justify-center overflow-x-auto [&>svg]:!h-[440px] [&>svg]:!min-h-[440px]">
+         <div className="flex w-full justify-center overflow-x-auto [&>svg]:!h-[440px] [&>svg]:!min-h-[440px] [&>svg]:mx-auto">
          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className={embedded ? "h-[400px] min-h-[400px] w-[90%] min-w-[1000px] max-w-none" : "h-auto min-w-[900px]"} role="img" aria-label={`Waterfall de ocupação por trabalhador para ${taskCode}`}>
           {ticks.map((tick) => {
             const y = yFor(tick);

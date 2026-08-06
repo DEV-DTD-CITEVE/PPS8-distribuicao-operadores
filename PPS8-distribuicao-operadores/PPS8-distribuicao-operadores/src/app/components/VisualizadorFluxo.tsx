@@ -1802,10 +1802,10 @@ export function VisualizadorFluxo({
                     </div>
 
                     {/* Chart + Labels */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ flex: 1, minWidth: 0, width: 0, overflowX: "scroll", overflowY: "hidden" }}>
 
                       {/* Chart area + Labels */}
-                      <div style={{ position: "relative", height: CHART_H + LABEL_H }}>
+                        <div style={{ position: "relative", height: CHART_H + LABEL_H, width: `${Math.max(operadoresBarras.length * 140, 1)}px`, minWidth: "100%", flexShrink: 0 }}>
 
                         {/* Grid lines */}
                         {ticks.map((tick, i) => (

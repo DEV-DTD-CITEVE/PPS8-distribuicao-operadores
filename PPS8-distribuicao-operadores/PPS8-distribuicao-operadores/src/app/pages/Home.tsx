@@ -37,6 +37,8 @@ const configPadrao: ConfiguracaoDistribuicao = {
   naoDividirMenorQue: 0.9,
   horasTurno: 8,
   produtividadeEstimada: 85,
+  quantidadeObjetivo: 500,
+  numeroOperadores: 6,
   naoSelecionarOperadores: false,
   idealManual: false,
 };
@@ -1491,17 +1493,38 @@ export default function Home() {
       try {
         const efficiency = Number(configAtualInline?.produtividadeEstimada ?? config.produtividadeEstimada ?? 85);
         const waterfallMode = Number(configAtualInline?.possibilidade ?? config.possibilidade);
-          const waterfallEndpoint = waterfallMode === 2
-            ? "waterfall-objective"
-            : waterfallMode === 3
-            ? (configAtualInline?.naoSelecionarOperadores === true
-              ? (temAdjustInline ? "waterfall-adjust-ideal" : "waterfall-manual-ideal")
-              : "waterfall-manual")
+        const waterfallGrouped = configAtualInline?.agruparMaquinas === true;
+        const waterfallEndpoint = waterfallMode === 2
+          ? (configAtualInline?.naoSelecionarOperadores === true && temAdjustInline
+            ? "waterfall-adjust-ideal"
+            : waterfallGrouped
+              ? (configAtualInline?.naoSelecionarOperadores === true
+                ? "waterfall-grouped-objective-ideal"
+                : "waterfall-grouped-objective")
+              : (configAtualInline?.naoSelecionarOperadores === true
+                ? "waterfall-objective-ideal"
+                : "waterfall-objective"))
+          : waterfallMode === 3
+            ? (configAtualInline?.naoSelecionarOperadores === true && temAdjustInline
+              ? "waterfall-adjust-ideal"
+              : waterfallGrouped
+                ? (configAtualInline?.naoSelecionarOperadores === true
+                  ? "waterfall-grouped-manual-ideal"
+                  : "waterfall-grouped-manual")
+                : (configAtualInline?.naoSelecionarOperadores === true
+                  ? "waterfall-manual-ideal"
+                  : "waterfall-manual"))
             : waterfallMode === 4
               ? "waterfall-custom"
               : waterfallMode === 5
-                ? (temAdjustInline ? "waterfall-adjust-ideal" : "waterfall-ideal")
-                : (temAdjustInline ? "waterfall-adjust" : "waterfall");
+                ? (temAdjustInline
+                  ? "waterfall-adjust-ideal"
+                  : (waterfallGrouped ? "waterfall-grouped-ideal" : "waterfall-ideal"))
+                : waterfallMode === 1
+                  ? (waterfallGrouped
+                    ? "waterfall-grouped"
+                    : (temAdjustInline ? "waterfall-adjust" : "waterfall"))
+                  : (temAdjustInline ? "waterfall-adjust" : "waterfall");
         const maxPostsValue = Number(getMaxPostsPayloadInline(layoutConfig));
         const maxPositionDeviationValue = Math.trunc(Number(layoutConfig.distanciaMaxima));
         const commonWaterfallBody = {
@@ -1587,6 +1610,11 @@ export default function Home() {
   const usarAllocateModo1Api = config.possibilidade === 1;
   const usarAllocateIdealApi = config.possibilidade === 5;
   const usarAllocateObjetivoApi = config.possibilidade === 2;
+  const usarAllocateObjetivoIdealApi =
+    usarAllocateObjetivoApi && config.naoSelecionarOperadores === true;
+  const usarAllocateObjetivoSemColaboradoresApi =
+    usarAllocateObjetivoApi &&
+    (config.naoSelecionarOperadores === true || config.idealManual === true);
   const usarAllocateNumeroOperadoresApi = config.possibilidade === 3;
   const usarAllocateNumeroOperadoresIdealApi =
     usarAllocateNumeroOperadoresApi && config.naoSelecionarOperadores === true;
@@ -1693,16 +1721,33 @@ export default function Home() {
   };
 
   const handleConfigChange = (newConfig: ConfiguracaoDistribuicao) => {
-    const configAtualizado = newConfig.possibilidade === 3 && newConfig.naoSelecionarOperadores === true
+    const modoComSwitchesIdeais = newConfig.possibilidade === 2 || newConfig.possibilidade === 3;
+    const configAtualizado = newConfig.possibilidade === 2 &&
+      newConfig.naoSelecionarOperadores !== true &&
+      newConfig.idealManual !== true
+      ? { ...newConfig, naoSelecionarOperadores: true }
+      : modoComSwitchesIdeais && newConfig.naoSelecionarOperadores === true
       ? { ...newConfig, idealManual: false }
-      : newConfig.possibilidade === 3 && newConfig.idealManual === true
+      : modoComSwitchesIdeais && newConfig.idealManual === true
         ? { ...newConfig, naoSelecionarOperadores: false }
         : newConfig;
     const deixarDeSelecionarOperadores =
-      configAtualizado.possibilidade === 3 &&
+      (configAtualizado.possibilidade === 2 || configAtualizado.possibilidade === 3) &&
       (configAtualizado.naoSelecionarOperadores === true || configAtualizado.idealManual === true);
+    const voltarASelecaoManualNumeroOperadores =
+      configAtualizado.possibilidade === 3 &&
+      (config.naoSelecionarOperadores === true || config.idealManual === true) &&
+      configAtualizado.naoSelecionarOperadores !== true &&
+      configAtualizado.idealManual !== true;
+    const entrarEmSelecaoManualNumeroOperadores =
+      configAtualizado.possibilidade === 3 &&
+      configAtualizado.naoSelecionarOperadores !== true &&
+      configAtualizado.idealManual !== true &&
+      (config.possibilidade !== 3 || voltarASelecaoManualNumeroOperadores);
+    const limparSelecaoOperadores =
+      deixarDeSelecionarOperadores || entrarEmSelecaoManualNumeroOperadores;
 
-    if (deixarDeSelecionarOperadores) {
+    if (limparSelecaoOperadores) {
       setNumeroOperadoresCandidateIds([]);
       setShowNumeroOperadoresCandidates(false);
       setNumeroOperadoresCandidates([]);
@@ -1713,13 +1758,13 @@ export default function Home() {
       [unidadeAtiva]: {
         ...prev[unidadeAtiva],
         config: configAtualizado,
-        ...(deixarDeSelecionarOperadores ? { operadoresSelecionados: [] } : {}),
+        ...(limparSelecaoOperadores ? { operadoresSelecionados: [] } : {}),
       },
     }));
   };
 
   const carregarCandidatosNumeroOperadores = async (numeroOperadores: number) => {
-    if (config.possibilidade !== 3 || !grupoArtigoSelecionado) return;
+    if ((config.possibilidade !== 2 && config.possibilidade !== 3) || !grupoArtigoSelecionado) return;
     setLoadingNumeroOperadoresCandidates(true);
     setErroApi(null);
     try {
@@ -1782,6 +1827,10 @@ export default function Home() {
       ...prev,
       [unidadeAtiva]: {
         ...prev[unidadeAtiva],
+        config: {
+          ...prev[unidadeAtiva].config,
+          numeroOperadores: Math.max(1, operadoresNecessarios),
+        },
         operadoresSelecionados: novosOperadoresSelecionados,
       },
     }));
@@ -2712,14 +2761,16 @@ export default function Home() {
         max_posts: maxPosts,
         max_position_deviation: Math.max(1, Number(nextLayoutConfig.distanciaMaxima) || 1),
         position_deviation_mode: nextLayoutConfig.permitirRetrocesso ? "both" : "forward",
-        ...(configAtualInline?.possibilidade === 5 ? { group_by_machine: configAtualInline.agruparMaquinas } : {}),
+        ...(configAtualInline?.possibilidade === 5 ||
+        (configAtualInline?.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true)
+          ? { group_by_machine: configAtualInline.agruparMaquinas }
+          : {}),
       };
        const ajusteEndpoint = configAtualInline?.possibilidade === 5 ||
+         (configAtualInline?.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true) ||
          (configAtualInline?.possibilidade === 3 && configAtualInline.naoSelecionarOperadores === true)
          ? "adjust-ideal"
-         : configAtualInline?.possibilidade === 3
-           ? "adjust-manual"
-           : "adjust";
+         : "adjust";
       const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/${ajusteEndpoint}`, body);
       const novoRaw = resposta.data ?? {};
       const tipos: Array<"linha" | "espinha"> = ["linha", "espinha"];
@@ -2792,15 +2843,15 @@ export default function Home() {
       const bodyBase = ajusteBodyBaseInline ?? ajusteBodyBasePorTipoInline[layoutConfig.tipoLayout];
       if (!bodyBase) return;
       const body = mergeRowsIntoAdjustBodyInline(bodyBase, editedRows);
-      if (configAtualInline?.possibilidade === 5) {
+      if (configAtualInline?.possibilidade === 5 ||
+        (configAtualInline?.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true)) {
         body.group_by_machine = configAtualInline.agruparMaquinas;
       }
        const ajusteEndpoint = configAtualInline?.possibilidade === 5 ||
+         (configAtualInline?.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true) ||
          (configAtualInline?.possibilidade === 3 && configAtualInline.naoSelecionarOperadores === true)
          ? "adjust-ideal"
-         : configAtualInline?.possibilidade === 3
-           ? "adjust-manual"
-           : "adjust";
+         : "adjust";
       const resposta = await axios.post(`${API_BASE_URL}/tasks/${encodeURIComponent(codigoFicha)}/${ajusteEndpoint}`, body);
       const novoRaw = resposta.data ?? {};
       logAdjustPercentageTraceInline(editedRows, body, novoRaw);
@@ -2873,6 +2924,7 @@ export default function Home() {
     const renameMap = ((bodyBase as any)?.rename_map || {}) as Record<string, string>;
     const isVirtualResultOperator =
       operatorCode.toUpperCase().startsWith("VIRT") ||
+      (config.possibilidade === 2 && config.naoSelecionarOperadores === true) ||
       (config.possibilidade === 3 && config.naoSelecionarOperadores === true);
     const virtualCode = isVirtualResultOperator
       ? operatorCode
@@ -2901,9 +2953,11 @@ export default function Home() {
         if (!operationId) return;
         Array.from(refs).forEach((ref) => {
           const virtualRef = ref.toUpperCase().startsWith("VIRT") ||
+            (config.possibilidade === 2 && config.naoSelecionarOperadores === true) ||
             (config.possibilidade === 3 && config.naoSelecionarOperadores === true) ? ref :
             Object.entries(renameMap).find(([, collaboratorCode]) => normalizeKey(String(collaboratorCode)) === normalizeKey(ref))?.[0] || ref;
           if (!virtualRef.toUpperCase().startsWith("VIRT") &&
+            !(config.possibilidade === 2 && config.naoSelecionarOperadores === true) &&
             !(config.possibilidade === 3 && config.naoSelecionarOperadores === true)) return;
           operationsByVirtual[virtualRef] = Array.from(new Set([...(operationsByVirtual[virtualRef] || []), operationId]));
         });
@@ -3044,6 +3098,7 @@ export default function Home() {
     const existingRenameMap = ((bodyBase as any)?.rename_map || {}) as Record<string, string>;
     const isVirtualResultOperator =
       selectedColumnCode.toUpperCase().startsWith("VIRT") ||
+      (config.possibilidade === 2 && config.naoSelecionarOperadores === true) ||
       (config.possibilidade === 3 && config.naoSelecionarOperadores === true);
     const operatorCode = isVirtualResultOperator
       ? selectedColumnCode
@@ -3465,8 +3520,11 @@ export default function Home() {
         const limitNotDivideUpper = Math.max(1.01, Number(config.naoDividirMaiorQue) || 1.1);
         const limitNotDivideLower = Math.min(0.99, Math.max(0, Number(config.naoDividirMenorQue) || 0.9));
         const maxPosts = getMaxPostsPayload();
-        const numeroOperadoresIdealRaw = Number(numeroOperadoresInput || config.numeroOperadores || 0);
-        if (usarAllocateNumeroOperadoresSemColaboradoresApi && (!Number.isFinite(numeroOperadoresIdealRaw) || numeroOperadoresIdealRaw <= 0)) {
+        const numeroOperadoresIdealRaw = Number(
+          numeroOperadoresInput || config.numeroOperadores || operadoresSelecionados.length || 6,
+        );
+        const enviarNumeroOperadores = usarAllocateNumeroOperadoresSemColaboradoresApi || usarAllocateIdealApi;
+        if (enviarNumeroOperadores && (!Number.isFinite(numeroOperadoresIdealRaw) || numeroOperadoresIdealRaw <= 0)) {
           alert("Defina um numero de operadores valido.");
           return;
         }
@@ -3479,16 +3537,16 @@ export default function Home() {
           limit_not_divide_upper: limitNotDivideUpper,
           limit_not_divide_lower: limitNotDivideLower,
           max_posts: maxPosts,
-          ...(usarAllocateNumeroOperadoresSemColaboradoresApi
+          ...(enviarNumeroOperadores
             ? { num_operators: numeroOperadoresIdealPedido, line_type: layoutConfig.tipoLayout }
             : {}),
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
         const endpointModo1 = usarAllocateNumeroOperadoresIdealApi
-          ? "allocate-manual-ideal"
+          ? (config.agruparMaquinas ? "allocate-grouped-manual-ideal" : "allocate-manual-ideal")
           : config.idealManual === true
-            ? "allocate-manual"
+            ? (config.agruparMaquinas ? "allocate-grouped-manual" : "allocate-manual")
           : usarAllocateIdealApi
           ? (config.agruparMaquinas ? "allocate-grouped-ideal" : "allocate-ideal")
           : (config.agruparMaquinas ? "allocate-grouped" : "allocate");
@@ -3659,6 +3717,11 @@ export default function Home() {
           return;
         }
 
+        if (config.naoSelecionarOperadores !== true && config.idealManual !== true) {
+          alert("Ative uma das opções: Ideal ou Não selecionar operadores.");
+          return;
+        }
+
         const normalizarRatio = (valor: number) => {
           if (!Number.isFinite(valor)) return 0;
           return valor > 1 ? valor / 100 : valor;
@@ -3666,6 +3729,10 @@ export default function Home() {
         const limitNotDivideUpper = Math.max(1.01, Number(config.naoDividirMaiorQue) || 1.1);
         const limitNotDivideLower = Math.min(0.99, Math.max(0, Number(config.naoDividirMenorQue) || 0.9));
         const maxPosts = getMaxPostsPayload();
+        const numeroOperadoresObjetivo = Math.max(
+          1,
+          Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || operadoresSelecionados.length || 6)),
+        );
 
         const payloadBase = {
           efficiency: normalizarRatio(config.produtividadeEstimada),
@@ -3675,12 +3742,13 @@ export default function Home() {
           limit_not_divide_lower: limitNotDivideLower,
           max_posts: maxPosts,
           objective_pieces: quantidadeObjetivo,
+          num_operators: numeroOperadoresObjetivo,
           max_position_deviation: Math.max(1, Number(layoutConfig.distanciaMaxima) || 1),
           position_deviation_mode: layoutConfig.permitirRetrocesso ? "both" : "forward",
         };
-        const endpointModo2 = config.agruparMaquinas
-          ? "allocate-grouped-objective"
-          : "allocate-objective";
+        const endpointModo2 = usarAllocateObjetivoIdealApi
+          ? (config.agruparMaquinas ? "allocate-grouped-objective-ideal" : "allocate-objective-ideal")
+          : (config.agruparMaquinas ? "allocate-grouped-objective" : "allocate-objective");
         const resposta = await axios.post(
           `${API_BASE_URL}/tasks/${encodeURIComponent(taskCodeSelecionado)}/${endpointModo2}`,
           payloadBase
@@ -3709,9 +3777,12 @@ export default function Home() {
           r.operationAllocations
         );
 
-        let distribuicao = extrairDistribuicaoDeTableData(r, operacoes, tempoCiclo, operadores);
+        const operadoresResultadoObjetivo = usarAllocateObjetivoSemColaboradoresApi
+          ? extrairOperadoresDosResultadosIdeais(r)
+          : operadores;
+        let distribuicao = extrairDistribuicaoDeTableData(r, operacoes, tempoCiclo, operadoresResultadoObjetivo);
         if (distribuicao.length === 0 && operationAllocations.length > 0) {
-          distribuicao = extrairDistribuicaoDeOperationAllocations(operationAllocations, operacoes, operadores, tempoCiclo);
+          distribuicao = extrairDistribuicaoDeOperationAllocations(operationAllocations, operacoes, operadoresResultadoObjetivo, tempoCiclo);
         }
         const mapa: Record<string, { operacoes: Set<string>; tempoTotal: number; temposOperacoes: Record<string, number> }> = {};
 
@@ -3719,7 +3790,7 @@ export default function Home() {
           for (const item of assignments) {
             const operadorRef = pickString(item, ["operator_id", "operador_id", "operator", "operador"]);
             if (!operadorRef) continue;
-            const operadorId = mapOperatorToCode(operadorRef, operadores);
+            const operadorId = mapOperatorToCode(operadorRef, operadoresResultadoObjetivo);
 
             const operacaoRef =
               pickString(item, ["operation_code", "operation_id", "operacao_id", "operation", "operacao"]) ||
@@ -3817,7 +3888,7 @@ export default function Home() {
         const dataToPass = {
           resultados: resultadosPorTipo[layoutConfig.tipoLayout] ?? resultadosApi,
           resultadosPorTipo,
-          operadores,
+          operadores: operadoresResultadoObjetivo,
           operacoes,
           config,
           layoutConfig,
@@ -4301,7 +4372,7 @@ export default function Home() {
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Render ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   return (
-    <main className="w-full px-6 py-8 space-y-8">
+    <main className="w-full min-w-0 max-w-full overflow-x-hidden px-6 py-8 space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -4530,7 +4601,7 @@ export default function Home() {
           type="button"
           size="lg"
                onClick={() => handleCalcular(true)}
-           disabled={(!usarAllocateModo1Api && !usarAllocateIdealApi && config.possibilidade !== 3 && operadoresSelecionados.length === 0) || operacoes.length === 0}
+           disabled={(!usarAllocateModo1Api && !usarAllocateIdealApi && config.possibilidade !== 2 && config.possibilidade !== 3 && operadoresSelecionados.length === 0) || operacoes.length === 0}
           className="px-12 py-6 text-sm font-semibold bg-blue-500 hover:bg-blue-600 rounded-sm uppercase tracking-wide"
         >
           <Calculator className="w-5 h-5 mr-2" />
@@ -4679,7 +4750,7 @@ export default function Home() {
                 layout="column"
               />
             </div>
-            <div className="space-y-6 min-w-0">
+            <div className="space-y-6 min-w-0 overflow-x-hidden">
            <DashboardResultados
                 resultados={resultadosAtuaisInline}
                 operadores={resultadosInlineData.operadores}
@@ -4696,6 +4767,7 @@ export default function Home() {
                 onAtribuirColuna={handleAtribuirColunaIdeal}
                   isIdealSemOle={
                     configAtualInline.possibilidade === 5 ||
+                    (configAtualInline.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true) ||
                     (configAtualInline.possibilidade === 3 && configAtualInline.naoSelecionarOperadores === true)
                   }
                  waterfallData={waterfallDataInline}
@@ -4707,6 +4779,7 @@ export default function Home() {
           </div>
 
           {configAtualInline.possibilidade === 5 ||
+          (configAtualInline.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true) ||
           (configAtualInline.possibilidade === 3 && configAtualInline.naoSelecionarOperadores === true) ? (
             <div className="rounded-sm border border-gray-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-4">
@@ -4743,6 +4816,7 @@ export default function Home() {
             onAtribuirColuna={handleAtribuirColunaIdeal}
              isIdealSemOle={
                configAtualInline.possibilidade === 5 ||
+               (configAtualInline.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true) ||
                (configAtualInline.possibilidade === 3 && configAtualInline.naoSelecionarOperadores === true)
              }
            />
