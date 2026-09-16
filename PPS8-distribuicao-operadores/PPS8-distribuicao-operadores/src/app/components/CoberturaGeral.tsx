@@ -7,20 +7,91 @@ type RecordApi = Record<string, any>;
 type Operation = { id: string; name: string; capable: number; levels: Record<string, number> };
 type Family = { id: string; name: string; operations: Operation[] };
 
-const array = (value: unknown): RecordApi[] => Array.isArray(value) ? value as RecordApi[] : [];
-const text = (item: RecordApi, keys: string[]) => { for (const key of keys) { if (item[key] != null && String(item[key]).trim()) return String(item[key]).trim(); } return ""; };
+const array = (value: unknown): RecordApi[] =>
+  Array.isArray(value) ? (value as RecordApi[]) : [];
+const text = (item: RecordApi, keys: string[]) => {
+  for (const key of keys) {
+    if (item[key] != null && String(item[key]).trim())
+      return String(item[key]).trim();
+  }
+  return "";
+};
 const number = (item: RecordApi, keys: string[]) => { for (const key of keys) { const value = Number(item[key]); if (Number.isFinite(value)) return value; } return 0; };
 
 const levelColors: Record<string, string> = { "1": "#F26B6B", "2": "#F2B84B", "3": "#4F8EDC", "4": "#35B779" };
+const proficiencyMatrix = [
+  {
+    coverage: "< 10% da gama",
+    levels: [1, 1, 2, 2],
+  },
+  {
+    coverage: "10–25% da gama",
+    levels: [1, 2, 2, 3],
+  },
+  {
+    coverage: "25–50% da gama",
+    levels: [2, 2, 3, 4],
+  },
+  {
+    coverage: "≥ 50% da gama",
+    levels: [2, 3, 4, 4],
+  },
+];
+
+const proficiencyLevelColors: Record<number, string> = {
+  1: levelColors["1"],
+  2: levelColors["2"],
+  3: levelColors["3"],
+  4: levelColors["4"],
+};
+
 
 function Donut({ counts }: { counts: Record<string, number> }) {
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
   let offset = 0;
-  const parts = Object.entries(counts).map(([level, value]) => { const start = offset; offset += total ? value / total * 100 : 0; return `${levelColors[level]} ${start}% ${offset}%`; });
-  const dominantLevel = Object.entries(counts).sort(([, countA], [, countB]) => countB - countA)[0];
+  const parts = Object.entries(counts).map(([level, value]) => {
+    const start = offset;
+    offset += total ? (value / total) * 100 : 0;
+    return `${levelColors[level]} ${start}% ${offset}%`;
+  });
+  const dominantLevel = Object.entries(counts).sort(
+    ([, countA], [, countB]) => countB - countA,
+  )[0];
   const level3 = dominantLevel?.[1] || 0;
-  return <div className="relative h-24 w-24 shrink-0 rounded-full" style={{ background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb" }}><div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center"><span className="text-lg font-bold text-slate-700">{total ? `${Math.round(level3 / total * 100)}%` : "N/D"}</span><span className="text-[8px] uppercase leading-tight text-slate-500">nível {total ? dominantLevel?.[0] : "—"}</span></div></div>;
-  return <div className="relative h-24 w-24 shrink-0 rounded-full" style={{ background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb" }}><div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center"><span className="text-lg font-bold text-slate-700">{total ? `${Math.round(level3 / total * 100)}%` : "N/D"}</span><span className="text-[8px] uppercase leading-tight text-slate-500">nível 3</span></div></div>;
+  return (
+    <div
+      className="relative h-24 w-24 shrink-0 rounded-full"
+      style={{
+        background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb",
+      }}
+    >
+      <div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center">
+        <span className="text-lg font-bold text-slate-700">
+          {total ? `${Math.round((level3 / total) * 100)}%` : "N/D"}
+        </span>
+        <span className="text-[8px] uppercase leading-tight text-slate-500">
+          nível {total ? dominantLevel?.[0] : "—"}
+        </span>
+      </div>
+    </div>
+  );
+  return (
+    <div
+      className="relative h-24 w-24 shrink-0 rounded-full"
+      style={{
+        background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb",
+      }}
+    >
+      <div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center">
+        <span className="text-lg font-bold text-slate-700">
+          {total ? `${Math.round((level3 / total) * 100)}%` : "N/D"}
+        </span>
+        <span className="text-[8px] uppercase leading-tight text-slate-500">
+          nível 3
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function CoberturaGeral() {
@@ -28,7 +99,312 @@ export function CoberturaGeral() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showLevelsInfo, setShowLevelsInfo] = useState(false);
-  useEffect(() => { let active = true; const load = async () => { try { const response = await axios.get(`${API_BASE_URL}/polyvalence/coverage-overview`); const data = response.data && typeof response.data === "object" ? response.data as RecordApi : {}; const loaded = array(data.families).map((family) => ({ id: text(family, ["family_id", "id", "code"]), name: text(family, ["family_name", "name", "label"]) || "Família", operations: array(family.operations ?? family.operacoes).map((item) => ({ id: text(item, ["operation_id", "id", "code"]), name: text(item, ["operation_name", "name", "label"]) || "Operação", capable: number(item, ["operators_capable", "capable_operators"]), levels: Object.fromEntries(Object.entries((item.level_counts ?? item.levelCounts ?? {}) as RecordApi).map(([level, count]) => [level, Number(count) || 0])) })) })); if (active) setFamilies(loaded); } catch (err) { console.error("Erro ao carregar cobertura geral:", err); if (active) setError("Não foi possível carregar a cobertura geral."); } finally { if (active) setLoading(false); } }; void load(); return () => { active = false; }; }, []);
-  const cards = useMemo(() => families.map((family) => { const counts = family.operations.reduce<Record<string, number>>((result, operation) => { Object.entries(operation.levels).forEach(([level, count]) => { result[level] = (result[level] || 0) + count; }); return result; }, { "1": 0, "2": 0, "3": 0, "4": 0 }); const covered = family.operations.filter((operation) => operation.capable > 0).length; return { family, counts, covered, fragile: [...family.operations].sort((a, b) => a.capable - b.capable).slice(0, 2) }; }).sort((a, b) => (b.family.operations.length ? b.covered / b.family.operations.length : Number.NEGATIVE_INFINITY) - (a.family.operations.length ? a.covered / a.family.operations.length : Number.NEGATIVE_INFINITY)), [families]);
-  return <div className="rounded-sm border border-gray-200 bg-white shadow-sm"><div className="relative flex items-start justify-between border-b border-gray-200 p-5"><div><h2 className="text-base font-semibold text-gray-900">Cobertura Geral — Nível de Proficiência</h2><p className="mt-1 text-xs text-gray-500">Por família: cobertura das operações e distribuição dos níveis de proficiência dos operadores.</p></div><div className="relative"><button type="button" title="O que significam os níveis?" aria-label="Informação sobre níveis de proficiência" onClick={() => setShowLevelsInfo((current) => !current)} className="rounded-full border border-gray-300 p-1.5 text-gray-500 transition-colors hover:border-gray-500 hover:bg-gray-50 hover:text-gray-800"><Info className="h-4 w-4" /></button>{showLevelsInfo && <div className="absolute right-0 top-9 z-30 w-80 rounded-sm border border-gray-200 bg-white p-4 text-xs shadow-lg"><div className="mb-3 font-semibold text-gray-800">Níveis de proficiência</div><div className="space-y-2"><div className="flex items-start gap-2"><span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--crit)]" /><span><strong>Crítico</strong> — &lt; 30% · Nível 1: não sabe fazer</span></div><div className="flex items-start gap-2"><span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--warn)]" /><span><strong>Atenção</strong> — 30–50% · Nível 2: aprendiz</span></div><div className="flex items-start gap-2"><span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--accent-soft)]" /><span><strong>Médio</strong> — 50–80% · Nível 3: elementar</span></div><div className="flex items-start gap-2"><span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--ok)]" /><span><strong>Bom</strong> — ≥ 80% · Nível 4: experiente</span></div></div></div>}</div></div>{error && <div className="m-5 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{error}</div>}{loading ? <div className="p-8 text-center text-sm text-gray-500">A carregar cobertura geral...</div> : <><div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">{cards.map(({ family, counts, covered, fragile }) => <div key={family.id} className="rounded-sm border border-gray-200 bg-gray-50/60 p-4"><div className="flex items-center justify-between"><h3 className="text-sm font-bold text-gray-800">{family.name}</h3><span className="text-[10px] text-gray-500">{family.operations.length} operações</span></div><div className="mt-3 flex items-center justify-between"><div className="flex-1"><div className="flex items-center justify-between text-[10px] text-gray-500"><span>Operações com ≥1 operador capaz</span><strong className="text-sm text-slate-700">{covered}/{family.operations.length}</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-200"><div className="h-full rounded-full bg-slate-500" style={{ width: `${family.operations.length ? covered / family.operations.length * 100 : 0}%` }} /></div></div></div><div className="mt-4 flex items-center gap-4"><Donut counts={counts} /><div className="space-y-1 text-[10px] text-gray-600">{["1", "2", "3", "4"].map((level) => <div key={level} className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: levelColors[level] }} />Nível {level}<strong className="ml-auto pl-3 text-gray-800">{counts[level]}</strong></div>)}</div></div><div className="mt-4 border-t border-dashed border-gray-300 pt-3"><div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">Operações mais frágeis</div>{fragile.length ? fragile.map((operation) => <div key={operation.id} className="flex items-center justify-between gap-3 py-1 text-xs"><span className="truncate text-gray-700" title={`${operation.id} - ${operation.name}`}>{operation.id} - {operation.name}</span><span className="shrink-0 font-semibold text-slate-600">{operation.capable} capazes</span></div>) : <div className="text-xs text-gray-400">N/D</div>}</div></div>)}</div><div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-gray-200 px-5 py-4 text-[10px] text-gray-600">{["1 — não sabe fazer (0–30%)", "2 — elementar (30–50%)", "3 — independente (50–80%)", "4 — experiente (80–100%)"].map((label, index) => <span key={label} className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: levelColors[String(index + 1)] }} />{label}</span>)}</div></>}</div>;
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await axios.get(
+          `${API_BASE_URL}/polyvalence/coverage-overview`,
+        );
+        const data =
+          response.data && typeof response.data === "object"
+            ? (response.data as RecordApi)
+            : {};
+        const loaded = array(data.families).map((family) => ({
+          id: text(family, ["family_id", "id", "code"]),
+          name: text(family, ["family_name", "name", "label"]) || "Família",
+          operations: array(family.operations ?? family.operacoes).map(
+            (item) => ({
+              id: text(item, ["operation_id", "id", "code"]),
+              name:
+                text(item, ["operation_name", "name", "label"]) || "Operação",
+              capable: number(item, ["operators_capable", "capable_operators"]),
+              levels: Object.fromEntries(
+                Object.entries(
+                  (item.level_counts ?? item.levelCounts ?? {}) as RecordApi,
+                ).map(([level, count]) => [level, Number(count) || 0]),
+              ),
+            }),
+          ),
+        }));
+        if (active) setFamilies(loaded);
+      } catch (err) {
+        console.error("Erro ao carregar cobertura geral:", err);
+        if (active) setError("Não foi possível carregar a cobertura geral.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+  const cards = useMemo(
+    () =>
+      families
+        .map((family) => {
+          const counts = family.operations.reduce<Record<string, number>>(
+            (result, operation) => {
+              Object.entries(operation.levels).forEach(([level, count]) => {
+                result[level] = (result[level] || 0) + count;
+              });
+              return result;
+            },
+            { "1": 0, "2": 0, "3": 0, "4": 0 },
+          );
+          const covered = family.operations.filter(
+            (operation) => operation.capable > 0,
+          ).length;
+          return {
+            family,
+            counts,
+            covered,
+            fragile: [...family.operations]
+              .sort((a, b) => a.capable - b.capable)
+              .slice(0, 2),
+          };
+        })
+        .sort(
+          (a, b) =>
+            (b.family.operations.length
+              ? b.covered / b.family.operations.length
+              : Number.NEGATIVE_INFINITY) -
+            (a.family.operations.length
+              ? a.covered / a.family.operations.length
+              : Number.NEGATIVE_INFINITY),
+        ),
+    [families],
+  );
+  return (
+    <div className="rounded-sm border border-gray-200 bg-white shadow-sm">
+      <div className="relative flex items-start justify-between border-b border-gray-200 p-5">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">
+            Cobertura Geral — Nível de Proficiência
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Por família: cobertura das operações e distribuição dos níveis de
+            proficiência dos operadores.
+          </p>
+        </div>
+        <div className="relative">
+          <button
+            type="button"
+            title="O que significam os níveis?"
+            aria-label="Informação sobre níveis de proficiência"
+            onClick={() => setShowLevelsInfo((current) => !current)}
+            className="rounded-full border border-gray-300 p-1.5 text-gray-500 transition-colors hover:border-gray-500 hover:bg-gray-50 hover:text-gray-800"
+          >
+            <Info className="h-4 w-4" />
+          </button>
+          {showLevelsInfo && (
+            <div className="absolute right-0 top-9 z-30 w-[680px] max-w-[calc(100vw-2rem)] rounded-sm border border-gray-200 bg-white p-4 text-xs shadow-xl">
+              {" "}
+              <div className="mb-5 text-base font-bold text-gray-900">
+                Matriz Polivalência × OEE
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="min-w-[180px] px-2 pb-3 text-left font-semibold text-gray-800">
+                        <div>Cobertura da gama</div>
+                        <div>(% de operações)</div>
+                      </th>
+
+                      <th className="min-w-[120px] px-2 pb-3 text-left font-semibold text-gray-800">
+                        Avg OLE &lt; 50%
+                      </th>
+
+                      <th className="min-w-[120px] px-2 pb-3 text-left font-semibold text-gray-800">
+                        Avg OLE 50–70%
+                      </th>
+
+                      <th className="min-w-[120px] px-2 pb-3 text-left font-semibold text-gray-800">
+                        Avg OLE 70–85%
+                      </th>
+
+                      <th className="min-w-[120px] px-2 pb-3 text-left font-semibold text-gray-800">
+                        Avg OLE ≥ 85%
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {proficiencyMatrix.map((row) => (
+                      <tr
+                        key={row.coverage}
+                        className="border-b border-gray-100"
+                      >
+                        <td className="px-2 py-3 font-semibold text-gray-800">
+                          {row.coverage}
+                        </td>
+
+                        {row.levels.map((level, index) => (
+                          <td
+                            key={`${row.coverage}-${index}`}
+                            className="px-2 py-3"
+                          >
+                            <div className="flex items-center gap-2 whitespace-nowrap">
+                              <span
+                                className="h-4 w-4 shrink-0 rounded-full"
+                                style={{
+                                  backgroundColor:
+                                    proficiencyLevelColors[level],
+                                }}
+                              />
+
+                              <span className="font-medium text-gray-800">
+                                Nível {level}
+                              </span>
+                            </div>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-6">
+                <div className="mb-3 text-base font-bold text-gray-900">
+                  Interpretação dos 4 níveis
+                </div>
+
+                <ul className="space-y-3 pl-5 text-sm text-gray-800">
+                  <li className="list-disc">
+                    <strong>Nível 1 — Baixa polivalência:</strong> conhece uma
+                    parte limitada da gama e/ou apresenta desempenho
+                    insuficiente.
+                  </li>
+
+                  <li className="list-disc">
+                    <strong>Nível 2 — Polivalente:</strong> já consegue
+                    trabalhar em várias operações, mas ainda existem limitações
+                    de gama ou desempenho.
+                  </li>
+
+                  <li className="list-disc">
+                    <strong>Nível 3 — Multifuncional:</strong> domina uma parte
+                    significativa da gama e apresenta desempenho consistente.
+                  </li>
+
+                  <li className="list-disc">
+                    <strong>Nível 4 — Alta polivalência:</strong> combina alta
+                    polivalência com alto desempenho.
+                  </li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      {error && (
+        <div className="m-5 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {error}
+        </div>
+      )}
+      {loading ? (
+        <div className="p-8 text-center text-sm text-gray-500">
+          A carregar cobertura geral...
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
+            {cards.map(({ family, counts, covered, fragile }) => (
+              <div
+                key={family.id}
+                className="rounded-sm border border-gray-200 bg-gray-50/60 p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-gray-800">
+                    {family.name}
+                  </h3>
+                  <span className="text-[10px] text-gray-500">
+                    {family.operations.length} operações
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between text-[10px] text-gray-500">
+                      <span>Operações com ≥1 operador capaz</span>
+                      <strong className="text-sm text-slate-700">
+                        {covered}/{family.operations.length}
+                      </strong>
+                    </div>
+                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className="h-full rounded-full bg-slate-500"
+                        style={{
+                          width: `${family.operations.length ? (covered / family.operations.length) * 100 : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center gap-4">
+                  <Donut counts={counts} />
+                  <div className="space-y-1 text-[10px] text-gray-600">
+                    {["1", "2", "3", "4"].map((level) => (
+                      <div key={level} className="flex items-center gap-2">
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: levelColors[level] }}
+                        />
+                        Nível {level}
+                        <strong className="ml-auto pl-3 text-gray-800">
+                          {counts[level]}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-4 border-t border-dashed border-gray-300 pt-3">
+                  <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                    Operações mais frágeis
+                  </div>
+                  {fragile.length ? (
+                    fragile.map((operation) => (
+                      <div
+                        key={operation.id}
+                        className="flex items-center justify-between gap-3 py-1 text-xs"
+                      >
+                        <span
+                          className="truncate text-gray-700"
+                          title={`${operation.id} - ${operation.name}`}
+                        >
+                          {operation.id} - {operation.name}
+                        </span>
+                        <span className="shrink-0 font-semibold text-slate-600">
+                          {operation.capable} capazes
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-gray-400">N/D</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-gray-200 px-5 py-4 text-[10px] text-gray-600">
+            {[
+              "1 — não sabe fazer (0–30%)",
+              "2 — elementar (30–50%)",
+              "3 — independente (50–80%)",
+              "4 — experiente (80–100%)",
+            ].map((label, index) => (
+              <span key={label} className="flex items-center gap-2">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: levelColors[String(index + 1)] }}
+                />
+                {label}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }

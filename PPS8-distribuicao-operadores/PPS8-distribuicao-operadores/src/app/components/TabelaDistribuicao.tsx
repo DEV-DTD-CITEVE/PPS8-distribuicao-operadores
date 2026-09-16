@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { ResultadosBalanceamento, DistribuicaoCarga, OperationAllocation, OperatorSlot } from "../types";
 import { Button } from "./ui/button";
-import { Pencil, UserPlus } from "lucide-react";
+import { AlertTriangle, Calculator, Pencil, UserPlus } from "lucide-react";
+
 
 interface TabelaDistribuicaoProps {
   resultados: ResultadosBalanceamento;
@@ -14,15 +15,24 @@ interface TabelaDistribuicaoProps {
   viewMode?: "tempo" | "percentagem" | "ole";
   onViewModeChange?: (mode: "tempo" | "percentagem" | "ole") => void;
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
+  onCalcularBalanceamento?: () => Promise<void>;
   onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
   isGuardandoHistorico?: boolean;
   onAtribuirColuna?: (operatorCode: string) => Promise<void>;
   isIdealSemOle?: boolean;
+  criticidadeAlterada?: boolean;
+
+  // NOVO
+  onToggleCritica?: (
+    operationCode: string,
+    isCritical: boolean
+  ) => Promise<void>;
 }
 
 export type OperationAllocationRow = OperationAllocation & {
   operator_allocations?: Array<Record<string, unknown>>;
+  is_critical?: boolean;
 };
 
 export type OperatorColumn = {
@@ -666,19 +676,22 @@ const buildRowsFromDistribuicao = (
     const splitCount = Object.keys(operatorTimes).length;
 
     return {
-      seq: parseNumberLike(op?.sequencia) ?? index + 1,
-      operation_id: opId,
-      operation_code: opId,
-      operation_name: String(op?.nome || ""),
-      machine_type: String(op?.tipoMaquina || ""),
-      total_time_seconds: totalTimeSeconds,
-      allocated_time_seconds: allocatedTimeSeconds,
-      remaining_time_seconds: Math.max(0, totalTimeSeconds - allocatedTimeSeconds),
-      split_count: splitCount,
-      is_split: splitCount > 1,
-      operator_times: operatorTimes,
-      operator_positions: {},
-    };
+  seq: parseNumberLike(op?.sequencia) ?? index + 1,
+  operation_id: opId,
+  operation_code: opId,
+  operation_name: String(op?.nome || ""),
+  machine_type: String(op?.tipoMaquina || ""),
+
+  is_critical: Boolean(op?.is_critical ?? op?.critica ?? false),
+
+  total_time_seconds: totalTimeSeconds,
+  allocated_time_seconds: allocatedTimeSeconds,
+  remaining_time_seconds: Math.max(0, totalTimeSeconds - allocatedTimeSeconds),
+  split_count: splitCount,
+  is_split: splitCount > 1,
+  operator_times: operatorTimes,
+  operator_positions: {},
+};
   });
 };
 
@@ -691,10 +704,13 @@ function TabelaAllocacoes({
   onViewModeChange,
   onConfirmarEdicao,
   onGuardarHistorico,
+  onCalcularBalanceamento,
   isAjustando = false,
+  criticidadeAlterada = false,
   isGuardandoHistorico = false,
   onAtribuirColuna,
   isIdealSemOle = false,
+  onToggleCritica,
 }: {
   resultados: ResultadosBalanceamento;
   operadores: any[];
@@ -705,15 +721,56 @@ function TabelaAllocacoes({
   onConfirmarEdicao?: (editedRows: OperationAllocationRow[]) => Promise<void>;
   onGuardarHistorico?: () => Promise<void>;
   isAjustando?: boolean;
+  criticidadeAlterada?: boolean;
   isGuardandoHistorico?: boolean;
   onAtribuirColuna?: (operatorCode: string) => Promise<void>;
   isIdealSemOle?: boolean;
+  onCalcularBalanceamento?: () => Promise<void>;
+  // NOVO
+  onToggleCritica?: (
+    operationCode: string,
+    isCritical: boolean
+  ) => Promise<void>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [criticalSavingCode, setCriticalSavingCode] = useState<string | null>(
+  null
+);
   const [activeCell, setActiveCell] = useState<{ rowIndex: number; columnKey: string } | null>(null);
   const [activeCellValue, setActiveCellValue] = useState<string>("");
   const [activeCellInitialDisplay, setActiveCellInitialDisplay] = useState<string>("");
+  const handleToggleCritical = async (
+  row: OperationAllocationRow
+) => {
+  if (!onToggleCritica) return;
+
+  const operationCode = String(
+    row.operation_code || row.operation_id || ""
+  ).trim();
+
+  if (!operationCode) return;
+
+  if (criticalSavingCode) return;
+
+  const nextCriticalValue = !Boolean(row.is_critical);
+
+  setCriticalSavingCode(operationCode);
+
+  try {
+    await onToggleCritica(
+      operationCode,
+      nextCriticalValue
+    );
+  } catch (error) {
+    console.error(
+      "Erro ao alterar estado crítico da operação:",
+      error
+    );
+  } finally {
+    setCriticalSavingCode(null);
+  }
+};
   const baseRows = useMemo<OperationAllocationRow[]>(
     () => {
       const apiRows = (resultados.operation_allocations || []) as OperationAllocationRow[];
@@ -999,11 +1056,36 @@ function TabelaAllocacoes({
           ].map((item, index) => (
             <div key={index} className="flex items-center gap-1.5">
               <span className="text-[11px] text-gray-400">{item.label}</span>
-              <span className="text-[11px] font-semibold text-gray-700 font-mono">{item.value}</span>
+              <span className="text-[11px] font-semibold text-gray-700 font-mono">
+                {item.value}
+              </span>
             </div>
           ))}
         </div>
         <div className="flex items-center gap-2">
+          {onCalcularBalanceamento ? (
+            <Button
+              type="button"
+              size="sm"
+              className={`h-6 px-2 text-[10px] font-semibold rounded-sm uppercase tracking-wide transition-colors ${
+                criticidadeAlterada
+                  ? "bg-blue-500 text-white hover:bg-blue-600"
+                  : "bg-gray-200 text-gray-400 cursor-not-allowed hover:bg-gray-200"
+              }`}
+              onClick={async () => {
+                await onCalcularBalanceamento();
+              }}
+              disabled={
+                !criticidadeAlterada ||
+                isSaving ||
+                isAjustando ||
+                isGuardandoHistorico
+              }
+            >
+              <Calculator className="w-3 h-3 mr-1" />
+              Recalcular Balanceamento
+            </Button>
+          ) : null}
           {onGuardarHistorico ? (
             <Button
               type="button"
@@ -1056,19 +1138,21 @@ function TabelaAllocacoes({
                   variant="outline"
                   size="sm"
                   className="h-6 px-2 text-[10px]"
-                onClick={() => {
-                  setDraftRows(baseRows);
-                  setIsEditing(false);
-                  setActiveCell(null);
-                  setActiveCellValue("");
-                  setActiveCellInitialDisplay("");
-                }}
+                  onClick={() => {
+                    setDraftRows(baseRows);
+                    setIsEditing(false);
+                    setActiveCell(null);
+                    setActiveCellValue("");
+                    setActiveCellInitialDisplay("");
+                  }}
                   disabled={isSaving || isAjustando}
                 >
                   Cancelar
                 </Button>
                 {(isSaving || isAjustando) && (
-                  <span className="text-[10px] text-gray-400 shrink-0">A ajustar...</span>
+                  <span className="text-[10px] text-gray-400 shrink-0">
+                    A ajustar...
+                  </span>
                 )}
               </>
             ) : (
@@ -1091,22 +1175,28 @@ function TabelaAllocacoes({
             )
           ) : null}
           {isEditing && !isSaving && !isAjustando ? (
-            <span className="text-[10px] text-gray-400 shrink-0">Enter ou clicar fora para confirmar</span>
+            <span className="text-[10px] text-gray-400 shrink-0">
+              Enter ou clicar fora para confirmar
+            </span>
           ) : null}
         </div>
       </div>
 
-      <div className="border border-gray-200 rounded-sm overflow-x-auto overflow-y-auto bg-white" style={{ maxHeight: "calc(100vh - 290px)", width: "100%" }}>
+      <div
+        className="border border-gray-200 rounded-sm overflow-x-auto overflow-y-auto bg-white"
+        style={{ maxHeight: "calc(100vh - 290px)", width: "100%" }}
+      >
         <table
           style={{
             width: "max-content",
             tableLayout: "fixed",
             borderCollapse: "collapse",
-            minWidth: `max(100%, ${530 + operatorColumns.length * operatorColumnWidth}px)`,
+            minWidth: `max(100%, ${620 + operatorColumns.length * operatorColumnWidth}px)`,
           }}
         >
           <colgroup>
             <col style={{ width: 60 }} />
+            <col style={{ width: 90 }} />
             <col style={{ width: 110 }} />
             <col style={{ width: 140 }} />
             <col style={{ width: 220 }} />
@@ -1119,15 +1209,30 @@ function TabelaAllocacoes({
           <thead style={{ position: "sticky", top: 0, zIndex: 30 }}>
             <tr style={{ height: 52 }}>
               <th style={thBase({ textAlign: "center" })}>SEQ</th>
+              <th style={thBase({ textAlign: "center" })}>Crítica</th>
               <th style={thBase({ textAlign: "center" })}>ID Operação</th>
               <th style={thBase()}>Operação</th>
               <th style={thBase()}>Máquina</th>
               <th style={thBase({ textAlign: "center" })}>Total (s)</th>
               {operatorColumns.map((column) => (
-                <th key={column.key} style={thBase({ textAlign: "center", minHeight: 52, paddingTop: 4, paddingBottom: 4 })} title={column.label}>
+                <th
+                  key={column.key}
+                  style={thBase({
+                    textAlign: "center",
+                    minHeight: 52,
+                    paddingTop: 4,
+                    paddingBottom: 4,
+                  })}
+                  title={column.label}
+                >
                   <div className="flex flex-col items-center leading-tight">
                     <div className="flex items-center justify-center gap-1">
-                      <span className="truncate" style={{ maxWidth: Math.max(44, operatorColumnWidth - 30) }}>
+                      <span
+                        className="truncate"
+                        style={{
+                          maxWidth: Math.max(44, operatorColumnWidth - 30),
+                        }}
+                      >
                         {column.code}
                       </span>
                       {isIdealSemOle && onAtribuirColuna ? (
@@ -1136,17 +1241,38 @@ function TabelaAllocacoes({
                           variant="ghost"
                           size="sm"
                           className="h-5 w-5 shrink-0 p-0 text-gray-500 hover:bg-gray-100 hover:text-blue-600"
-                          title={column.code.toUpperCase().startsWith("VIRT") ? "Atribuir colaborador" : "Alterar atribuição"}
-                          aria-label={column.code.toUpperCase().startsWith("VIRT") ? "Atribuir colaborador" : "Alterar atribuição"}
+                          title={
+                            column.code.toUpperCase().startsWith("VIRT")
+                              ? "Atribuir colaborador"
+                              : "Alterar atribuição"
+                          }
+                          aria-label={
+                            column.code.toUpperCase().startsWith("VIRT")
+                              ? "Atribuir colaborador"
+                              : "Alterar atribuição"
+                          }
                           onClick={() => void onAtribuirColuna(column.code)}
                         >
-                          {column.code.toUpperCase().startsWith("VIRT") || isIdealSemOle ? <UserPlus className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                          {column.code.toUpperCase().startsWith("VIRT") ||
+                          isIdealSemOle ? (
+                            <UserPlus className="h-3.5 w-3.5" />
+                          ) : (
+                            <Pencil className="h-3.5 w-3.5" />
+                          )}
                         </Button>
                       ) : null}
                     </div>
-                    {column.positionLabel || column.positionSide || column.positionNumber != null ? (
+                    {column.positionLabel ||
+                    column.positionSide ||
+                    column.positionNumber != null ? (
                       <span className="text-[9px] font-normal text-gray-400">
-                        {[column.positionSide, column.positionLabel, column.positionNumber != null ? String(column.positionNumber) : ""]
+                        {[
+                          column.positionSide,
+                          column.positionLabel,
+                          column.positionNumber != null
+                            ? String(column.positionNumber)
+                            : "",
+                        ]
                           .filter(Boolean)
                           .join(" ")}
                       </span>
@@ -1159,31 +1285,117 @@ function TabelaAllocacoes({
 
           <tbody>
             {rows.map((row, index) => {
-              const bg = index % 2 === 0 ? "#ffffff" : "#fafafa";
+              const isCritical = Boolean(row.is_critical);
+              const bg = isCritical
+                ? "#fff1e6"
+                : index % 2 === 0
+                  ? "#ffffff"
+                  : "#fafafa";
               const seq = row.seq ?? index + 1;
               const operationLabel = resolveOperationLabel(row, operacoes);
               const machineLabel = row.machine_type || "-";
 
               return (
-                <tr key={`${row.operation_code || row.operation_id || seq}-${index}`} style={{ height: 26 }}>
-                  <td style={tdBase(bg, { textAlign: "center", fontFamily: "monospace", fontWeight: 600 })}>{String(seq)}</td>
+                <tr
+                  key={`${row.operation_code || row.operation_id || seq}-${index}`}
+                  style={{ height: 26 }}
+                >
                   <td
-                    style={tdBase(bg, { textAlign: "center", fontFamily: "monospace", fontWeight: 600, color: "#4b5563" })}
-                    title={String(row.operation_code || row.operation_id || "-")}
+                    style={tdBase(bg, {
+                      textAlign: "center",
+                      fontFamily: "monospace",
+                      fontWeight: 600,
+                    })}
+                  >
+                    {String(seq)}
+                  </td>
+                  <td
+                    style={tdBase(bg, {
+                      textAlign: "center",
+                      overflow: "visible",
+                    })}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleCritical(row)}
+                      disabled={
+                        !onToggleCritica ||
+                        isAjustando ||
+                        isSaving ||
+                        criticalSavingCode ===
+                          String(row.operation_code || row.operation_id || "")
+                      }
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-xs font-medium transition-colors ${
+                        isCritical
+                          ? "bg-orange-200 text-orange-800 border border-orange-300"
+                          : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+                      } ${
+                        criticalSavingCode ===
+                        String(row.operation_code || row.operation_id || "")
+                          ? "opacity-50 cursor-wait"
+                          : ""
+                      }`}
+                      title={
+                        isCritical
+                          ? "Remover marcação crítica"
+                          : "Marcar como crítica"
+                      }
+                      aria-pressed={isCritical}
+                    >
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+
+                      {isCritical ? "Sim" : "Não"}
+                    </button>
+                  </td>
+                  <td
+                    style={tdBase(bg, {
+                      textAlign: "center",
+                      fontFamily: "monospace",
+                      fontWeight: 600,
+                      color: "#4b5563",
+                    })}
+                    title={String(
+                      row.operation_code || row.operation_id || "-",
+                    )}
                   >
                     {String(row.operation_code || row.operation_id || "-")}
                   </td>
-                  <td style={tdBase(bg, { fontWeight: 600 })} title={operationLabel}>
-                    {operationLabel}
+                  <td
+                    style={tdBase(bg, { fontWeight: 600 })}
+                    title={operationLabel}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="truncate">{operationLabel}</span>
+
+                      {isCritical && (
+                        <span className="inline-flex shrink-0 items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-orange-200 text-orange-800 border border-orange-300">
+                          CRÍTICA
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td style={tdBase(bg, { color: "#6b7280" })} title={machineLabel}>
+                  <td
+                    style={tdBase(bg, { color: "#6b7280" })}
+                    title={machineLabel}
+                  >
                     {machineLabel}
                   </td>
-                  <td style={tdBase(bg, { textAlign: "center", fontFamily: "monospace", fontWeight: 700, color: "#2563eb" })}>
+                  <td
+                    style={tdBase(bg, {
+                      textAlign: "center",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                      color: "#2563eb",
+                    })}
+                  >
                     {formatDisplayDecimal(row.total_time_seconds)}
                   </td>
                   {operatorColumns.map((column) => {
-                    const olePercentage = getOperatorPercentage(row, column, cycleTimeSeconds);
+                    const olePercentage = getOperatorPercentage(
+                      row,
+                      column,
+                      cycleTimeSeconds,
+                    );
                     const value =
                       viewMode === "ole"
                         ? getDisplayedOleValue(row, column)
@@ -1198,43 +1410,71 @@ function TabelaAllocacoes({
                           textAlign: "center",
                           fontFamily: "monospace",
                           fontWeight: 600,
-                          color: editable ? getMetricColor(value) : getMetricColor(value),
+                          color: editable
+                            ? getMetricColor(value)
+                            : getMetricColor(value),
                         })}
-                        title={olePercentage != null ? `Percentagem OLE: ${formatDisplayDecimal(olePercentage)}%` : undefined}
-                        onDoubleClick={() => startEditFromCell(index, column.key, value)}
+                        title={
+                          olePercentage != null
+                            ? `Percentagem OLE: ${formatDisplayDecimal(olePercentage)}%`
+                            : undefined
+                        }
+                        onDoubleClick={() =>
+                          startEditFromCell(index, column.key, value)
+                        }
                       >
                         {editable ? (
                           <input
-                            autoFocus={activeCell?.rowIndex === index && activeCell?.columnKey === column.key}
+                            autoFocus={
+                              activeCell?.rowIndex === index &&
+                              activeCell?.columnKey === column.key
+                            }
                             type="text"
                             inputMode="decimal"
                             value={
-                              activeCell?.rowIndex === index && activeCell?.columnKey === column.key
+                              activeCell?.rowIndex === index &&
+                              activeCell?.columnKey === column.key
                                 ? activeCellValue
                                 : value == null
                                   ? ""
                                   : formatDisplayDecimal(value)
                             }
                             onFocus={() => {
-                              const displayValue = value == null ? "" : formatDisplayDecimal(value);
-                              setActiveCell({ rowIndex: index, columnKey: column.key });
+                              const displayValue =
+                                value == null
+                                  ? ""
+                                  : formatDisplayDecimal(value);
+                              setActiveCell({
+                                rowIndex: index,
+                                columnKey: column.key,
+                              });
                               setActiveCellValue(displayValue);
                               setActiveCellInitialDisplay(displayValue);
                             }}
                             onChange={(e) => {
-                              setActiveCellValue(e.currentTarget.value.replace(",", "."));
+                              setActiveCellValue(
+                                e.currentTarget.value.replace(",", "."),
+                              );
                             }}
                             onBlur={(e) => {
                               setActiveCell(null);
-                              const normalizedInput = e.currentTarget.value.replace(",", ".").trim();
-                              const normalizedInitial = activeCellInitialDisplay.replace(",", ".").trim();
+                              const normalizedInput = e.currentTarget.value
+                                .replace(",", ".")
+                                .trim();
+                              const normalizedInitial = activeCellInitialDisplay
+                                .replace(",", ".")
+                                .trim();
                               if (normalizedInput === normalizedInitial) {
                                 setDraftRows(baseRows);
                                 setIsEditing(false);
                                 setActiveCellInitialDisplay("");
                                 return;
                               }
-                              const newRows = commitCellValue(index, column, e.currentTarget.value);
+                              const newRows = commitCellValue(
+                                index,
+                                column,
+                                e.currentTarget.value,
+                              );
                               setActiveCellInitialDisplay("");
                               void confirmarEdicao(newRows);
                             }}
@@ -1257,12 +1497,54 @@ function TabelaAllocacoes({
           </tbody>
 
           <tfoot style={{ position: "sticky", bottom: 0, zIndex: 20 }}>
-            <tr style={{ height: 30, background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
-              <td style={tdBase("#f9fafb", { textAlign: "center", color: "#9ca3af", fontSize: 10, fontWeight: 700 })}>S</td>
-              <td style={tdBase("#f9fafb", { color: "#6b7280", fontSize: 10, fontWeight: 600 })}>Total</td>
+            <tr
+              style={{
+                height: 30,
+                background: "#f9fafb",
+                borderTop: "2px solid #e5e7eb",
+              }}
+            >
+              {/* SEQ */}
+              <td
+                style={tdBase("#f9fafb", {
+                  textAlign: "center",
+                  color: "#9ca3af",
+                  fontSize: 10,
+                  fontWeight: 700,
+                })}
+              >
+                S
+              </td>
+
+              {/* CRÍTICA */}
               <td style={tdBase("#f9fafb")} />
+
+              {/* ID OPERAÇÃO */}
+              <td
+                style={tdBase("#f9fafb", {
+                  color: "#6b7280",
+                  fontSize: 10,
+                  fontWeight: 600,
+                })}
+              >
+                Total
+              </td>
+
+              {/* OPERAÇÃO */}
               <td style={tdBase("#f9fafb")} />
-              <td style={tdBase("#f9fafb", { textAlign: "center", fontFamily: "monospace", fontWeight: 700, color: "#2563eb" })}>
+
+              {/* MÁQUINA */}
+              <td style={tdBase("#f9fafb")} />
+
+              {/* TOTAL */}
+              <td
+                style={tdBase("#f9fafb", {
+                  textAlign: "center",
+                  fontFamily: "monospace",
+                  fontWeight: 700,
+                  color: "#2563eb",
+                })}
+              >
                 {formatDisplayDecimal(totalTime)}
               </td>
               {operatorColumns.map((column) => (
@@ -1273,16 +1555,17 @@ function TabelaAllocacoes({
                     fontFamily: "monospace",
                     fontWeight: 700,
                     color:
-                      (viewMode === "percentagem" || viewMode === "ole") && (totalsByOperatorPercent[column.key] ?? 0) > 100
+                      (viewMode === "percentagem" || viewMode === "ole") &&
+                      (totalsByOperatorPercent[column.key] ?? 0) > 100
                         ? "#dc2626"
                         : "#2563eb",
                   })}
                 >
-                    {viewMode === "percentagem"
-                      ? formatMetric(totalsByOperatorPercent[column.key] ?? 0)
-                      : viewMode === "ole"
-                        ? "-"
-                        : formatDisplayDecimal(totalsByOperator[column.key] ?? 0)}
+                  {viewMode === "percentagem"
+                    ? formatMetric(totalsByOperatorPercent[column.key] ?? 0)
+                    : viewMode === "ole"
+                      ? "-"
+                      : formatDisplayDecimal(totalsByOperator[column.key] ?? 0)}
                 </td>
               ))}
             </tr>
@@ -1302,10 +1585,13 @@ export function TabelaDistribuicao({
   onViewModeChange,
   onConfirmarEdicao,
   onGuardarHistorico,
+  onCalcularBalanceamento,
   isAjustando = false,
+    criticidadeAlterada = false,
   isGuardandoHistorico = false,
   onAtribuirColuna,
   isIdealSemOle = false,
+  onToggleCritica,
 }: TabelaDistribuicaoProps) {
   return (
     <TabelaAllocacoes
@@ -1317,10 +1603,14 @@ export function TabelaDistribuicao({
       onViewModeChange={onViewModeChange}
       onConfirmarEdicao={onConfirmarEdicao}
       onGuardarHistorico={onGuardarHistorico}
+      onCalcularBalanceamento={onCalcularBalanceamento}
       isAjustando={isAjustando}
       isGuardandoHistorico={isGuardandoHistorico}
       onAtribuirColuna={onAtribuirColuna}
       isIdealSemOle={isIdealSemOle}
+      onToggleCritica={onToggleCritica}
+    criticidadeAlterada={criticidadeAlterada}
+
     />
   );
 }

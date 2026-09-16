@@ -10,12 +10,20 @@ interface DashboardResultadosProps {
   operadores: any[];
   operacoes: any[];
   config: ConfiguracaoDistribuicao;
-  onRecalcular: (novosResultados: ResultadosBalanceamento, novaConfig: ConfiguracaoDistribuicao) => void;
+  criticidadeAlterada?: boolean;
+  
+
+  onRecalcular: (
+    novosResultados: ResultadosBalanceamento,
+    novaConfig: ConfiguracaoDistribuicao
+  ) => void;
+
   onDistribuicaoChange?: (novaDistribuicao: DistribuicaoCarga[]) => void;
   viewMode?: "tempo" | "percentagem" | "ole";
   onViewModeChange?: (mode: "tempo" | "percentagem" | "ole") => void;
   onConfirmarEdicao?: (editedRows: any[]) => Promise<void>;
   onGuardarHistorico?: () => Promise<void>;
+  onCalcularBalanceamento?: () => Promise<void>;
   isAjustando?: boolean;
   isGuardandoHistorico?: boolean;
   showOccupacaoCard?: boolean;
@@ -26,6 +34,12 @@ interface DashboardResultadosProps {
   taskCode?: string;
   ocupacaoView?: "pilhas" | "waterfall";
   onOcupacaoViewChange?: (view: "pilhas" | "waterfall") => void;
+
+  // NOVO
+  onToggleCritica?: (
+    operationCode: string,
+    isCritical: boolean
+  ) => Promise<void>;
 }
 
 type WaterfallOperatorMetric = {
@@ -223,6 +237,8 @@ export function DashboardResultados({
   onViewModeChange,
   onConfirmarEdicao,
   onGuardarHistorico,
+    onCalcularBalanceamento,
+
   isAjustando = false,
   isGuardandoHistorico = false,
   showOccupacaoCard = true,
@@ -233,6 +249,10 @@ export function DashboardResultados({
   taskCode = "",
   ocupacaoView: ocupacaoViewProp,
   onOcupacaoViewChange,
+
+  // NOVO
+  onToggleCritica,
+    criticidadeAlterada = false,
 }: DashboardResultadosProps) {
   const [operadorDetalheAberto, setOperadorDetalheAberto] = useState<{
     codigo: string;
@@ -715,202 +735,336 @@ export function DashboardResultados({
     <div className="flex min-w-0 flex-col gap-4 items-start w-full">
       {showOccupacaoCard && (
         <div className="bg-white content-stretch flex flex-col gap-8 items-center pb-[28px] pt-px px-px relative rounded-[6px] w-full min-w-0">
-        <div aria-hidden="true" className="absolute border border-[#e5e7eb] border-solid inset-0 pointer-events-none rounded-[6px] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_0px_rgba(0,0,0,0.1)]" />
+          <div
+            aria-hidden="true"
+            className="absolute border border-[#e5e7eb] border-solid inset-0 pointer-events-none rounded-[6px] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_0px_rgba(0,0,0,0.1)]"
+          />
 
-        <div className="relative shrink-0 w-full">
-          <div aria-hidden="true" className="absolute border-[#e5e7eb] border-b border-solid inset-0 pointer-events-none" />
-          <div className="content-stretch flex flex-col gap-[4px] items-start p-[26px] relative w-full">
-            <div className="flex min-h-[24px] items-center justify-between gap-3 relative shrink-0 w-full">
-              <p className="font-['Inter:Semi_Bold',sans-serif] text-[14px] font-semibold leading-[20px] tracking-[-0.1px] text-[#101828] whitespace-nowrap">
-                {ocupacaoView === "waterfall"
-                  ? `Ocupação por Trabalhador — Waterfall por Estação${taskCode ? ` — ${taskCode}` : ""}`
-                  : "Ocupação por Trabalhador"}
-              </p>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setOcupacaoView("pilhas")} className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "pilhas" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Teórico</button>
-                <button type="button" onClick={() => setOcupacaoView("waterfall")} className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "waterfall" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>Real</button>
+          <div className="relative shrink-0 w-full">
+            <div
+              aria-hidden="true"
+              className="absolute border-[#e5e7eb] border-b border-solid inset-0 pointer-events-none"
+            />
+            <div className="content-stretch flex flex-col gap-[4px] items-start p-[26px] relative w-full">
+              <div className="flex min-h-[24px] items-center justify-between gap-3 relative shrink-0 w-full">
+                <p className="font-['Inter:Semi_Bold',sans-serif] text-[14px] font-semibold leading-[20px] tracking-[-0.1px] text-[#101828] whitespace-nowrap">
+                  {ocupacaoView === "waterfall"
+                    ? `Ocupação por Trabalhador — Waterfall por Estação${taskCode ? ` — ${taskCode}` : ""}`
+                    : "Ocupação por Trabalhador"}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOcupacaoView("pilhas")}
+                    className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "pilhas" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  >
+                    Teórico
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOcupacaoView("waterfall")}
+                    className={`h-8 rounded-sm border px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors ${ocupacaoView === "waterfall" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                  >
+                    Real
+                  </button>
+                </div>
+              </div>
+              <div className="content-stretch flex h-[18px] items-start relative shrink-0 w-full">
+                <p className="flex-[1_0_0] font-['Inter:Regular',sans-serif] text-[12px] font-normal leading-[16px] min-h-px min-w-px text-[#717182]">
+                  {ocupacaoView === "waterfall"
+                    ? "Estações/operações atribuídas a cada trabalhador, na sequência da linha"
+                    : "Percentagem de carga horaria atribuida"}
+                </p>
               </div>
             </div>
-            <div className="content-stretch flex h-[18px] items-start relative shrink-0 w-full">
-              <p className="flex-[1_0_0] font-['Inter:Regular',sans-serif] text-[12px] font-normal leading-[16px] min-h-px min-w-px text-[#717182]">
-                {ocupacaoView === "waterfall" ? "Estações/operações atribuídas a cada trabalhador, na sequência da linha" : "Percentagem de carga horaria atribuida"}
-              </p>
-            </div>
           </div>
-        </div>
 
-        {ocupacaoView === "pilhas" && false ? <div className="relative min-h-[440px] shrink-0 w-full overflow-x-auto">
-          <div className="content-stretch flex h-full gap-4 items-center justify-center px-5 py-3 md:px-6 min-w-full w-full relative">
-            {dadosCarga.map((d) => {
-              const cappedOccupancy = Math.min(d.ocupacao, 100);
-              const fillHeight = (cappedOccupancy / 100) * BATTERY_TOTAL_HEIGHT;
-              const fillMT = BATTERY_START_MT + (BATTERY_TOTAL_HEIGHT - fillHeight);
-              const color = getBatteryColor(d.ocupacao);
-              const fillPath = generateFillPath(fillHeight);
-              const maxVisibleOperations = 8;
-              const shouldCollapseOperations = d.operacoesAtribuidas.length > maxVisibleOperations;
-              const operationLabels = shouldCollapseOperations
-                ? d.operacoesAtribuidas.slice(0, maxVisibleOperations - 1)
-                : d.operacoesAtribuidas;
-              const batteryInnerTop = 18;
-              const batteryInnerBottom = 176;
-              const batteryInnerHeight = batteryInnerBottom - batteryInnerTop;
-              const fillStart = batteryInnerBottom - fillHeight;
-              const segmentHeight = operationLabels.length > 0 ? batteryInnerHeight / operationLabels.length : 0;
-              const operationSegments = operationLabels.map((label, idx) => ({
-                label,
-                top: batteryInnerBottom - segmentHeight * (idx + 1),
-                height: segmentHeight,
-              }));
-              const deltaSeconds = referenceSeconds > 0 ? d.totalTimeSeconds - referenceSeconds : 0;
-              const deltaLabel = d.ocupacao > 100
-                ? `+${Math.max(0, deltaSeconds).toFixed(1)}s`
-                : d.ocupacao < 100 && deltaSeconds < -0.05
-                  ? `${deltaSeconds.toFixed(1)}s`
-                  : "";
-              const separatorTops =
-                operationLabels.length <= 1
-                  ? []
-                  : operationLabels.slice(0, -1).map((_, idx) => {
-                      return batteryInnerBottom - segmentHeight * (idx + 1);
-                    });
+          {ocupacaoView === "pilhas" && false ? (
+            <div className="relative min-h-[440px] shrink-0 w-full overflow-x-auto">
+              <div className="content-stretch flex h-full gap-4 items-center justify-center px-5 py-3 md:px-6 min-w-full w-full relative">
+                {dadosCarga.map((d) => {
+                  const cappedOccupancy = Math.min(d.ocupacao, 100);
+                  const fillHeight =
+                    (cappedOccupancy / 100) * BATTERY_TOTAL_HEIGHT;
+                  const fillMT =
+                    BATTERY_START_MT + (BATTERY_TOTAL_HEIGHT - fillHeight);
+                  const color = getBatteryColor(d.ocupacao);
+                  const fillPath = generateFillPath(fillHeight);
+                  const maxVisibleOperations = 8;
+                  const shouldCollapseOperations =
+                    d.operacoesAtribuidas.length > maxVisibleOperations;
+                  const operationLabels = shouldCollapseOperations
+                    ? d.operacoesAtribuidas.slice(0, maxVisibleOperations - 1)
+                    : d.operacoesAtribuidas;
+                  const batteryInnerTop = 18;
+                  const batteryInnerBottom = 176;
+                  const batteryInnerHeight =
+                    batteryInnerBottom - batteryInnerTop;
+                  const fillStart = batteryInnerBottom - fillHeight;
+                  const segmentHeight =
+                    operationLabels.length > 0
+                      ? batteryInnerHeight / operationLabels.length
+                      : 0;
+                  const operationSegments = operationLabels.map(
+                    (label, idx) => ({
+                      label,
+                      top: batteryInnerBottom - segmentHeight * (idx + 1),
+                      height: segmentHeight,
+                    }),
+                  );
+                  const deltaSeconds =
+                    referenceSeconds > 0
+                      ? d.totalTimeSeconds - referenceSeconds
+                      : 0;
+                  const deltaLabel =
+                    d.ocupacao > 100
+                      ? `+${Math.max(0, deltaSeconds).toFixed(1)}s`
+                      : d.ocupacao < 100 && deltaSeconds < -0.05
+                        ? `${deltaSeconds.toFixed(1)}s`
+                        : "";
+                  const separatorTops =
+                    operationLabels.length <= 1
+                      ? []
+                      : operationLabels.slice(0, -1).map((_, idx) => {
+                          return batteryInnerBottom - segmentHeight * (idx + 1);
+                        });
 
-              return (
-                <div key={d.idx} className="content-stretch flex flex-col gap-2 items-center relative shrink-0 w-[120px] md:w-[128px]">
-                  <div className={`h-5 text-center text-[13px] font-bold leading-5 whitespace-nowrap ${deltaSeconds > 0 ? "text-red-600" : "text-amber-600"}`}>
-                    {deltaLabel}
-                  </div>
-                  <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-                    <div className="col-1 h-[7px] ml-[18px] mt-0 relative row-1 w-[22px]">
-                      <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 17.4545 6.54545">
-                        <path d={svgPaths.p2631fa00} fill="#9CA3AF" />
-                      </svg>
-                    </div>
-
-                  <div className="col-1 h-[198px] ml-0 mt-[6.55px] relative row-1 w-[64px]">
-                    <div className="absolute inset-[-0.47%_-1.87%_-0.47%_-1.88%]">
-                      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 45.2727 176.182">
-                        <path d={svgPaths.p3d6b6400} fill="#F9FAFB" stroke="#D1D5DB" strokeWidth="1.63636" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  {fillHeight > 2 && (
+                  return (
                     <div
-                      className="col-1 ml-[3px] relative row-1 w-[58px]"
-                      style={{ height: `${fillHeight}px`, marginTop: `${fillMT}px` }}
+                      key={d.idx}
+                      className="content-stretch flex flex-col gap-2 items-center relative shrink-0 w-[120px] md:w-[128px]"
                     >
-                      <svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox={`0 0 39.2727 ${fillHeight}`}>
-                        <path d={fillPath} fill={color} />
-                      </svg>
-                    </div>
-                  )}
+                      <div
+                        className={`h-5 text-center text-[13px] font-bold leading-5 whitespace-nowrap ${deltaSeconds > 0 ? "text-red-600" : "text-amber-600"}`}
+                      >
+                        {deltaLabel}
+                      </div>
+                      <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
+                        <div className="col-1 h-[7px] ml-[18px] mt-0 relative row-1 w-[22px]">
+                          <svg
+                            className="absolute block size-full"
+                            fill="none"
+                            preserveAspectRatio="none"
+                            viewBox="0 0 17.4545 6.54545"
+                          >
+                            <path d={svgPaths.p2631fa00} fill="#9CA3AF" />
+                          </svg>
+                        </div>
 
-                  {separatorTops.map((mt, idx) => (
-                    <div key={idx} className="col-1 h-0 ml-[5px] relative row-1 w-[54px]" style={{ marginTop: `${mt}px` }}>
-                      <div className="absolute inset-[-0.27px_0]">
-                        <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 37.0909 0.545455">
-                          <path d="M0 0.272727H37.0909" stroke="#E5E7EB" strokeDasharray="2.18 2.18" strokeWidth="0.545455" />
+                        <div className="col-1 h-[198px] ml-0 mt-[6.55px] relative row-1 w-[64px]">
+                          <div className="absolute inset-[-0.47%_-1.87%_-0.47%_-1.88%]">
+                            <svg
+                              className="block size-full"
+                              fill="none"
+                              preserveAspectRatio="none"
+                              viewBox="0 0 45.2727 176.182"
+                            >
+                              <path
+                                d={svgPaths.p3d6b6400}
+                                fill="#F9FAFB"
+                                stroke="#D1D5DB"
+                                strokeWidth="1.63636"
+                              />
+                            </svg>
+                          </div>
+                        </div>
+
+                        {fillHeight > 2 && (
+                          <div
+                            className="col-1 ml-[3px] relative row-1 w-[58px]"
+                            style={{
+                              height: `${fillHeight}px`,
+                              marginTop: `${fillMT}px`,
+                            }}
+                          >
+                            <svg
+                              className="absolute block size-full"
+                              fill="none"
+                              preserveAspectRatio="none"
+                              viewBox={`0 0 39.2727 ${fillHeight}`}
+                            >
+                              <path d={fillPath} fill={color} />
+                            </svg>
+                          </div>
+                        )}
+
+                        {separatorTops.map((mt, idx) => (
+                          <div
+                            key={idx}
+                            className="col-1 h-0 ml-[5px] relative row-1 w-[54px]"
+                            style={{ marginTop: `${mt}px` }}
+                          >
+                            <div className="absolute inset-[-0.27px_0]">
+                              <svg
+                                className="block size-full"
+                                fill="none"
+                                preserveAspectRatio="none"
+                                viewBox="0 0 37.0909 0.545455"
+                              >
+                                <path
+                                  d="M0 0.272727H37.0909"
+                                  stroke="#E5E7EB"
+                                  strokeDasharray="2.18 2.18"
+                                  strokeWidth="0.545455"
+                                />
+                              </svg>
+                            </div>
+                          </div>
+                        ))}
+
+                        {operationSegments.map((segment, i) => (
+                          <div
+                            key={`${d.idx}-${segment.label}-${i}`}
+                            className="col-1 relative row-1 ml-[5px] w-[54px] flex items-center justify-center"
+                            style={{
+                              marginTop: `${segment.top}px`,
+                              height: `${segment.height}px`,
+                            }}
+                          >
+                            <p
+                              className="font-bold leading-none not-italic text-[13px] text-center whitespace-nowrap"
+                              style={{ color: "#6B7280" }}
+                            >
+                              {segment.label}
+                            </p>
+                          </div>
+                        ))}
+                        {shouldCollapseOperations && (
+                          <button
+                            type="button"
+                            className="col-1 relative row-1 ml-[9px] mt-[8px] rounded-sm bg-white/85 px-1.5 py-[2px] text-[11px] font-semibold text-blue-600 shadow-sm hover:bg-white"
+                            onClick={() =>
+                              setOperadorDetalheAberto({
+                                codigo: d.codigo,
+                                colaboradorLabel: d.colaboradorLabel,
+                                operacoes: d.operacoesAtribuidas,
+                              })
+                            }
+                          >
+                            ver mais
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="relative shrink-0 w-full">
+                        <div className="flex flex-col items-center justify-center size-full">
+                          <div className="content-stretch flex flex-col gap-[8px] items-center justify-center p-[2px] relative w-full">
+                            <p
+                              title={d.codigo}
+                              className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[13px] text-center whitespace-nowrap cursor-help"
+                            >
+                              {d.colaboradorLabel}
+                            </p>
+                            <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[20px] w-[116px]">
+                              <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[13px] text-right whitespace-nowrap pr-[4px]">
+                                {d.totalTimeSeconds.toFixed(1)}s
+                              </p>
+                              <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[13px] text-center whitespace-nowrap">
+                                |
+                              </p>
+                              <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[13px] text-left whitespace-nowrap pl-[4px]">
+                                {d.ocupacaoDisplay}%
+                              </p>
+                            </div>
+                            <p className="text-[12px] font-medium text-gray-400 text-center whitespace-nowrap">
+                              {d.operacoesAtribuidas.length}{" "}
+                              {d.operacoesAtribuidas.length === 1
+                                ? "operação"
+                                : "operações"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {showTaktTimeLine && (
+                  <div
+                    className="absolute content-stretch flex items-center justify-end left-0 right-0 z-10"
+                    style={{ top: 0 }}
+                  >
+                    <div className="flex-[1_0_0] h-0 min-h-px min-w-px relative">
+                      <div className="absolute inset-[-0.82px_0]">
+                        <svg
+                          className="block size-full"
+                          fill="none"
+                          preserveAspectRatio="none"
+                          viewBox="0 0 534.896 1.63636"
+                        >
+                          <path
+                            d="M0 0.818182H534.896"
+                            stroke="#1E3A5F"
+                            strokeDasharray="6.55 3.27"
+                            strokeWidth="1.63636"
+                          />
                         </svg>
                       </div>
                     </div>
-                  ))}
-
-                  {operationSegments.map((segment, i) => (
-                    <div
-                      key={`${d.idx}-${segment.label}-${i}`}
-                      className="col-1 relative row-1 ml-[5px] w-[54px] flex items-center justify-center"
-                      style={{ marginTop: `${segment.top}px`, height: `${segment.height}px` }}
-                    >
-                      <p
-                        className="font-bold leading-none not-italic text-[13px] text-center whitespace-nowrap"
-                        style={{ color: "#6B7280" }}
-                      >
-                        {segment.label}
+                    <div className="bg-[#1e3a5f] content-stretch flex h-[17.455px] items-center justify-center p-[6px] relative rounded-[4px] shrink-0 w-[73.104px]">
+                      <p className="font-bold leading-[normal] not-italic relative shrink-0 text-[8.727px] text-center text-white whitespace-nowrap">
+                        TT {(resultados.taktTime * 60).toFixed(1)}s
                       </p>
                     </div>
-                  ))}
-                  {shouldCollapseOperations && (
-                    <button
-                      type="button"
-                      className="col-1 relative row-1 ml-[9px] mt-[8px] rounded-sm bg-white/85 px-1.5 py-[2px] text-[11px] font-semibold text-blue-600 shadow-sm hover:bg-white"
-                      onClick={() =>
-                        setOperadorDetalheAberto({
-                          codigo: d.codigo,
-                          colaboradorLabel: d.colaboradorLabel,
-                          operacoes: d.operacoesAtribuidas,
-                        })
-                      }
-                    >
-                      ver mais
-                    </button>
-                  )}
-                </div>
-
-                  <div className="relative shrink-0 w-full">
-                    <div className="flex flex-col items-center justify-center size-full">
-                      <div className="content-stretch flex flex-col gap-[8px] items-center justify-center p-[2px] relative w-full">
-                        <p title={d.codigo} className="font-normal leading-[normal] not-italic relative shrink-0 text-[#6b7280] text-[13px] text-center whitespace-nowrap cursor-help">
-                          {d.colaboradorLabel}
-                        </p>
-                        <div className="grid grid-cols-[1fr_auto_1fr] items-center h-[20px] w-[116px]">
-                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[13px] text-right whitespace-nowrap pr-[4px]">{d.totalTimeSeconds.toFixed(1)}s</p>
-                          <p className="font-bold leading-[normal] not-italic relative text-[#9ca3af] text-[13px] text-center whitespace-nowrap">|</p>
-                          <p className="font-bold leading-[normal] not-italic relative text-[#6b7280] text-[13px] text-left whitespace-nowrap pl-[4px]">{d.ocupacaoDisplay}%</p>
-                        </div>
-                        <p className="text-[12px] font-medium text-gray-400 text-center whitespace-nowrap">
-                          {d.operacoesAtribuidas.length} {d.operacoesAtribuidas.length === 1 ? "operação" : "operações"}
-                        </p>
-                      </div>
-                    </div>
                   </div>
-                </div>
-              );
-            })}
-
-            {showTaktTimeLine && (
-              <div className="absolute content-stretch flex items-center justify-end left-0 right-0 z-10" style={{ top: 0 }}>
-                <div className="flex-[1_0_0] h-0 min-h-px min-w-px relative">
-                  <div className="absolute inset-[-0.82px_0]">
-                    <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 534.896 1.63636">
-                      <path d="M0 0.818182H534.896" stroke="#1E3A5F" strokeDasharray="6.55 3.27" strokeWidth="1.63636" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="bg-[#1e3a5f] content-stretch flex h-[17.455px] items-center justify-center p-[6px] relative rounded-[4px] shrink-0 w-[73.104px]">
-                  <p className="font-bold leading-[normal] not-italic relative shrink-0 text-[8.727px] text-center text-white whitespace-nowrap">
-                    TT {(resultados.taktTime * 60).toFixed(1)}s
-                  </p>
-                </div>
+                )}
               </div>
-            )}
-          </div>
-        </div> : <div className="relative flex min-h-[440px] min-w-0 w-full max-w-full justify-center overflow-hidden px-4 pb-2 [&>section]:min-w-0 [&>section]:w-full [&>section]:max-w-full">
-          <WaterfallOutputRate resultados={resultados} operadores={operadores} operatorOrder={(ocupacaoView === "pilhas" ? dadosCargaBase : dadosCarga).map((item) => ocupacaoView === "pilhas" ? `${item.colaboradorLabel} (${item.ocupacaoDisplay}%)` : item.colaboradorLabel)} taskCode={taskCode} waterfallData={ocupacaoView === "pilhas" ? theoreticalWaterfallData : waterfallData} embedded />
-        </div>}
-      </div>
+            </div>
+          ) : (
+            <div className="relative flex min-h-[440px] min-w-0 w-full max-w-full justify-center overflow-hidden px-4 pb-2 [&>section]:min-w-0 [&>section]:w-full [&>section]:max-w-full">
+              <WaterfallOutputRate
+                resultados={resultados}
+                operadores={operadores}
+                operatorOrder={(ocupacaoView === "pilhas"
+                  ? dadosCargaBase
+                  : dadosCarga
+                ).map((item) =>
+                  ocupacaoView === "pilhas"
+                    ? `${item.colaboradorLabel} (${item.ocupacaoDisplay}%)`
+                    : item.colaboradorLabel,
+                )}
+                taskCode={taskCode}
+                waterfallData={
+                  ocupacaoView === "pilhas"
+                    ? theoreticalWaterfallData
+                    : waterfallData
+                }
+                embedded
+              />
+            </div>
+          )}
+        </div>
       )}
-      <Dialog open={Boolean(operadorDetalheAberto)} onOpenChange={(open) => { if (!open) setOperadorDetalheAberto(null); }}>
+      <Dialog
+        open={Boolean(operadorDetalheAberto)}
+        onOpenChange={(open) => {
+          if (!open) setOperadorDetalheAberto(null);
+        }}
+      >
         <DialogContent className="max-w-md rounded-sm">
           <DialogHeader>
             <DialogTitle>
-              {operadorDetalheAberto?.colaboradorLabel || "Operador"} · {operadorDetalheAberto?.codigo || ""}
+              {operadorDetalheAberto?.colaboradorLabel || "Operador"} ·{" "}
+              {operadorDetalheAberto?.codigo || ""}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             <p className="text-sm text-gray-500">
-              {operadorDetalheAberto?.operacoes.length || 0} operações atribuídas
+              {operadorDetalheAberto?.operacoes.length || 0} operações
+              atribuídas
             </p>
             <div className="max-h-80 overflow-y-auto rounded-sm border border-gray-200 bg-gray-50 p-3">
               <div className="flex flex-wrap gap-2">
-                {(operadorDetalheAberto?.operacoes || []).map((operacao, index) => (
-                  <span
-                    key={`${operacao}-${index}`}
-                    className="rounded-sm border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700"
-                  >
-                    {operacao}
-                  </span>
-                ))}
+                {(operadorDetalheAberto?.operacoes || []).map(
+                  (operacao, index) => (
+                    <span
+                      key={`${operacao}-${index}`}
+                      className="rounded-sm border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700"
+                    >
+                      {operacao}
+                    </span>
+                  ),
+                )}
               </div>
             </div>
           </div>
@@ -918,24 +1072,28 @@ export function DashboardResultados({
       </Dialog>
 
       {showTabela && (
-      <div className="w-full min-w-0">
-        <TabelaDistribuicao
-          resultados={resultados}
-          operadores={operadores}
-          operacoes={operacoes}
-          operatorOrder={orderedOperatorCodes}
-          viewMode={viewMode}
-          onViewModeChange={onViewModeChange}
-          unidadeTempo="s"
-          onDistribuicaoChange={onDistribuicaoChange}
-          onConfirmarEdicao={onConfirmarEdicao}
-          onGuardarHistorico={onGuardarHistorico}
-          isAjustando={isAjustando}
-          isGuardandoHistorico={isGuardandoHistorico}
-          onAtribuirColuna={onAtribuirColuna}
-          isIdealSemOle={isIdealSemOle}
-        />
-      </div>
+        <div className="w-full min-w-0">
+          <TabelaDistribuicao
+            resultados={resultados}
+            operadores={operadores}
+            operacoes={operacoes}
+            operatorOrder={orderedOperatorCodes}
+            viewMode={viewMode}
+            onViewModeChange={onViewModeChange}
+            unidadeTempo="s"
+            onDistribuicaoChange={onDistribuicaoChange}
+            onConfirmarEdicao={onConfirmarEdicao}
+            onGuardarHistorico={onGuardarHistorico}
+            onCalcularBalanceamento={onCalcularBalanceamento}
+            isAjustando={isAjustando}
+            isGuardandoHistorico={isGuardandoHistorico}
+            onAtribuirColuna={onAtribuirColuna}
+            isIdealSemOle={isIdealSemOle}
+            // NOVO
+            onToggleCritica={onToggleCritica}
+            criticidadeAlterada={criticidadeAlterada}
+          />
+        </div>
       )}
     </div>
   );

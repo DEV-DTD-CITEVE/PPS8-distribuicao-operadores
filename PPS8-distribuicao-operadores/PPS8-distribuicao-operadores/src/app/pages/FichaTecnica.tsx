@@ -657,6 +657,8 @@ export default function FichaTecnica() {
   const [addingOperacao, setAddingOperacao] = useState(false);
   const [savingOperacoes, setSavingOperacoes] = useState(false);
   const [removingOperacaoId, setRemovingOperacaoId] = useState<string | null>(null);
+  const [togglingCriticalId, setTogglingCriticalId] =
+  useState<string | null>(null);
   const [produtoParaRemover, setProdutoParaRemover] = useState<Produto | null>(null);
   const [operacaoParaRemover, setOperacaoParaRemover] = useState<Operacao | null>(null);
   const [erroApi, setErroApi] = useState<string | null>(null);
@@ -673,16 +675,25 @@ export default function FichaTecnica() {
     operacaoPendenteSyncCodeRef.current = code;
   };
 
-  useEffect(() => {
-    if (!dados.pronto || sincronizacaoInicialRef.current) return;
-    sincronizacaoInicialRef.current = true;
-    const fichaGuardada = dados.configuracao.fichaTecnicaSelecionada;
-    if (fichaGuardada?.grupoArtigoId) setGrupoArtigoSelecionado(fichaGuardada.grupoArtigoId);
-    if (fichaGuardada?.fichaId) {
-      produtoSelecionadoRef.current = fichaGuardada.fichaId;
-      setProdutoSelecionado(fichaGuardada.fichaId);
-    }
-  }, [dados.pronto]);
+useEffect(() => {
+  if (sincronizacaoInicialRef.current) return;
+
+  const fichaGuardada = dados.configuracao.fichaTecnicaSelecionada;
+
+  if (!fichaGuardada) return;
+
+  sincronizacaoInicialRef.current = true;
+
+  if (fichaGuardada.grupoArtigoId) {
+    setGrupoArtigoSelecionado(fichaGuardada.grupoArtigoId);
+  }
+
+  if (fichaGuardada.fichaId) {
+    produtoSelecionadoRef.current = fichaGuardada.fichaId;
+
+    setProdutoSelecionado(fichaGuardada.fichaId);
+  }
+}, [dados.configuracao.fichaTecnicaSelecionada]);
 
   const operadores = operadoresMock;
   const familiaOptions = familias.map((familia) => ({
@@ -721,12 +732,18 @@ export default function FichaTecnica() {
     descricao: "",
   });
 
-  const [novaOperacao, setNovaOperacao] = useState<Partial<Operacao>>({
+  const [novaOperacao, setNovaOperacao] =
+  useState<Partial<Operacao>>({
     id: "",
     nome: "",
     tempo: 0,
     tipoMaquina: "",
+    largura: 190,
+    ponto: "",
+    setup: "Standard",
+    permitirAgrupamento: true,
     sequencia: 1,
+    critica: false,
   });
 
   const produto = produtos.find((p) => p.id === produtoSelecionado);
@@ -1114,6 +1131,12 @@ export default function FichaTecnica() {
       nome: String(novaOperacao.nome).trim(),
       tempo: Number(novaOperacao.tempo),
       tipoMaquina: String(novaOperacao.tipoMaquina || "").trim(),
+
+      largura: Number(novaOperacao.largura ?? 190),
+      ponto: String(novaOperacao.ponto ?? ""),
+      setup: String(novaOperacao.setup ?? "Standard"),
+      permitirAgrupamento: novaOperacao.permitirAgrupamento ?? true,
+
       sequencia: produto.operacoes.length + 1,
       critica: Boolean(novaOperacao.critica),
     };
@@ -1135,7 +1158,18 @@ export default function FichaTecnica() {
 
     const concluirPopup = () => {
       setShowNovaOperacao(false);
-      setNovaOperacao({ id: "", nome: "", tempo: 0, tipoMaquina: "", sequencia: 1 });
+      setNovaOperacao({
+        id: "",
+        nome: "",
+        tempo: 0,
+        tipoMaquina: "",
+        largura: 190,
+        ponto: "",
+        setup: "Standard",
+        permitirAgrupamento: true,
+        sequencia: 1,
+        critica: false,
+      });
     };
 
     const isLocalOnly = /^PROD\d+$/i.test(produto.id) || /-FT\d{3}$/i.test(produto.id);
@@ -1327,21 +1361,148 @@ export default function FichaTecnica() {
     setOperacaoPendenteSync(targetIndex, movedOperationCode);
   };
 
-  const handleToggleCritica = (opId: string, opIndex: number) => {
-    if (!produto) return;
-    const updated = produtos.map((p) => {
-      if (p.id !== produto.id) return p;
-      return {
-        ...p,
-        operacoes: p.operacoes.map((op) =>
-          op.id === opId ? { ...op, critica: !op.critica } : op
-        ),
-        dataModificacao: new Date().toISOString().split("T")[0],
-      };
-    });
-    setProdutos(updated);
+  const handleToggleCritica = async (
+  opId: string,
+  opIndex: number
+) => {
+  if (!produto) return;
+
+  const operacaoAtual = produto.operacoes.find(
+    (op) => op.id === opId
+  );
+
+  if (!operacaoAtual) return;
+
+  const nextCritical = !Boolean(operacaoAtual.critica);
+
+  const isLocalOnly =
+    /^PROD\d+$/i.test(produto.id) ||
+    /-FT\d{3}$/i.test(produto.id);
+
+  // Para fichas que só existem localmente,
+  // não há endpoint onde persistir.
+  if (isLocalOnly) {
+    setProdutos((current) =>
+      current.map((p) => {
+        if (p.id !== produto.id) return p;
+
+        return {
+          ...p,
+          operacoes: p.operacoes.map((op) =>
+            op.id === opId
+              ? {
+                  ...op,
+                  critica: nextCritical,
+                }
+              : op
+          ),
+          dataModificacao:
+            new Date().toISOString().split("T")[0],
+        };
+      })
+    );
+
     setOperacaoPendenteSync(opIndex, opId);
-  };
+    return;
+  }
+
+  setTogglingCriticalId(opId);
+  setErroApi(null);
+
+  try {
+    const taskIds = Array.from(
+      new Set(
+        [produto.id, produto.referencia]
+          .map((value) => value?.trim())
+          .filter(Boolean)
+      )
+    ) as string[];
+
+    if (taskIds.length === 0) {
+      throw new Error(
+        "Não foi possível identificar a ficha técnica."
+      );
+    }
+
+    let resposta: { data: any } | null = null;
+    let ultimaFalha: unknown = null;
+
+    for (const taskId of taskIds) {
+      try {
+        resposta = await axios.patch(
+          `${API_BASE_URL}/technical-sheets/${encodeURIComponent(
+            taskId
+          )}/operations/${encodeURIComponent(
+            opId
+          )}/critical`,
+          {
+            is_critical: nextCritical,
+          }
+        );
+
+        break;
+      } catch (error) {
+        ultimaFalha = error;
+      }
+    }
+
+    if (!resposta) {
+      throw (
+        ultimaFalha ||
+        new Error(
+          "Não foi possível alterar a criticidade da operação."
+        )
+      );
+    }
+
+    const confirmedCritical =
+      typeof resposta.data?.is_critical === "boolean"
+        ? resposta.data.is_critical
+        : nextCritical;
+
+    setProdutos((current) =>
+      current.map((p) => {
+        if (p.id !== produto.id) return p;
+
+        return {
+          ...p,
+          operacoes: p.operacoes.map((op) =>
+            op.id === opId
+              ? {
+                  ...op,
+                  critica: confirmedCritical,
+                }
+              : op
+          ),
+          dataModificacao:
+            new Date().toISOString().split("T")[0],
+        };
+      })
+    );
+  } catch (error) {
+    console.error(
+      "Erro ao alterar criticidade da operação:",
+      error
+    );
+
+    const detail =
+      (error as any)?.response?.data?.detail;
+
+    const apiMessage =
+      typeof detail === "string"
+        ? detail
+        : detail?.message ||
+          (error as any)?.response?.data?.message ||
+          (error as any)?.message;
+
+    setErroApi(
+      apiMessage ||
+        "Não foi possível alterar o estado crítico da operação."
+    );
+  } finally {
+    setTogglingCriticalId(null);
+  }
+};
 
   const handleEditOperacao = (
     opId: string,
@@ -2265,155 +2426,214 @@ export default function FichaTecnica() {
                         {operacoesTabela.map((operacao) => {
                           const index = operacoesTabelaBase.findIndex((item) => item.id === operacao.id);
                           return (
-                          <tr
-                            key={operacao.id}
-                            className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                              operacao.critica ? "bg-orange-50" : ""
-                            }`}
-                          >
-                            <td className="p-3 font-mono text-sm text-gray-700">
-                              {operacao.sequencia}
-                            </td>
-                            <td className="p-3">
-                              <button
-                                onClick={() => handleToggleCritica(operacao.id, index)}
-                                className={`flex items-center gap-1.5 px-2 py-1 rounded-sm text-xs font-medium transition-colors ${
-                                  operacao.critica
-                                    ? "bg-orange-200 text-orange-800 border border-orange-300"
-                                    : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
-                                }`}
-                              >
-                                <AlertTriangle className="w-3 h-3" />
-                                {operacao.critica ? "Sim" : "Não"}
-                              </button>
-                            </td>
-                            <td className="p-3">
-                              <span className="font-mono font-semibold text-sm text-blue-700 bg-blue-50 px-2 py-1 rounded-sm border border-blue-200">
-                                {operacao.id}
-                              </span>
-                            </td>
-                            <td className="p-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-700">{operacao.nome}</span>
-                                {operacao.critica && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="text-xs rounded-sm bg-orange-200 text-orange-800 border border-orange-300"
-                                  >
-                                    CRÍTICA
-                                  </Badge>
-                                )}
-                              </div>
-                              {atribuicoesManual[operacao.id]?.length > 0 && (
-                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
-                                  <span className="text-[11px] font-medium text-blue-700">Atribuído a:</span>
-                                  {atribuicoesManual[operacao.id].map((operadorId) => {
-                                    const operador = operadores.find((item) => item.id === operadorId);
-                                    return (
-                                      <span
-                                        key={operadorId}
-                                        className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700"
-                                        title={operador?.nome || operadorId}
-                                      >
-                                        {operador?.nome || "Operador"} ({operadorId})
-                                      </span>
-                                    );
-                                  })}
+                            <tr
+                              key={operacao.id}
+                              className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                                operacao.critica ? "bg-orange-50" : ""
+                              }`}
+                            >
+                              <td className="p-3 font-mono text-sm text-gray-700">
+                                {operacao.sequencia}
+                              </td>
+                              <td className="p-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handleToggleCritica(operacao.id, index)
+                                  }
+                                  disabled={togglingCriticalId === operacao.id}
+                                  className={`flex items-center gap-1.5 px-2 py-1 rounded-sm text-xs font-medium transition-colors ${
+                                    operacao.critica
+                                      ? "bg-orange-200 text-orange-800 border border-orange-300"
+                                      : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+                                  } ${
+                                    togglingCriticalId === operacao.id
+                                      ? "opacity-50 cursor-wait"
+                                      : ""
+                                  }`}
+                                  title={
+                                    operacao.critica
+                                      ? "Remover marcação crítica"
+                                      : "Marcar como crítica"
+                                  }
+                                >
+                                  <AlertTriangle className="w-3 h-3" />
+
+                                  {togglingCriticalId === operacao.id
+                                    ? "..."
+                                    : operacao.critica
+                                      ? "Sim"
+                                      : "Não"}
+                                </button>
+                              </td>
+                              <td className="p-3">
+                                <span className="font-mono font-semibold text-sm text-blue-700 bg-blue-50 px-2 py-1 rounded-sm border border-blue-200">
+                                  {operacao.id}
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-gray-700">
+                                    {operacao.nome}
+                                  </span>
+                                  {operacao.critica && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-xs rounded-sm bg-orange-200 text-orange-800 border border-orange-300"
+                                    >
+                                      CRÍTICA
+                                    </Badge>
+                                  )}
                                 </div>
-                              )}
-                            </td>
-                            <td className="p-3">
-                              <span className="font-mono text-sm text-gray-700">{operacao.tempo.toFixed(2)} min</span>
-                            </td>
-                            <td className="p-3">
-                              <div className="flex items-center gap-2">
-                              {(() => {
-                                const alarme = alarmasPorOperacao[normalizeToken(operacao.id)];
-                                return (
-                                  <div className="flex min-h-[58px] items-center gap-2">
-                                    {alarme ? (
-                                      <AlarmBoxPlot alarm={alarme} />
-                                    ) : (
-                                      <div className="flex items-center text-xs text-gray-400">
-                                        {loadingAlarmas ? "A carregar análise..." : "Sem dados históricos"}
-                                      </div>
+                                {atribuicoesManual[operacao.id]?.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
+                                    <span className="text-[11px] font-medium text-blue-700">
+                                      Atribuído a:
+                                    </span>
+                                    {atribuicoesManual[operacao.id].map(
+                                      (operadorId) => {
+                                        const operador = operadores.find(
+                                          (item) => item.id === operadorId,
+                                        );
+                                        return (
+                                          <span
+                                            key={operadorId}
+                                            className="rounded-sm bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700"
+                                            title={operador?.nome || operadorId}
+                                          >
+                                            {operador?.nome || "Operador"} (
+                                            {operadorId})
+                                          </span>
+                                        );
+                                      },
                                     )}
                                   </div>
-                                );
-                              })()}
-                              </div>
-                            </td>
-                            <td className="p-3 text-left align-middle">
-                              {(() => {
-                                const alarme = alarmasPorOperacao[normalizeToken(operacao.id)];
-                                const estado = alarme?.status.toLowerCase();
-                                const alerta = estado === "warning" || estado === "anomaly" || estado === "anormal";
-                                return alarme ? (
-                                  <span className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-1 text-[10px] font-semibold leading-none ${
-                                    alerta
-                                      ? "border-amber-300 bg-amber-50 text-amber-700"
-                                      : "border-emerald-300 bg-emerald-50 text-emerald-700"
-                                  }`}>
-                                    {alerta ? <AlertTriangle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
-                                    {alerta ? (estado === "anomaly" || estado === "anormal" ? "Anormal" : "Warning") : "Normal"}
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-gray-400">{loadingAlarmas ? "..." : "—"}</span>
-                                );
-                              })()}
-                            </td>
-                            <td className="p-3">
-                              <Input
-                                value={operacao.tipoMaquina || ""}
-                                onChange={(e) =>
-                                  handleEditOperacao(
-                                    operacao.id,
-                                    "tipoMaquina",
-                                    e.target.value,
-                                    index
-                                  )
-                                }
-                                className="h-8 text-sm rounded-sm text-left"
-                                placeholder="—"
-                              />
-                            </td>
+                                )}
+                              </td>
+                              <td className="p-3">
+                                <span className="font-mono text-sm text-gray-700">
+                                  {operacao.tempo.toFixed(2)} min
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-2">
+                                  {(() => {
+                                    const alarme =
+                                      alarmasPorOperacao[
+                                        normalizeToken(operacao.id)
+                                      ];
+                                    return (
+                                      <div className="flex min-h-[58px] items-center gap-2">
+                                        {alarme ? (
+                                          <AlarmBoxPlot alarm={alarme} />
+                                        ) : (
+                                          <div className="flex items-center text-xs text-gray-400">
+                                            {loadingAlarmas
+                                              ? "A carregar análise..."
+                                              : "Sem dados históricos"}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
+                              <td className="p-3 text-left align-middle">
+                                {(() => {
+                                  const alarme =
+                                    alarmasPorOperacao[
+                                      normalizeToken(operacao.id)
+                                    ];
+                                  const estado = alarme?.status.toLowerCase();
+                                  const alerta =
+                                    estado === "warning" ||
+                                    estado === "anomaly" ||
+                                    estado === "anormal";
+                                  return alarme ? (
+                                    <span
+                                      className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-1 text-[10px] font-semibold leading-none ${
+                                        alerta
+                                          ? "border-amber-300 bg-amber-50 text-amber-700"
+                                          : "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                      }`}
+                                    >
+                                      {alerta ? (
+                                        <AlertTriangle className="h-3 w-3" />
+                                      ) : (
+                                        <CheckCircle2 className="h-3 w-3" />
+                                      )}
+                                      {alerta
+                                        ? estado === "anomaly" ||
+                                          estado === "anormal"
+                                          ? "Anormal"
+                                          : "Warning"
+                                        : "Normal"}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-gray-400">
+                                      {loadingAlarmas ? "..." : "—"}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  value={operacao.tipoMaquina || ""}
+                                  onChange={(e) =>
+                                    handleEditOperacao(
+                                      operacao.id,
+                                      "tipoMaquina",
+                                      e.target.value,
+                                      index,
+                                    )
+                                  }
+                                  className="h-8 text-sm rounded-sm text-left"
+                                  placeholder="—"
+                                />
+                              </td>
                               <td className="p-3">
                                 <div className="flex flex-wrap items-center justify-start gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleReorder(index, "up")}
-                                  disabled={index <= 0}
-                                  className="h-7 w-7 rounded-sm p-0 hover:bg-gray-100"
-                                  title="Mover para cima"
-                                >
-                                  <ArrowUp className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleReorder(index, "down")}
-                                  disabled={index === operacoesTabelaBase.length - 1 || index < 0}
-                                  className="h-7 w-7 rounded-sm p-0 hover:bg-gray-100"
-                                  title="Mover para baixo"
-                                >
-                                  <ArrowDown className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => solicitarRemocaoOperacao(operacao)}
-                                  disabled={Boolean(removingOperacaoId)}
-                                  className="h-7 w-7 rounded-sm p-0 hover:bg-orange-50 hover:text-orange-600"
-                                  title="Eliminar operação"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        )})}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleReorder(index, "up")}
+                                    disabled={index <= 0}
+                                    className="h-7 w-7 rounded-sm p-0 hover:bg-gray-100"
+                                    title="Mover para cima"
+                                  >
+                                    <ArrowUp className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleReorder(index, "down")}
+                                    disabled={
+                                      index ===
+                                        operacoesTabelaBase.length - 1 ||
+                                      index < 0
+                                    }
+                                    className="h-7 w-7 rounded-sm p-0 hover:bg-gray-100"
+                                    title="Mover para baixo"
+                                  >
+                                    <ArrowDown className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      solicitarRemocaoOperacao(operacao)
+                                    }
+                                    disabled={Boolean(removingOperacaoId)}
+                                    className="h-7 w-7 rounded-sm p-0 hover:bg-orange-50 hover:text-orange-600"
+                                    title="Eliminar operação"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );})}
                       </tbody>
                       <tfoot>
                         <tr className="bg-gray-50 border-t-2 border-gray-300">

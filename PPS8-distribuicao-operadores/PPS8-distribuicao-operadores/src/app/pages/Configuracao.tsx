@@ -668,435 +668,616 @@ export default function Configuracao() {
           )}
           {isGuardando && (
             <div className="flex items-center gap-1.5 text-blue-600 text-xs">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              A guardar…
+              <Loader2 className="w-4 h-4 animate-spin" />A guardar…
             </div>
           )}
         </div>
       </div>
 
-      <Tabs value={vistaPolivalencia} onValueChange={(value) => setVistaPolivalencia(value as "operadores" | "grupos" | "cobertura" | "catalogo")}>
+      <Tabs
+        value={vistaPolivalencia}
+        onValueChange={(value) =>
+          setVistaPolivalencia(
+            value as "operadores" | "grupos" | "cobertura" | "catalogo",
+          )
+        }
+      >
         <TabsList className="grid w-full max-w-2xl grid-cols-3 rounded-sm bg-gray-100 p-1">
-          <TabsTrigger value="catalogo" className="rounded-sm text-xs">Catálogo de máquinas</TabsTrigger>
-          <TabsTrigger value="grupos" className="rounded-sm text-xs">Polivalência</TabsTrigger>
-          <TabsTrigger value="cobertura" className="rounded-sm text-xs">Cobertura geral</TabsTrigger>
+          <TabsTrigger value="catalogo" className="rounded-sm text-xs">
+            Catálogo de máquinas
+          </TabsTrigger>
+          <TabsTrigger value="grupos" className="rounded-sm text-xs">
+            Polivalência
+          </TabsTrigger>
+          <TabsTrigger value="cobertura" className="rounded-sm text-xs">
+            Cobertura geral
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="operadores" className="mt-4 space-y-8">
           {/* ── Matriz de Polivalência dos Operadores ── */}
-      <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
-        <CardHeader className="border-b border-gray-200">
-          <CardTitle className="flex items-center justify-between text-gray-900">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-teal-100 rounded-sm flex items-center justify-center">
-                <Users className="w-5 h-5 text-teal-600" />
-              </div>
-              <div>
-                <div className="text-base font-semibold">Matriz de Polivalencia - Operadores</div>
-                <CardDescription className="text-gray-500 mt-0.5 text-xs">
-                  Competencias tecnicas de cada operador - clique numa celula para editar
-                </CardDescription>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="rounded-sm text-xs">{operadores.length} operadores</Badge>
-              <Dialog open={showNovoOperador} onOpenChange={setShowNovoOperador}>
-                <DialogContent className="rounded-sm [&>button]:cursor-pointer">
-                  <DialogHeader>
-                    <DialogTitle className="text-base font-semibold">Adicionar Novo Operador</DialogTitle>
-                    <DialogDescription className="text-xs">Preencha os dados do operador</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-xs font-medium">ID do Operador</Label>
-                      <Input
-                        value={novoOperador.id}
-                        onChange={(e) => setNovoOperador({ ...novoOperador, id: e.target.value })}
-                        placeholder={`ex: OP${String(operadores.length + 1).padStart(3, "0")}`}
-                        className="rounded-sm text-sm mt-1"
-                        onKeyDown={(e) => e.key === "Enter" && handleCriarOperador()}
-                      />
+          <Card className="shadow-sm border border-gray-200 rounded-sm bg-white">
+            <CardHeader className="border-b border-gray-200">
+              <CardTitle className="flex items-center justify-between text-gray-900">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-teal-100 rounded-sm flex items-center justify-center">
+                    <Users className="w-5 h-5 text-teal-600" />
+                  </div>
+                  <div>
+                    <div className="text-base font-semibold">
+                      Matriz de Polivalencia - Operadores
                     </div>
-                    <div>
-                      <Label className="text-xs font-medium">Nome do Operador</Label>
-                      <Input
-                        value={novoOperador.nome}
-                        onChange={(e) => setNovoOperador({ ...novoOperador, nome: e.target.value })}
-                        placeholder="ex: Maria Silva"
-                        className="rounded-sm text-sm mt-1"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-sm border border-gray-200">
-                      <div>
-                        <Label className="text-xs font-medium">Ativo</Label>
-                        <p className="text-[10px] text-gray-500 mt-0.5">Campo `active` na origem de dados</p>
+                    <CardDescription className="text-gray-500 mt-0.5 text-xs">
+                      Competencias tecnicas de cada operador - clique numa
+                      celula para editar
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="rounded-sm text-xs">
+                    {operadores.length} operadores
+                  </Badge>
+                  <Dialog
+                    open={showNovoOperador}
+                    onOpenChange={setShowNovoOperador}
+                  >
+                    <DialogContent className="rounded-sm [&>button]:cursor-pointer">
+                      <DialogHeader>
+                        <DialogTitle className="text-base font-semibold">
+                          Adicionar Novo Operador
+                        </DialogTitle>
+                        <DialogDescription className="text-xs">
+                          Preencha os dados do operador
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label className="text-xs font-medium">
+                            ID do Operador
+                          </Label>
+                          <Input
+                            value={novoOperador.id}
+                            onChange={(e) =>
+                              setNovoOperador({
+                                ...novoOperador,
+                                id: e.target.value,
+                              })
+                            }
+                            placeholder={`ex: OP${String(operadores.length + 1).padStart(3, "0")}`}
+                            className="rounded-sm text-sm mt-1"
+                            onKeyDown={(e) =>
+                              e.key === "Enter" && handleCriarOperador()
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-medium">
+                            Nome do Operador
+                          </Label>
+                          <Input
+                            value={novoOperador.nome}
+                            onChange={(e) =>
+                              setNovoOperador({
+                                ...novoOperador,
+                                nome: e.target.value,
+                              })
+                            }
+                            placeholder="ex: Maria Silva"
+                            className="rounded-sm text-sm mt-1"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-sm border border-gray-200">
+                          <div>
+                            <Label className="text-xs font-medium">Ativo</Label>
+                            <p className="text-[10px] text-gray-500 mt-0.5">
+                              Campo `active` na origem de dados
+                            </p>
+                          </div>
+                          <Switch
+                            className="cursor-pointer"
+                            checked={novoOperador.ativo}
+                            onCheckedChange={(checked) =>
+                              setNovoOperador({
+                                ...novoOperador,
+                                ativo: checked,
+                              })
+                            }
+                          />
+                        </div>
                       </div>
-                      <Switch
-                        className="cursor-pointer"
-                        checked={novoOperador.ativo}
-                        onCheckedChange={(checked) => setNovoOperador({ ...novoOperador, ativo: checked })}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      onClick={handleCriarOperador}
-                      className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs cursor-pointer"
-                      disabled={!novoOperador.id.trim()}
-                    >
-                      Adicionar
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardTitle>
-        </CardHeader>
+                      <DialogFooter>
+                        <Button
+                          onClick={handleCriarOperador}
+                          className="bg-blue-500 hover:bg-blue-600 rounded-sm text-xs cursor-pointer"
+                          disabled={!novoOperador.id.trim()}
+                        >
+                          Adicionar
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardTitle>
+            </CardHeader>
 
-        {/* Barra de filtros */}
-        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 space-y-3">
-          {erroOperadoresApi && (
-            <div className="text-xs text-orange-600">{erroOperadoresApi}</div>
-          )}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <FolderTree className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Familia de Artigos:</span>
-            </div>
-            <SearchableCombobox
-              value={filtroFamilia}
-              onValueChange={setFiltroFamilia}
-              options={familias.map((familia) => ({
-                value: familia.id,
-                label: familia.label,
-                keywords: [familia.id, familia.description || ""],
-                renderLabel: (
-                  <div className="flex max-w-full flex-col items-start overflow-hidden">
-                    <span className="font-medium text-gray-900">{familia.label}</span>
-                    <span className="block w-full truncate text-[11px] text-gray-500">{familia.description || familia.id}</span>
-                  </div>
-                ),
-                renderSelectedLabel: (
-                  <div className="flex max-w-full flex-col items-start overflow-hidden leading-tight">
-                    <span className="font-medium text-gray-900">{familia.label}</span>
-                    <span className="block w-full truncate text-[11px] text-gray-500">{familia.description || familia.id}</span>
-                  </div>
-                ),
-              }))}
-              placeholder={loadingFamilias ? "A carregar famílias..." : "Todas as famílias"}
-              searchPlaceholder="Pesquisar família..."
-              emptyText="Nenhuma família encontrada"
-              disabled={loadingFamilias || familias.length === 0}
-              triggerClassName="w-[260px] rounded-sm text-xs h-8 bg-white cursor-pointer"
-            />
-            {filtroFamilia && (
-              <Badge variant="secondary" className="rounded-sm text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
-                  {operacoesFamiliaSelecionada.length} operacoes
-              </Badge>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant={showFiltros ? "default" : "outline"}
-                size="sm"
-                onClick={() => setShowFiltros(!showFiltros)}
-                className={`rounded-sm text-xs h-8 ${showFiltros ? "bg-blue-500 hover:bg-blue-600" : "border-gray-200"}`}
-              >
-                <Filter className="w-3 h-3 mr-1.5" />
-                Filtros
-                {temFiltrosAtivos && (
-                  <span className="ml-1.5 w-4 h-4 bg-blue-600 text-white rounded-full text-[9px] flex items-center justify-center">
-                    {[filtroOperador.trim() !== "", filtroOperacoesSelecionadas.length > 0, filtroPolivalenciaMin.trim() !== ""].filter(Boolean).length}
-                  </span>
-                )}
-              </Button>
-              {temFiltrosAtivos && (
-                <Button variant="ghost" size="sm" onClick={limparFiltros} className="rounded-sm text-xs h-8 text-gray-500 hover:text-gray-700">
-                  <X className="w-3 h-3 mr-1" />Limpar
-                </Button>
+            {/* Barra de filtros */}
+            <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 space-y-3">
+              {erroOperadoresApi && (
+                <div className="text-xs text-orange-600">
+                  {erroOperadoresApi}
+                </div>
               )}
-            </div>
-          </div>
-
-          {showFiltros && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-gray-200">
-              <div>
-                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Operador</Label>
-                <div className="relative">
-                  <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <Input value={filtroOperador} onChange={(e) => setFiltroOperador(e.target.value)} placeholder="Pesquisar por ID..." className="rounded-sm text-xs h-8 pl-7 bg-white" />
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <FolderTree className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                    Familia de Artigos:
+                  </span>
+                </div>
+                <SearchableCombobox
+                  value={filtroFamilia}
+                  onValueChange={setFiltroFamilia}
+                  options={familias.map((familia) => ({
+                    value: familia.id,
+                    label: familia.label,
+                    keywords: [familia.id, familia.description || ""],
+                    renderLabel: (
+                      <div className="flex max-w-full flex-col items-start overflow-hidden">
+                        <span className="font-medium text-gray-900">
+                          {familia.label}
+                        </span>
+                        <span className="block w-full truncate text-[11px] text-gray-500">
+                          {familia.description || familia.id}
+                        </span>
+                      </div>
+                    ),
+                    renderSelectedLabel: (
+                      <div className="flex max-w-full flex-col items-start overflow-hidden leading-tight">
+                        <span className="font-medium text-gray-900">
+                          {familia.label}
+                        </span>
+                        <span className="block w-full truncate text-[11px] text-gray-500">
+                          {familia.description || familia.id}
+                        </span>
+                      </div>
+                    ),
+                  }))}
+                  placeholder={
+                    loadingFamilias
+                      ? "A carregar famílias..."
+                      : "Todas as famílias"
+                  }
+                  searchPlaceholder="Pesquisar família..."
+                  emptyText="Nenhuma família encontrada"
+                  disabled={loadingFamilias || familias.length === 0}
+                  triggerClassName="w-[260px] rounded-sm text-xs h-8 bg-white cursor-pointer"
+                />
+                {filtroFamilia && (
+                  <Badge
+                    variant="secondary"
+                    className="rounded-sm text-[10px] bg-blue-50 text-blue-700 border border-blue-200"
+                  >
+                    {operacoesFamiliaSelecionada.length} operacoes
+                  </Badge>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    variant={showFiltros ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowFiltros(!showFiltros)}
+                    className={`rounded-sm text-xs h-8 ${showFiltros ? "bg-blue-500 hover:bg-blue-600" : "border-gray-200"}`}
+                  >
+                    <Filter className="w-3 h-3 mr-1.5" />
+                    Filtros
+                    {temFiltrosAtivos && (
+                      <span className="ml-1.5 w-4 h-4 bg-blue-600 text-white rounded-full text-[9px] flex items-center justify-center">
+                        {
+                          [
+                            filtroOperador.trim() !== "",
+                            filtroOperacoesSelecionadas.length > 0,
+                            filtroPolivalenciaMin.trim() !== "",
+                          ].filter(Boolean).length
+                        }
+                      </span>
+                    )}
+                  </Button>
+                  {temFiltrosAtivos && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={limparFiltros}
+                      className="rounded-sm text-xs h-8 text-gray-500 hover:text-gray-700"
+                    >
+                      <X className="w-3 h-3 mr-1" />
+                      Limpar
+                    </Button>
+                  )}
                 </div>
               </div>
-              <div>
-                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Operacoes (colunas)</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between rounded-sm text-xs h-8 bg-white border-gray-200">
-                      {filtroOperacoesSelecionadas.length > 0
-                        ? `${filtroOperacoesSelecionadas.length} selecionada(s)`
-                        : "Todas as operacoes"}
-                      <ChevronsUpDown className="w-3 h-3 text-gray-500" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[320px] p-2">
-                    <div className="space-y-2 pb-2 border-b border-gray-200">
+
+              {showFiltros && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-gray-200">
+                  <div>
+                    <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                      Operador
+                    </Label>
+                    <div className="relative">
+                      <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <Input
-                        value={searchOperacoes}
-                        onChange={(e) => setSearchOperacoes(e.target.value)}
-                        placeholder="Pesquisar por id ou operação..."
-                        className="text-xs h-8 bg-white"
+                        value={filtroOperador}
+                        onChange={(e) => setFiltroOperador(e.target.value)}
+                        placeholder="Pesquisar por ID..."
+                        className="rounded-sm text-xs h-8 pl-7 bg-white"
                       />
                     </div>
-                    <div className="max-h-64 overflow-auto space-y-1 pt-2">
-                      {colunasOperacoesFiltradas.map((op) => {
-                        const checked = filtroOperacoesSelecionadas.some(
-                          (item) => normalizeText(item) === normalizeText(op)
-                        );
-                        const operacaoInfo = operacoesPorNome.get(normalizeText(op));
-                        return (
-                          <button
-                            key={op}
-                            type="button"
-                            onClick={() => toggleFiltroOperacao(op)}
-                            className="w-full flex items-center justify-between px-2 py-1.5 text-xs rounded-sm hover:bg-gray-100"
-                          >
-                            <span className="text-left">{op}</span>
-                            <span className="flex items-center gap-2">
-                              {operacaoInfo?.id ? (
-                                <span className="text-right text-[11px] text-gray-400">
-                                  {operacaoInfo.id}
-                                </span>
-                              ) : null}
-                              {checked ? <Check className="w-3.5 h-3.5 text-blue-600" /> : null}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="pt-2 mt-2 border-t border-gray-200">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs w-full"
-                        onClick={() => setFiltroOperacoesSelecionadas([])}
-                      >
-                        Limpar selecao
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div>
-                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Polivalencia min (%)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={filtroPolivalenciaMin}
-                  onChange={(e) => setFiltroPolivalenciaMin(e.target.value)}
-                  placeholder="ex: 85"
-                  className="rounded-sm text-xs h-8 bg-white"
-                />
-              </div>
-              <div>
-                <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Ordenar por polivalencia</Label>
-                <Select value={ordenacaoPolivalencia} onValueChange={(v) => setOrdenacaoPolivalencia(v as "nenhuma" | "asc" | "desc")}>
-                  <SelectTrigger className="rounded-sm text-xs h-8 bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-sm">
-                    <SelectItem value="nenhuma" className="text-xs">Sem ordenacao</SelectItem>
-                    <SelectItem value="desc" className="text-xs">Maior OLE primeiro</SelectItem>
-                    <SelectItem value="asc" className="text-xs">Menor OLE primeiro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )}
-
-          {temFiltrosAtivos && (
-            <div className="text-[10px] text-gray-500">
-              A mostrar <span className="font-semibold text-gray-700">{operadoresVisiveis.length}</span> de <span className="font-semibold text-gray-700">{operadores.length}</span> operadores
-            </div>
-          )}
-        </div>
-
-        <CardContent className="p-0">
-          <div className="overflow-auto max-h-[65vh]">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase sticky left-0 bg-gray-50 z-20 min-w-[180px]">
-                    Operacao
-                  </th>
-                  {operadoresVisiveis.map((operador) => (
-                    <th
-                      key={operador.id}
-                      className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap min-w-[150px]"
-                    >
-                      <div className="text-xs font-semibold text-gray-900">{operador.id}</div>
-                      {operador.nome && (
-                        <div className="mt-0.5 text-[10px] font-normal text-gray-500 normal-case">
-                          {operador.nome}
-                        </div>
-                      )}
-                      <div className="mt-2">
-                        {!tabelaSomenteLeitura && editandoCelula === `${operador.id}-ole` ? (
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                      Operacoes (colunas)
+                    </Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-between rounded-sm text-xs h-8 bg-white border-gray-200"
+                        >
+                          {filtroOperacoesSelecionadas.length > 0
+                            ? `${filtroOperacoesSelecionadas.length} selecionada(s)`
+                            : "Todas as operacoes"}
+                          <ChevronsUpDown className="w-3 h-3 text-gray-500" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[320px] p-2">
+                        <div className="space-y-2 pb-2 border-b border-gray-200">
                           <Input
-                            type="number"
-                            min={0}
-                            max={100}
-                            defaultValue={operador.oleHistorico}
-                            onBlur={(e) => {
-                              handleEditOLE(operador.id, Number(e.target.value));
-                              setEditandoCelula(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                handleEditOLE(operador.id, Number((e.target as HTMLInputElement).value));
-                                setEditandoCelula(null);
-                              }
-                            }}
-                            autoFocus
-                            className="h-7 w-16 text-xs text-center rounded-sm font-mono mx-auto"
+                            value={searchOperacoes}
+                            onChange={(e) => setSearchOperacoes(e.target.value)}
+                            placeholder="Pesquisar por id ou operação..."
+                            className="text-xs h-8 bg-white"
                           />
-                        ) : (
-                          <Badge
-                            variant="secondary"
-                            className="font-mono font-semibold text-xs rounded-sm cursor-pointer"
-                            onClick={() => {
-                              if (!tabelaSomenteLeitura) setEditandoCelula(`${operador.id}-ole`);
-                            }}
-                          >
-                            {operador.oleHistorico}%
-                          </Badge>
-                        )}
-                      </div>
-                    </th>
-                  ))}
-                  {mostrarColunaEliminar && (
-                    <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-16 sticky right-0 bg-gray-50 z-10">
-                      Acoes
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {colunasPolivalencia.map((pol) => {
-                  const operacao = operacoesPorNome.get(normalizeText(pol));
-                  return (
-                    <tr key={pol} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="p-3 sticky left-0 bg-white z-10 border-r border-gray-200">
-                        <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">
-                          {operacao?.id || "—"}
                         </div>
-                        <div className="mt-1 font-semibold text-sm text-gray-900">{pol}</div>
-                      </td>
-                      {operadoresVisiveis.map((operador) => {
-                        const key = celulaKey(operador.id, pol);
-                        const competencia = operador.competencias[pol];
-                        return (
-                          <td
-                            key={key}
-                            className="p-2 text-center"
-                            title={competencia && Number.isFinite(Number(competencia.ole))
-                              ? `OLE: ${competencia.ole}%`
-                              : undefined}
-                          >
-                            {!tabelaSomenteLeitura && editandoCelula === key ? (
-                              <div className="space-y-1">
-                                <Input
-                                  defaultValue={competencia ? competencia.operacao || "" : ""}
-                                  onBlur={(e) => {
-                                    handleEditCompetencia(operador.id, pol, e.target.value || null);
-                                    setEditandoCelula(null);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      handleEditCompetencia(operador.id, pol, (e.target as HTMLInputElement).value || null);
-                                      setEditandoCelula(null);
-                                    }
-                                  }}
-                                  autoFocus
-                                  className="h-8 text-xs rounded-sm min-w-[120px]"
-                                  list={`ops-${key}`}
-                                  placeholder="Operacao..."
-                                />
-                                {competencia && competencia.operacao && (
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    max={100}
-                                    defaultValue={competencia.ole}
-                                    onBlur={(e) => handleEditCompetencia(operador.id, pol, competencia.operacao, Number(e.target.value))}
-                                    className="h-7 text-xs rounded-sm min-w-[120px]"
-                                    placeholder="OLE%"
-                                  />
-                                )}
-                                <datalist id={`ops-${key}`}>
-                                  {operacoesFamiliaSelecionada.map((opName) => (
-                                    <option key={opName} value={opName} />
-                                  ))}
-                                </datalist>
-                              </div>
-                            ) : (
-                              <div
-                                className={`group relative inline-flex flex-col items-center justify-center min-w-[120px] min-h-[36px] rounded-sm cursor-pointer transition-colors ${
-                                  competencia
-                                    ? `px-3 py-2 font-medium text-xs ${getOleColorClasses(competencia.ole)}`
-                                    : "w-10 h-10 bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                }`}
-                                title={competencia && Number.isFinite(Number(competencia.ole))
-                                  ? `Percentagem OLE: ${competencia.ole}%`
-                                  : undefined}
-                                onClick={() => {
-                                  if (!tabelaSomenteLeitura) setEditandoCelula(key);
-                                }}
+                        <div className="max-h-64 overflow-auto space-y-1 pt-2">
+                          {colunasOperacoesFiltradas.map((op) => {
+                            const checked = filtroOperacoesSelecionadas.some(
+                              (item) =>
+                                normalizeText(item) === normalizeText(op),
+                            );
+                            const operacaoInfo = operacoesPorNome.get(
+                              normalizeText(op),
+                            );
+                            return (
+                              <button
+                                key={op}
+                                type="button"
+                                onClick={() => toggleFiltroOperacao(op)}
+                                className="w-full flex items-center justify-between px-2 py-1.5 text-xs rounded-sm hover:bg-gray-100"
                               >
-                                {competencia ? <span className="text-xs font-mono">{competencia.ole}%</span> : "-"}
-                                {competencia && Number.isFinite(Number(competencia.ole)) ? (
-                                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-sm bg-gray-900 px-2 py-1 text-[10px] font-medium text-white shadow-lg group-hover:block">
-                                    OLE: {competencia.ole}%
-                                  </span>
-                                ) : null}
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
-                      {mostrarColunaEliminar && (
-                        <td className="p-3 text-center sticky right-0 bg-white z-10">
+                                <span className="text-left">{op}</span>
+                                <span className="flex items-center gap-2">
+                                  {operacaoInfo?.id ? (
+                                    <span className="text-right text-[11px] text-gray-400">
+                                      {operacaoInfo.id}
+                                    </span>
+                                  ) : null}
+                                  {checked ? (
+                                    <Check className="w-3.5 h-3.5 text-blue-600" />
+                                  ) : null}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="pt-2 mt-2 border-t border-gray-200">
                           <Button
+                            type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => {}}
-                            className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600"
+                            className="h-7 text-xs w-full"
+                            onClick={() => setFiltroOperacoesSelecionadas([])}
                           >
-                            <Trash2 className="w-3 h-3" />
+                            Limpar selecao
                           </Button>
-                        </td>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                      Polivalencia min (%)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={filtroPolivalenciaMin}
+                      onChange={(e) => setFiltroPolivalenciaMin(e.target.value)}
+                      placeholder="ex: 85"
+                      className="rounded-sm text-xs h-8 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1 block">
+                      Ordenar por polivalencia
+                    </Label>
+                    <Select
+                      value={ordenacaoPolivalencia}
+                      onValueChange={(v) =>
+                        setOrdenacaoPolivalencia(
+                          v as "nenhuma" | "asc" | "desc",
+                        )
+                      }
+                    >
+                      <SelectTrigger className="rounded-sm text-xs h-8 bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-sm">
+                        <SelectItem value="nenhuma" className="text-xs">
+                          Sem ordenacao
+                        </SelectItem>
+                        <SelectItem value="desc" className="text-xs">
+                          Maior OLE primeiro
+                        </SelectItem>
+                        <SelectItem value="asc" className="text-xs">
+                          Menor OLE primeiro
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {temFiltrosAtivos && (
+                <div className="text-[10px] text-gray-500">
+                  A mostrar{" "}
+                  <span className="font-semibold text-gray-700">
+                    {operadoresVisiveis.length}
+                  </span>{" "}
+                  de{" "}
+                  <span className="font-semibold text-gray-700">
+                    {operadores.length}
+                  </span>{" "}
+                  operadores
+                </div>
+              )}
+            </div>
+
+            <CardContent className="p-0">
+              <div className="overflow-auto max-h-[65vh]">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="p-3 text-left text-xs font-semibold text-gray-600 uppercase sticky left-0 bg-gray-50 z-20 min-w-[180px]">
+                        Operacao
+                      </th>
+                      {operadoresVisiveis.map((operador) => (
+                        <th
+                          key={operador.id}
+                          className="p-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap min-w-[150px]"
+                        >
+                          <div className="text-xs font-semibold text-gray-900">
+                            {operador.id}
+                          </div>
+                          {operador.nome && (
+                            <div className="mt-0.5 text-[10px] font-normal text-gray-500 normal-case">
+                              {operador.nome}
+                            </div>
+                          )}
+                          <div className="mt-2">
+                            {!tabelaSomenteLeitura &&
+                            editandoCelula === `${operador.id}-ole` ? (
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                defaultValue={operador.oleHistorico}
+                                onBlur={(e) => {
+                                  handleEditOLE(
+                                    operador.id,
+                                    Number(e.target.value),
+                                  );
+                                  setEditandoCelula(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    handleEditOLE(
+                                      operador.id,
+                                      Number(
+                                        (e.target as HTMLInputElement).value,
+                                      ),
+                                    );
+                                    setEditandoCelula(null);
+                                  }
+                                }}
+                                autoFocus
+                                className="h-7 w-16 text-xs text-center rounded-sm font-mono mx-auto"
+                              />
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="font-mono font-semibold text-xs rounded-sm cursor-pointer"
+                                onClick={() => {
+                                  if (!tabelaSomenteLeitura)
+                                    setEditandoCelula(`${operador.id}-ole`);
+                                }}
+                              >
+                                {operador.oleHistorico}%
+                              </Badge>
+                            )}
+                          </div>
+                        </th>
+                      ))}
+                      {mostrarColunaEliminar && (
+                        <th className="p-3 text-center text-xs font-semibold text-gray-600 uppercase w-16 sticky right-0 bg-gray-50 z-10">
+                          Acoes
+                        </th>
                       )}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-        </CardContent>
-      </Card>
+                  </thead>
+                  <tbody>
+                    {colunasPolivalencia.map((pol) => {
+                      const operacao = operacoesPorNome.get(normalizeText(pol));
+                      return (
+                        <tr
+                          key={pol}
+                          className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="p-3 sticky left-0 bg-white z-10 border-r border-gray-200">
+                            <div className="text-[10px] text-gray-400 font-mono font-normal leading-none">
+                              {operacao?.id || "—"}
+                            </div>
+                            <div className="mt-1 font-semibold text-sm text-gray-900">
+                              {pol}
+                            </div>
+                          </td>
+                          {operadoresVisiveis.map((operador) => {
+                            const key = celulaKey(operador.id, pol);
+                            const competencia = operador.competencias[pol];
+                            return (
+                              <td
+                                key={key}
+                                className="p-2 text-center"
+                                title={
+                                  competencia &&
+                                  Number.isFinite(Number(competencia.ole))
+                                    ? `OLE: ${competencia.ole}%`
+                                    : undefined
+                                }
+                              >
+                                {!tabelaSomenteLeitura &&
+                                editandoCelula === key ? (
+                                  <div className="space-y-1">
+                                    <Input
+                                      defaultValue={
+                                        competencia
+                                          ? competencia.operacao || ""
+                                          : ""
+                                      }
+                                      onBlur={(e) => {
+                                        handleEditCompetencia(
+                                          operador.id,
+                                          pol,
+                                          e.target.value || null,
+                                        );
+                                        setEditandoCelula(null);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          handleEditCompetencia(
+                                            operador.id,
+                                            pol,
+                                            (e.target as HTMLInputElement)
+                                              .value || null,
+                                          );
+                                          setEditandoCelula(null);
+                                        }
+                                      }}
+                                      autoFocus
+                                      className="h-8 text-xs rounded-sm min-w-[120px]"
+                                      list={`ops-${key}`}
+                                      placeholder="Operacao..."
+                                    />
+                                    {competencia && competencia.operacao && (
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        defaultValue={competencia.ole}
+                                        onBlur={(e) =>
+                                          handleEditCompetencia(
+                                            operador.id,
+                                            pol,
+                                            competencia.operacao,
+                                            Number(e.target.value),
+                                          )
+                                        }
+                                        className="h-7 text-xs rounded-sm min-w-[120px]"
+                                        placeholder="OLE%"
+                                      />
+                                    )}
+                                    <datalist id={`ops-${key}`}>
+                                      {operacoesFamiliaSelecionada.map(
+                                        (opName) => (
+                                          <option key={opName} value={opName} />
+                                        ),
+                                      )}
+                                    </datalist>
+                                  </div>
+                                ) : (
+                                  <div
+                                    className={`group relative inline-flex flex-col items-center justify-center min-w-[120px] min-h-[36px] rounded-sm cursor-pointer transition-colors ${
+                                      competencia
+                                        ? `px-3 py-2 font-medium text-xs ${getOleColorClasses(competencia.ole)}`
+                                        : "w-10 h-10 bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                    }`}
+                                    title={
+                                      competencia &&
+                                      Number.isFinite(Number(competencia.ole))
+                                        ? `Percentagem OLE: ${competencia.ole}%`
+                                        : undefined
+                                    }
+                                    onClick={() => {
+                                      if (!tabelaSomenteLeitura)
+                                        setEditandoCelula(key);
+                                    }}
+                                  >
+                                    {competencia ? (
+                                      <span className="text-xs font-mono">
+                                        {competencia.ole}%
+                                      </span>
+                                    ) : (
+                                      "-"
+                                    )}
+                                    {competencia &&
+                                    Number.isFinite(Number(competencia.ole)) ? (
+                                      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-sm bg-gray-900 px-2 py-1 text-[10px] font-medium text-white shadow-lg group-hover:block">
+                                        OLE: {competencia.ole}%
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                          {mostrarColunaEliminar && (
+                            <td className="p-3 text-center sticky right-0 bg-white z-10">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {}}
+                                className="h-7 w-7 p-0 rounded-sm hover:bg-orange-50 hover:text-orange-600"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="grupos" className="mt-4">
-          <MatrizPolivalenciaGrupos operadores={operadores} grupos={produtosMock} modo="api" />
+          <MatrizPolivalenciaGrupos
+            operadores={operadores}
+            grupos={produtosMock}
+            modo="api"
+          />
         </TabsContent>
+
         <TabsContent value="cobertura" className="mt-4">
           <CoberturaGeral />
         </TabsContent>
+        
         <TabsContent value="catalogo" className="mt-4">
           <CatalogoMaquinasApi
             familyId={filtroFamilia}
-            defaultTaskId={dados.configuracao.fichaTecnicaSelecionada?.fichaId || undefined}
+            defaultTaskId={
+              dados.configuracao.fichaTecnicaSelecionada?.fichaId || undefined
+            }
             familyLabel={familiaSelecionadaLabel}
             familyOptions={familias}
             onFamilyChange={setFiltroFamilia}

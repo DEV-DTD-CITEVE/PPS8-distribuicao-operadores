@@ -121,10 +121,33 @@ const extrairOperadoresDosResultadosIdeais = (raw: ApiRecord): Operador[] => {
     slot.operator_id ?? slot.operatorId ?? slot.operador_id,
     slot.operator_name ?? slot.operatorName
   ));
-  ensureArray(raw.operation_allocations ?? raw.operationAllocations).forEach((row) => {
-    Object.entries(row.operator_times ?? {}).forEach(([id]) => add(id, row.operator_positions?.[id]?.operator_name));
-    Object.entries(row.operator_positions ?? {}).forEach(([id, position]) => add(id, position?.operator_name));
+  ensureArray(
+  raw.operation_allocations ?? raw.operationAllocations
+).forEach((row) => {
+  const operatorTimes =
+    row.operator_times &&
+    typeof row.operator_times === "object"
+      ? (row.operator_times as Record<string, unknown>)
+      : {};
+
+  const operatorPositions =
+    row.operator_positions && typeof row.operator_positions === "object"
+      ? (row.operator_positions as Record<string, ApiRecord>)
+      : {};
+
+  Object.keys(operatorTimes).forEach((id) => {
+    add(
+      id,
+      operatorPositions[id]?.operator_name
+    );
   });
+
+  Object.entries(operatorPositions).forEach(
+    ([id, position]) => {
+      add(id, position?.operator_name);
+    }
+  );
+});
   Object.keys(raw.machine_times_per_operator ?? {}).forEach((id) => add(id));
   Object.keys(raw.operator_flow ?? {}).forEach((id) => add(id));
   return Array.from(byId.values());
@@ -1176,6 +1199,8 @@ export default function Home() {
   const [candidatePoolsByOperation, setCandidatePoolsByOperation] = useState<Record<string, string[]>>({});
   const [quantidadeObjetivoInput, setQuantidadeObjetivoInput] = useState("");
   const [numeroOperadoresInput, setNumeroOperadoresInput] = useState("");
+  const [criticidadeAlteradaInline, setCriticidadeAlteradaInline] =
+  useState(false);
   const [numeroOperadoresCandidates, setNumeroOperadoresCandidates] = useState<any[]>([]);
   const [numeroOperadoresCandidateIds, setNumeroOperadoresCandidateIds] = useState<string[]>([]);
   const [numeroOperadoresCandidateSearch, setNumeroOperadoresCandidateSearch] = useState("");
@@ -2199,24 +2224,70 @@ export default function Home() {
     return Object.keys(perOperator).length > 0 ? perOperator : null;
   }, []);
 
-  const normalizeOperatorSlotsInline = useCallback((rawSlots: unknown): any[] => {
+  const normalizeOperatorSlotsInline = useCallback(
+  (rawSlots: unknown): any[] => {
     return ensureArray(rawSlots)
       .map((slot) => ({
         ...(slot || {}),
-        operator_id: pickString(slot, ["operator_id", "operator_code", "operador_id", "operator"]) || "",
-        operator_name: pickString(slot, ["operator_name", "name", "nome"]) || "",
-        position_number: parseNumberLikeInline((slot as any)?.position_number),
-        position_label: pickString(slot, ["position_label", "label", "posto"]) || "",
-        position_side: pickString(slot, ["position_side", "side", "lado"]) || "",
+
+        operator_id:
+          pickString(slot, [
+            "operator_id",
+            "operator_code",
+            "operador_id",
+            "operator",
+          ]) || "",
+
+        operator_name:
+          pickString(slot, [
+            "operator_name",
+            "name",
+            "nome",
+          ]) || "",
+
+        position_number: parseNumberLikeInline(
+          (slot as any)?.position_number
+        ),
+
+        position_label:
+          pickString(slot, [
+            "position_label",
+            "label",
+            "posto",
+          ]) || "",
+
+        position_side:
+          pickString(slot, [
+            "position_side",
+            "side",
+            "lado",
+          ]) || "",
       }))
       .filter((slot) => slot.operator_id)
       .sort((a, b) => {
-        const aPos = Number.isFinite(a.position_number) ? a.position_number : Number.MAX_SAFE_INTEGER;
-        const bPos = Number.isFinite(b.position_number) ? b.position_number : Number.MAX_SAFE_INTEGER;
-        if (aPos !== bPos) return aPos - bPos;
-        return String(a.operator_id).localeCompare(String(b.operator_id));
+        const aPos =
+          typeof a.position_number === "number" &&
+          Number.isFinite(a.position_number)
+            ? a.position_number
+            : Number.MAX_SAFE_INTEGER;
+
+        const bPos =
+          typeof b.position_number === "number" &&
+          Number.isFinite(b.position_number)
+            ? b.position_number
+            : Number.MAX_SAFE_INTEGER;
+
+        if (aPos !== bPos) {
+          return aPos - bPos;
+        }
+
+        return String(a.operator_id).localeCompare(
+          String(b.operator_id)
+        );
       });
-  }, []);
+  },
+  []
+);
 
   const pickKpiInline = useCallback((
     raw: any,
@@ -2376,7 +2447,7 @@ export default function Home() {
       perdas: balanceLoss,
       numeroOperadores: numeroOperadores || 0,
       ocupacaoTotal,
-    };
+    } as ResultadosBalanceamento;
   }, [buildDistribuicaoFromAllocationsInline, buildSharePerOperatorSecondsInline, buildTableDataFromDistribuicaoInline, normalizeOperatorSlotsInline, pickKpiInline]);
 
   const resolveSharePerOperatorSecondsInline = useCallback((
@@ -2727,6 +2798,7 @@ export default function Home() {
     setExportPdfBodyInline(data.ajusteBodyBase ?? data.swapBaseRaw ?? null);
     setSwapBaseRawPorTipoInline(data.swapBaseRawPorTipo ?? {});
     setSwapBaseRawInline(data.swapBaseRaw ?? null);
+    setCriticidadeAlteradaInline(false);
     // O resultado de allocate também guarda ajusteBodyBase para permitir um
     // ajuste posterior; isso não significa que o resultado já seja ajustado.
     setTemAdjustInline(false);
@@ -2915,6 +2987,187 @@ export default function Home() {
       setIsAjustando(false);
     }
   }, [taskCodeInline, taskCodeSelecionado, ajusteBodyBaseInline, ajusteBodyBasePorTipoInline, resultadosAtuaisInline, resultadosPorTipoInline, buildResultadosFromApiInline, logAdjustPercentageTraceInline, layoutConfig.tipoLayout, configAtualInline]);
+
+  const handleToggleCriticaInline = useCallback(
+  async (
+    operationCode: string,
+    isCritical: boolean
+  ) => {
+    const codigoFicha =
+      taskCodeInline ||
+      taskCodeSelecionado ||
+      resultadosInlineData?.taskCode ||
+      "";
+
+    if (!codigoFicha) {
+      setErroPopupInline(
+        "Não foi possível alterar a operação crítica: falta o código da ficha técnica."
+      );
+      throw new Error("Código da ficha técnica em falta.");
+    }
+
+    try {
+      const resposta = await axios.patch(
+        `${API_BASE_URL}/technical-sheets/${encodeURIComponent(
+          codigoFicha
+        )}/operations/${encodeURIComponent(
+          operationCode
+        )}/critical`,
+        {
+          is_critical: isCritical,
+        }
+      );
+
+      // Usamos o valor confirmado pelo backend.
+      const confirmedCritical =
+        typeof resposta.data?.is_critical === "boolean"
+          ? resposta.data.is_critical
+          : isCritical;
+
+      const updateOperationAllocations = (rows: any[]) =>
+        rows.map((row: any) => {
+          const rowOperationCode = String(
+            row?.operation_code ??
+              row?.operation_id ??
+              ""
+          ).trim();
+
+          if (
+            normalizeKey(rowOperationCode) !==
+            normalizeKey(operationCode)
+          ) {
+            return row;
+          }
+
+          return {
+            ...row,
+            is_critical: confirmedCritical,
+          };
+        });
+
+      const updateResultados = (
+        resultados: ResultadosBalanceamento
+      ): ResultadosBalanceamento => {
+        const rows = Array.isArray(
+          (resultados as any)?.operation_allocations
+        )
+          ? (resultados as any).operation_allocations
+          : [];
+
+        return {
+          ...resultados,
+          operation_allocations:
+            updateOperationAllocations(rows),
+        };
+      };
+
+      // 1. Atualiza o resultado atualmente visível.
+      setResultadosAtuaisInline((prev) =>
+        prev ? updateResultados(prev) : prev
+      );
+
+      // 2. Atualiza linha/espinha para não perder o valor
+      // quando o utilizador troca de layout.
+      setResultadosPorTipoInline((prev) => ({
+        ...prev,
+        linha: prev.linha
+          ? updateResultados(prev.linha)
+          : prev.linha,
+        espinha: prev.espinha
+          ? updateResultados(prev.espinha)
+          : prev.espinha,
+      }));
+
+      // 3. Atualiza também o objeto geral guardado.
+      setResultadosInlineData((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+
+          resultados: updateResultados(prev.resultados),
+
+          resultadosPorTipo: prev.resultadosPorTipo
+            ? {
+                ...prev.resultadosPorTipo,
+
+                linha: prev.resultadosPorTipo.linha
+                  ? updateResultados(
+                      prev.resultadosPorTipo.linha
+                    )
+                  : prev.resultadosPorTipo.linha,
+
+                espinha: prev.resultadosPorTipo.espinha
+                  ? updateResultados(
+                      prev.resultadosPorTipo.espinha
+                    )
+                  : prev.resultadosPorTipo.espinha,
+              }
+            : prev.resultadosPorTipo,
+
+          operacoes: prev.operacoes.map((operacao) =>
+            normalizeKey(String(operacao.id)) ===
+            normalizeKey(operationCode)
+              ? {
+                  ...operacao,
+                  critica: confirmedCritical,
+                }
+              : operacao
+          ),
+        };
+      });
+
+      // 4. Mantém também a ficha técnica que está em produtosApi
+      // sincronizada com a alteração.
+      setProdutosApi((prev) =>
+        prev.map((produto) => {
+          if (produto.id !== produtoSelecionado) {
+            return produto;
+          }
+
+          return {
+            ...produto,
+            operacoes: produto.operacoes.map((operacao) =>
+              normalizeKey(String(operacao.id)) === normalizeKey(operationCode)
+                ? {
+                    ...operacao,
+                    critica: confirmedCritical,
+                  }
+                : operacao,
+            ),
+          };
+        }),
+      );
+        setCriticidadeAlteradaInline(true);
+    } catch (error) {
+      console.error(
+        "Erro ao alterar criticidade da operação:",
+        error
+      );
+
+      const apiMessage =
+        (error as any)?.response?.data?.detail?.message ||
+        (error as any)?.response?.data?.detail ||
+        (error as any)?.response?.data?.message ||
+        (error as any)?.message;
+
+      setErroPopupInline(
+        typeof apiMessage === "string"
+          ? apiMessage
+          : "Não foi possível alterar o estado crítico da operação."
+      );
+
+      throw error;
+    }
+  },
+  [
+    taskCodeInline,
+    taskCodeSelecionado,
+    resultadosInlineData?.taskCode,
+    produtoSelecionado,
+  ]
+);
+
 
   const handleAtribuirColunaIdeal = useCallback(async (operatorCode: string) => {
     setIdealAssignmentColumn(operatorCode);
@@ -4376,7 +4629,9 @@ export default function Home() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Balanceamento de Linha</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Balanceamento de Linha
+          </h1>
           <p className="text-gray-500 mt-1 text-sm">
             Configure operadores e processos operacionais
           </p>
@@ -4413,7 +4668,9 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <Package className="w-5 h-5 text-gray-700" />
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">Selecao de Grupo de Artigo</h3>
+                  <h3 className="text-base font-semibold text-gray-900">
+                    Selecao de Grupo de Artigo
+                  </h3>
                 </div>
               </div>
               <ChevronDown
@@ -4432,7 +4689,11 @@ export default function Home() {
                     value={grupoArtigoSelecionado || undefined}
                     onValueChange={setGrupoArtigoSelecionado}
                     options={familiaOptions}
-                    placeholder={loadingFamilias ? "A carregar grupos..." : "Selecione um grupo"}
+                    placeholder={
+                      loadingFamilias
+                        ? "A carregar grupos..."
+                        : "Selecione um grupo"
+                    }
                     searchPlaceholder="Pesquisar grupo..."
                     emptyText="Nenhum grupo encontrado."
                     disabled={loadingFamilias || familias.length === 0}
@@ -4476,7 +4737,9 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5 text-gray-700" />
-              <h3 className="text-base font-semibold text-gray-900">Configuracao de Distribuicao</h3>
+              <h3 className="text-base font-semibold text-gray-900">
+                Configuracao de Distribuicao
+              </h3>
             </div>
             <ChevronDown
               className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${seccoesExpandidas.configuracaoDistribuicao ? "rotate-180" : ""}`}
@@ -4484,40 +4747,56 @@ export default function Home() {
           </div>
         </div>
         {seccoesExpandidas.configuracaoDistribuicao && (
-           <div className="p-5">
+          <div className="p-5">
             <ConfiguracaoDistribuicaoComponent
               config={config}
               onChange={handleConfigChange}
               numeroOperadoresDisponiveis={operadoresSelecionados.length}
               operacoes={operacoes}
-              onCalcularOperadoresNecessarios={handleCalcularOperadoresNecessarios}
+              onCalcularOperadoresNecessarios={
+                handleCalcularOperadoresNecessarios
+              }
               horasTurno={config.horasTurno}
               produtividadeEstimada={config.produtividadeEstimada}
               quantidadeObjetivoInput={quantidadeObjetivoInput}
               numeroOperadoresInput={numeroOperadoresInput}
               usarAllocateModo1Api={usarAllocateModo1Api}
               totalOperadoresLinha={operadores.length}
-              onHorasTurnoChange={(value) => handleConfigChange({ ...config, horasTurno: value })}
-              onProdutividadeEstimadaChange={(value) => handleConfigChange({ ...config, produtividadeEstimada: value })}
+              onHorasTurnoChange={(value) =>
+                handleConfigChange({ ...config, horasTurno: value })
+              }
+              onProdutividadeEstimadaChange={(value) =>
+                handleConfigChange({ ...config, produtividadeEstimada: value })
+              }
               onQuantidadeObjetivoInputChange={(raw) => {
                 setQuantidadeObjetivoInput(raw);
               }}
               onQuantidadeObjetivoCommit={(raw) => {
                 if (!raw) {
-                  handleConfigChange({ ...config, quantidadeObjetivo: undefined });
+                  handleConfigChange({
+                    ...config,
+                    quantidadeObjetivo: undefined,
+                  });
                   return;
                 }
                 const quantidade = Number(raw);
                 if (!Number.isFinite(quantidade)) return;
-                handleConfigChange({ ...config, quantidadeObjetivo: quantidade });
-                if (quantidade > 0) handleCalcularOperadoresNecessarios(quantidade);
+                handleConfigChange({
+                  ...config,
+                  quantidadeObjetivo: quantidade,
+                });
+                if (quantidade > 0)
+                  handleCalcularOperadoresNecessarios(quantidade);
               }}
               onNumeroOperadoresInputChange={(raw) => {
                 setNumeroOperadoresInput(raw);
               }}
               onNumeroOperadoresCommit={(raw) => {
                 if (!raw) {
-                  handleConfigChange({ ...config, numeroOperadores: undefined });
+                  handleConfigChange({
+                    ...config,
+                    numeroOperadores: undefined,
+                  });
                   return;
                 }
                 const typed = Number(raw);
@@ -4525,14 +4804,20 @@ export default function Home() {
                 const num = Math.max(1, Math.trunc(typed));
                 setNumeroOperadoresInput(String(num));
                 handleConfigChange({ ...config, numeroOperadores: num });
-                 if (config.naoSelecionarOperadores !== true && config.idealManual !== true) {
-                   void carregarCandidatosNumeroOperadores(num);
-                 }
-                }}
+                if (
+                  config.naoSelecionarOperadores !== true &&
+                  config.idealManual !== true
+                ) {
+                  void carregarCandidatosNumeroOperadores(num);
+                }
+              }}
               permitirRetrocesso={layoutConfig.permitirRetrocesso}
               distanciaMaxima={layoutConfig.distanciaMaxima}
               onPermitirRetrocessoChange={(value) =>
-                setLayoutConfig((prev) => ({ ...prev, permitirRetrocesso: value }))
+                setLayoutConfig((prev) => ({
+                  ...prev,
+                  permitirRetrocesso: value,
+                }))
               }
               onDistanciaMaximaChange={(value) =>
                 setLayoutConfig((prev) => ({ ...prev, distanciaMaxima: value }))
@@ -4555,9 +4840,12 @@ export default function Home() {
                   <Edit3 className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">Entrada Manual de Operações</h3>
+                  <h3 className="text-base font-semibold text-gray-900">
+                    Entrada Manual de Operações
+                  </h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Preencha os dados das operações diretamente na tabela. Clique numa célula para editar.
+                    Preencha os dados das operações diretamente na tabela.
+                    Clique numa célula para editar.
                   </p>
                 </div>
               </div>
@@ -4571,22 +4859,27 @@ export default function Home() {
               <TabelaOperacoesManual
                 operacoes={operacoesManual}
                 onOperacoesChange={(ops) => {
-                  const lista = ops.length === 0
-                    ? [{
-                        id: "OP001",
-                        nome: "",
-                        tempo: 0,
-                        tipoMaquina: "",
-                        largura: 190,
-                        ponto: "",
-                        setup: "Standard",
-                        permitirAgrupamento: true,
-                        sequencia: 1,
-                      }]
-                    : ops;
+                  const lista =
+                    ops.length === 0
+                      ? [
+                          {
+                            id: "OP001",
+                            nome: "",
+                            tempo: 0,
+                            tipoMaquina: "",
+                            largura: 190,
+                            ponto: "",
+                            setup: "Standard",
+                            permitirAgrupamento: true,
+                            sequencia: 1,
+                          },
+                        ]
+                      : ops;
                   setOperacoesManual(lista);
                 }}
-                operadores={operadores.filter((op) => operadoresSelecionados.includes(op.id))}
+                operadores={operadores.filter((op) =>
+                  operadoresSelecionados.includes(op.id),
+                )}
                 atribuicoes={atribuicoesManual}
                 onAtribuicaoChange={handleAtribuirManualmente}
               />
@@ -4600,110 +4893,226 @@ export default function Home() {
         <Button
           type="button"
           size="lg"
-               onClick={() => handleCalcular(true)}
-           disabled={(!usarAllocateModo1Api && !usarAllocateIdealApi && config.possibilidade !== 2 && config.possibilidade !== 3 && operadoresSelecionados.length === 0) || operacoes.length === 0}
+          onClick={() => handleCalcular(true)}
+          disabled={
+            (!usarAllocateModo1Api &&
+              !usarAllocateIdealApi &&
+              config.possibilidade !== 2 &&
+              config.possibilidade !== 3 &&
+              operadoresSelecionados.length === 0) ||
+            operacoes.length === 0
+          }
           className="px-12 py-6 text-sm font-semibold bg-blue-500 hover:bg-blue-600 rounded-sm uppercase tracking-wide"
         >
           <Calculator className="w-5 h-5 mr-2" />
           Calcular Balanceamento
-       </Button>
-       </div>
+        </Button>
+      </div>
 
-       <Dialog open={showNumeroOperadoresCandidates} onOpenChange={setShowNumeroOperadoresCandidates}>
-         <DialogContent className="max-w-2xl rounded-sm">
-           <DialogHeader>
-             <DialogTitle>Selecionar operadores</DialogTitle>
-             <DialogDescription>
-               Seleciona até {Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2)} operadores para o balanceamento, incluindo a folga.
-             </DialogDescription>
-           </DialogHeader>
-           <div className="space-y-3">
-             <Input
-               value={numeroOperadoresCandidateSearch}
-               onChange={(event) => setNumeroOperadoresCandidateSearch(event.target.value)}
-               placeholder="Pesquisar candidato por ID ou nome..."
-               className="rounded-sm text-sm"
-               disabled={loadingNumeroOperadoresCandidates}
-             />
-             <div className="flex items-center justify-between text-xs text-gray-600">
-               <span>Operadores selecionados</span>
-               <span className="font-mono font-semibold text-gray-900">
-                 {numeroOperadoresCandidateIds.length} / {Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2)}
-               </span>
-             </div>
-             <Progress
-               value={Math.min(100, (numeroOperadoresCandidateIds.length / Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2)) * 100)}
-               className="h-2"
-             />
-             {loadingNumeroOperadoresCandidates ? (
-               <div className="py-6 text-center text-sm text-gray-500">A carregar candidatos...</div>
-             ) : (
-               <div className="max-h-80 space-y-1 overflow-y-auto">
-                  {numeroOperadoresCandidates.filter((candidate) => {
-                    const termo = numeroOperadoresCandidateSearch.trim().toLowerCase();
+      <Dialog
+        open={showNumeroOperadoresCandidates}
+        onOpenChange={setShowNumeroOperadoresCandidates}
+      >
+        <DialogContent className="max-w-2xl rounded-sm">
+          <DialogHeader>
+            <DialogTitle>Selecionar operadores</DialogTitle>
+            <DialogDescription>
+              Seleciona até{" "}
+              {Math.max(
+                1,
+                Math.trunc(
+                  Number(numeroOperadoresInput || config.numeroOperadores || 1),
+                ) + 2,
+              )}{" "}
+              operadores para o balanceamento, incluindo a folga.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={numeroOperadoresCandidateSearch}
+              onChange={(event) =>
+                setNumeroOperadoresCandidateSearch(event.target.value)
+              }
+              placeholder="Pesquisar candidato por ID ou nome..."
+              className="rounded-sm text-sm"
+              disabled={loadingNumeroOperadoresCandidates}
+            />
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>Operadores selecionados</span>
+              <span className="font-mono font-semibold text-gray-900">
+                {numeroOperadoresCandidateIds.length} /{" "}
+                {Math.max(
+                  1,
+                  Math.trunc(
+                    Number(
+                      numeroOperadoresInput || config.numeroOperadores || 1,
+                    ),
+                  ) + 2,
+                )}
+              </span>
+            </div>
+            <Progress
+              value={Math.min(
+                100,
+                (numeroOperadoresCandidateIds.length /
+                  Math.max(
+                    1,
+                    Math.trunc(
+                      Number(
+                        numeroOperadoresInput || config.numeroOperadores || 1,
+                      ),
+                    ) + 2,
+                  )) *
+                  100,
+              )}
+              className="h-2"
+            />
+            {loadingNumeroOperadoresCandidates ? (
+              <div className="py-6 text-center text-sm text-gray-500">
+                A carregar candidatos...
+              </div>
+            ) : (
+              <div className="max-h-80 space-y-1 overflow-y-auto">
+                {numeroOperadoresCandidates
+                  .filter((candidate) => {
+                    const termo = numeroOperadoresCandidateSearch
+                      .trim()
+                      .toLowerCase();
                     if (!termo) return true;
-                    const id = pickString(candidate, ["collaborator_id", "collaboratorId", "operator_id", "operator_code", "id", "code"]);
-                    const name = pickString(candidate, ["collaborator_name", "collaboratorName", "operator_name", "name", "nome"]);
-                    return id.toLowerCase().includes(termo) || name.toLowerCase().includes(termo);
-                  }).map((candidate, index) => {
-                   const id = pickString(candidate, ["collaborator_id", "collaboratorId", "operator_id", "operator_code", "id", "code"]);
-                   const name = pickString(candidate, ["collaborator_name", "collaboratorName", "operator_name", "name", "nome"]) || id;
-                   const ole = pickNumber(candidate, ["average_ole_family", "average_ole", "ole_percentage_family", "ole_percentage"]);
-                   const selected = numeroOperadoresCandidateIds.includes(id);
-                   return (
-                     <button
-                       key={`${id}-${index}`}
-                       type="button"
-                       onClick={() => toggleNumeroOperadoresCandidate(candidate)}
-                       className={`flex w-full items-center gap-3 rounded-sm border px-3 py-2 text-left transition-colors ${selected ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}
-                     >
-                       <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[10px] ${selected ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300"}`}>
-                         {selected ? "✓" : ""}
-                       </span>
-                       <span className="font-mono text-xs text-gray-600">{id}</span>
-                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{name}</span>
-                       {ole != null && <span className="text-xs text-gray-500">OLE {ole.toFixed(1)}%</span>}
-                     </button>
-                   );
-                 })}
-               </div>
-             )}
-             <div className="flex justify-end border-t pt-3">
-               <Button
-                 type="button"
-                 size="sm"
-                  onClick={() => {
-                    setShowNumeroOperadoresCandidates(false);
-                    void handleCalcular(true);
-                  }}
-                  disabled={numeroOperadoresCandidateIds.length !== Math.max(1, Math.trunc(Number(numeroOperadoresInput || config.numeroOperadores || 1)) + 2)}
-               >
-                 Confirmar operadores
-               </Button>
-             </div>
-           </div>
-         </DialogContent>
-       </Dialog>
+                    const id = pickString(candidate, [
+                      "collaborator_id",
+                      "collaboratorId",
+                      "operator_id",
+                      "operator_code",
+                      "id",
+                      "code",
+                    ]);
+                    const name = pickString(candidate, [
+                      "collaborator_name",
+                      "collaboratorName",
+                      "operator_name",
+                      "name",
+                      "nome",
+                    ]);
+                    return (
+                      id.toLowerCase().includes(termo) ||
+                      name.toLowerCase().includes(termo)
+                    );
+                  })
+                  .map((candidate, index) => {
+                    const id = pickString(candidate, [
+                      "collaborator_id",
+                      "collaboratorId",
+                      "operator_id",
+                      "operator_code",
+                      "id",
+                      "code",
+                    ]);
+                    const name =
+                      pickString(candidate, [
+                        "collaborator_name",
+                        "collaboratorName",
+                        "operator_name",
+                        "name",
+                        "nome",
+                      ]) || id;
+                    const ole = pickNumber(candidate, [
+                      "average_ole_family",
+                      "average_ole",
+                      "ole_percentage_family",
+                      "ole_percentage",
+                    ]);
+                    const selected = numeroOperadoresCandidateIds.includes(id);
+                    return (
+                      <button
+                        key={`${id}-${index}`}
+                        type="button"
+                        onClick={() =>
+                          toggleNumeroOperadoresCandidate(candidate)
+                        }
+                        className={`flex w-full items-center gap-3 rounded-sm border px-3 py-2 text-left transition-colors ${selected ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}
+                      >
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[10px] ${selected ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300"}`}
+                        >
+                          {selected ? "✓" : ""}
+                        </span>
+                        <span className="font-mono text-xs text-gray-600">
+                          {id}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
+                          {name}
+                        </span>
+                        {ole != null && (
+                          <span className="text-xs text-gray-500">
+                            OLE {ole.toFixed(1)}%
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+            <div className="flex justify-end border-t pt-3">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setShowNumeroOperadoresCandidates(false);
+                  void handleCalcular(true);
+                }}
+                disabled={
+                  numeroOperadoresCandidateIds.length !==
+                  Math.max(
+                    1,
+                    Math.trunc(
+                      Number(
+                        numeroOperadoresInput || config.numeroOperadores || 1,
+                      ),
+                    ) + 2,
+                  )
+                }
+              >
+                Confirmar operadores
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-       {resultadosInlineData && resultadosAtuaisInline && configAtualInline && (
+      {resultadosInlineData && resultadosAtuaisInline && configAtualInline && (
         <section ref={resultadosRef} className="pt-4 space-y-6">
           {/* Dialogs de erro/sucesso do inline */}
-          <Dialog open={Boolean(erroPopupInline)} onOpenChange={(open) => { if (!open) setErroPopupInline(null); }}>
+          <Dialog
+            open={Boolean(erroPopupInline)}
+            onOpenChange={(open) => {
+              if (!open) setErroPopupInline(null);
+            }}
+          >
             <DialogContent className="max-w-md rounded-sm">
               <DialogHeader>
                 <DialogTitle>Erro</DialogTitle>
                 <DialogDescription>
-                  <div className="whitespace-pre-wrap">{erroPopupInline || ""}</div>
+                  <div className="whitespace-pre-wrap">
+                    {erroPopupInline || ""}
+                  </div>
                 </DialogDescription>
               </DialogHeader>
             </DialogContent>
           </Dialog>
-          <Dialog open={Boolean(sucessoPopupInline)} onOpenChange={(open) => { if (!open) setSucessoPopupInline(null); }}>
+          <Dialog
+            open={Boolean(sucessoPopupInline)}
+            onOpenChange={(open) => {
+              if (!open) setSucessoPopupInline(null);
+            }}
+          >
             <DialogContent className="max-w-md rounded-sm">
               <DialogHeader>
                 <DialogTitle>Sucesso</DialogTitle>
                 <DialogDescription>
-                  <div className="whitespace-pre-wrap">{sucessoPopupInline || ""}</div>
+                  <div className="whitespace-pre-wrap">
+                    {sucessoPopupInline || ""}
+                  </div>
                 </DialogDescription>
               </DialogHeader>
             </DialogContent>
@@ -4720,17 +5129,31 @@ export default function Home() {
                       <Calculator className="w-4 h-4 text-blue-600" />
                     </div>
                     <div>
-                      <h2 className="text-sm font-semibold text-gray-900">Análise de Resultados</h2>
-                      <p className="text-gray-500 text-[10px]">Relatório do balanceamento calculado</p>
+                      <h2 className="text-sm font-semibold text-gray-900">
+                        Análise de Resultados
+                      </h2>
+                      <p className="text-gray-500 text-[10px]">
+                        Relatório do balanceamento calculado
+                      </p>
                     </div>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={handleExportInline} className="text-gray-600 border-gray-200 hover:bg-gray-50 rounded-sm text-[10px] h-7 px-2.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportInline}
+                    className="text-gray-600 border-gray-200 hover:bg-gray-50 rounded-sm text-[10px] h-7 px-2.5"
+                  >
                     <Download className="w-3 h-3 mr-1.5" />
                     Exportar
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleExportPdfInline} className="text-gray-600 border-gray-200 hover:bg-gray-50 rounded-sm text-[10px] h-7 px-2.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportPdfInline}
+                    className="text-gray-600 border-gray-200 hover:bg-gray-50 rounded-sm text-[10px] h-7 px-2.5"
+                  >
                     <FileDown className="w-3 h-3 mr-1.5" />
                     Exportar PDF
                   </Button>
@@ -4745,13 +5168,16 @@ export default function Home() {
                 resultados={resultadosAtuaisInline}
                 config={configAtualInline}
                 mostrarTaktTime={Number(configAtualInline?.possibilidade) === 2}
-                realMetrics={waterfallDataInline?.data?.metrics ?? waterfallDataInline?.metrics}
+                realMetrics={
+                  waterfallDataInline?.data?.metrics ??
+                  waterfallDataInline?.metrics
+                }
                 showRealMetrics={ocupacaoViewInline === "waterfall"}
                 layout="column"
               />
             </div>
             <div className="space-y-6 min-w-0 overflow-x-hidden">
-           <DashboardResultados
+              <DashboardResultados
                 resultados={resultadosAtuaisInline}
                 operadores={resultadosInlineData.operadores}
                 operacoes={resultadosInlineData.operacoes}
@@ -4765,36 +5191,58 @@ export default function Home() {
                 isGuardandoHistorico={isGuardandoHistorico}
                 showTabela={false}
                 onAtribuirColuna={handleAtribuirColunaIdeal}
-                  isIdealSemOle={
-                    configAtualInline.possibilidade === 5 ||
-                    (configAtualInline.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true) ||
-                    (configAtualInline.possibilidade === 3 && configAtualInline.naoSelecionarOperadores === true)
-                  }
-                 waterfallData={waterfallDataInline}
-                 ocupacaoView={ocupacaoViewInline}
-                 onOcupacaoViewChange={setOcupacaoViewInline}
-                 taskCode={taskCodeInline || resultadosInlineData.taskCode || "ficha selecionada"}
-               />
+                isIdealSemOle={
+                  configAtualInline.possibilidade === 5 ||
+                  (configAtualInline.possibilidade === 2 &&
+                    configAtualInline.naoSelecionarOperadores === true) ||
+                  (configAtualInline.possibilidade === 3 &&
+                    configAtualInline.naoSelecionarOperadores === true)
+                }
+                waterfallData={waterfallDataInline}
+                ocupacaoView={ocupacaoViewInline}
+                onOcupacaoViewChange={setOcupacaoViewInline}
+                taskCode={
+                  taskCodeInline ||
+                  resultadosInlineData.taskCode ||
+                  "ficha selecionada"
+                }
+              />
             </div>
           </div>
 
           {configAtualInline.possibilidade === 5 ||
-          (configAtualInline.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true) ||
-          (configAtualInline.possibilidade === 3 && configAtualInline.naoSelecionarOperadores === true) ? (
+          (configAtualInline.possibilidade === 2 &&
+            configAtualInline.naoSelecionarOperadores === true) ||
+          (configAtualInline.possibilidade === 3 &&
+            configAtualInline.naoSelecionarOperadores === true) ? (
             <div className="rounded-sm border border-gray-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-sm font-semibold text-gray-900">Progresso de Atribuição</div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    Progresso de Atribuição
+                  </div>
                   <div className="mt-1 text-xs text-gray-500">
-                    {idealAssignedCollaboratorIds.size} de {idealAssignmentMax} operadores atribuídos
+                    {idealAssignedCollaboratorIds.size} de {idealAssignmentMax}{" "}
+                    operadores atribuídos
                   </div>
                 </div>
                 <span className="font-mono text-sm font-semibold text-blue-600">
-                  {Math.round(Math.min(100, (idealAssignedCollaboratorIds.size / idealAssignmentMax) * 100))}%
+                  {Math.round(
+                    Math.min(
+                      100,
+                      (idealAssignedCollaboratorIds.size / idealAssignmentMax) *
+                        100,
+                    ),
+                  )}
+                  %
                 </span>
               </div>
               <Progress
-                value={Math.min(100, (idealAssignedCollaboratorIds.size / idealAssignmentMax) * 100)}
+                value={Math.min(
+                  100,
+                  (idealAssignedCollaboratorIds.size / idealAssignmentMax) *
+                    100,
+                )}
                 className="h-2"
               />
             </div>
@@ -4814,17 +5262,31 @@ export default function Home() {
             isGuardandoHistorico={isGuardandoHistorico}
             showOccupacaoCard={false}
             onAtribuirColuna={handleAtribuirColunaIdeal}
-             isIdealSemOle={
-               configAtualInline.possibilidade === 5 ||
-               (configAtualInline.possibilidade === 2 && configAtualInline.naoSelecionarOperadores === true) ||
-               (configAtualInline.possibilidade === 3 && configAtualInline.naoSelecionarOperadores === true)
-             }
-           />
+            onToggleCritica={handleToggleCriticaInline}
+            onCalcularBalanceamento={() => handleCalcular(true)}
+              criticidadeAlterada={criticidadeAlteradaInline}
 
-           {waterfallLoadingInline ? <p className="text-xs text-gray-500">A carregar dados do waterfall…</p> : null}
-           {waterfallErrorInline ? <p className="text-xs text-amber-700">{waterfallErrorInline} A mostrar os dados locais disponíveis.</p> : null}
+            isIdealSemOle={
+              configAtualInline.possibilidade === 5 ||
+              (configAtualInline.possibilidade === 2 &&
+                configAtualInline.naoSelecionarOperadores === true) ||
+              (configAtualInline.possibilidade === 3 &&
+                configAtualInline.naoSelecionarOperadores === true)
+            }
+          />
 
-           <VisualizadorFluxo
+          {waterfallLoadingInline ? (
+            <p className="text-xs text-gray-500">
+              A carregar dados do waterfall…
+            </p>
+          ) : null}
+          {waterfallErrorInline ? (
+            <p className="text-xs text-amber-700">
+              {waterfallErrorInline} A mostrar os dados locais disponíveis.
+            </p>
+          ) : null}
+
+          <VisualizadorFluxo
             resultados={resultadosAtuaisInline}
             operadores={resultadosInlineData.operadores}
             operacoes={resultadosInlineData.operacoes}
@@ -4862,7 +5324,9 @@ export default function Home() {
       >
         <DialogContent className="w-[min(96vw,760px)] max-w-2xl overflow-x-hidden rounded-sm">
           <DialogHeader>
-            <DialogTitle>Atribuir colaborador a {idealAssignmentColumn || "coluna"}</DialogTitle>
+            <DialogTitle>
+              Atribuir colaborador a {idealAssignmentColumn || "coluna"}
+            </DialogTitle>
             <DialogDescription>
               Escolhe o colaborador que ficará associado a esta coluna.
             </DialogDescription>
@@ -4875,7 +5339,10 @@ export default function Home() {
               </span>
             </div>
             <Progress
-              value={Math.min(100, (idealAssignedCollaboratorIds.size / idealAssignmentMax) * 100)}
+              value={Math.min(
+                100,
+                (idealAssignedCollaboratorIds.size / idealAssignmentMax) * 100,
+              )}
               className="h-2"
             />
           </div>
@@ -4888,67 +5355,104 @@ export default function Home() {
           />
           <div className="max-h-96 min-w-0 max-w-full space-y-1 overflow-x-hidden overflow-y-auto">
             {idealCollaboratorsLoading ? (
-              <div className="py-6 text-center text-sm text-gray-500">A carregar colaboradores...</div>
+              <div className="py-6 text-center text-sm text-gray-500">
+                A carregar colaboradores...
+              </div>
             ) : idealCollaboratorsFiltered.length === 0 ? (
-              <div className="py-6 text-center text-sm text-gray-500">Nenhum colaborador encontrado.</div>
-            ) : idealCollaboratorsFiltered.map((collaborator, index) => {
-              const id = pickString(collaborator, ["collaborator_id", "collaboratorId", "id", "operator_id", "operador_id"]);
-              const name = pickString(collaborator, ["collaborator_name", "collaboratorName", "name", "nome"]) || id;
-              const oleDetails = idealOleDetails[normalizeKey(id)] || { operacoes: [] };
-              const isOleExpanded = false;
-              const alreadyAssignedElsewhere = false;
-              return (
-                <Button
-                  key={`${id}-${index}`}
-                  type="button"
-                  variant="outline"
-                  className="w-full min-w-0 justify-start rounded-sm text-left"
-                  disabled={isAjustando}
-                  title={alreadyAssignedElsewhere ? "Este colaborador já está atribuído a outra coluna" : undefined}
-                  onClick={() => void handleConfirmarAtribuicaoIdeal(collaborator)}
-                >
-                  <span className="flex min-w-0 w-full items-center gap-2">
-                    <span className="font-mono text-xs mr-2">{id}</span>
-                    <span className="min-w-0 flex-1 truncate text-left">{name}</span>
-                    <span className="text-[11px] text-gray-500">
-                      Média OLE: {oleDetails.media != null ? `${oleDetails.media.toFixed(1)}%` : "—"}
-                    </span>
-                    {true ? (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="text-[11px] text-blue-600 hover:underline"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setIdealOleDetailsCollaborator({ id, name });
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
+              <div className="py-6 text-center text-sm text-gray-500">
+                Nenhum colaborador encontrado.
+              </div>
+            ) : (
+              idealCollaboratorsFiltered.map((collaborator, index) => {
+                const id = pickString(collaborator, [
+                  "collaborator_id",
+                  "collaboratorId",
+                  "id",
+                  "operator_id",
+                  "operador_id",
+                ]);
+                const name =
+                  pickString(collaborator, [
+                    "collaborator_name",
+                    "collaboratorName",
+                    "name",
+                    "nome",
+                  ]) || id;
+                const oleDetails = idealOleDetails[normalizeKey(id)] || {
+                  operacoes: [],
+                };
+                const isOleExpanded = false;
+                const alreadyAssignedElsewhere = false;
+                return (
+                  <Button
+                    key={`${id}-${index}`}
+                    type="button"
+                    variant="outline"
+                    className="w-full min-w-0 justify-start rounded-sm text-left"
+                    disabled={isAjustando}
+                    title={
+                      alreadyAssignedElsewhere
+                        ? "Este colaborador já está atribuído a outra coluna"
+                        : undefined
+                    }
+                    onClick={() =>
+                      void handleConfirmarAtribuicaoIdeal(collaborator)
+                    }
+                  >
+                    <span className="flex min-w-0 w-full items-center gap-2">
+                      <span className="font-mono text-xs mr-2">{id}</span>
+                      <span className="min-w-0 flex-1 truncate text-left">
+                        {name}
+                      </span>
+                      <span className="text-[11px] text-gray-500">
+                        Média OLE:{" "}
+                        {oleDetails.media != null
+                          ? `${oleDetails.media.toFixed(1)}%`
+                          : "—"}
+                      </span>
+                      {true ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="text-[11px] text-blue-600 hover:underline"
+                          onClick={(event) => {
                             event.stopPropagation();
                             setIdealOleDetailsCollaborator({ id, name });
-                          }
-                        }}
-                      >
-                        {isOleExpanded ? "Esconder" : "Ver mais"}
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setIdealOleDetailsCollaborator({ id, name });
+                            }
+                          }}
+                        >
+                          {isOleExpanded ? "Esconder" : "Ver mais"}
+                        </span>
+                      ) : null}
+                    </span>
+                    {isOleExpanded ? (
+                      <span className="mt-1 w-full border-t border-gray-200 pt-1 text-left text-[11px] font-normal text-gray-600">
+                        <span className="block font-medium text-gray-700">
+                          Média OLE:{" "}
+                          {oleDetails.media != null
+                            ? `${oleDetails.media.toFixed(1)}%`
+                            : "—"}
+                        </span>
+                        {oleDetails.operacoes.map((operation) => (
+                          <span key={operation.id} className="block">
+                            {operation.nome || operation.id}:{" "}
+                            {operation.ole != null
+                              ? `${operation.ole.toFixed(1)}%`
+                              : "—"}
+                          </span>
+                        ))}
                       </span>
                     ) : null}
-                  </span>
-                  {isOleExpanded ? (
-                    <span className="mt-1 w-full border-t border-gray-200 pt-1 text-left text-[11px] font-normal text-gray-600">
-                      <span className="block font-medium text-gray-700">
-                        Média OLE: {oleDetails.media != null ? `${oleDetails.media.toFixed(1)}%` : "—"}
-                      </span>
-                      {oleDetails.operacoes.map((operation) => (
-                        <span key={operation.id} className="block">
-                          {operation.nome || operation.id}: {operation.ole != null ? `${operation.ole.toFixed(1)}%` : "—"}
-                        </span>
-                      ))}
-                    </span>
-                  ) : null}
-                </Button>
-              );
-            })}
+                  </Button>
+                );
+              })
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -4960,40 +5464,62 @@ export default function Home() {
       >
         <DialogContent className="max-w-sm rounded-sm">
           <DialogHeader>
-            <DialogTitle>Operações de {idealOleDetailsCollaborator?.name || "colaborador"}</DialogTitle>
-            <DialogDescription>OLE das operações consideradas para este candidato.</DialogDescription>
+            <DialogTitle>
+              Operações de {idealOleDetailsCollaborator?.name || "colaborador"}
+            </DialogTitle>
+            <DialogDescription>
+              OLE das operações consideradas para este candidato.
+            </DialogDescription>
           </DialogHeader>
-          {idealOleDetailsCollaborator ? (() => {
-            const details = idealOleDetails[normalizeKey(idealOleDetailsCollaborator.id)] || { operacoes: [] };
-            return (
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between rounded-sm bg-gray-50 px-3 py-2">
-                  <span className="text-gray-600">Média OLE</span>
-                  <span className="font-semibold text-gray-900">
-                    {details.media != null ? `${details.media.toFixed(1)}%` : "—"}
-                  </span>
-                </div>
-                <div className="max-h-64 space-y-1 overflow-y-auto">
-                  {details.operacoes.length === 0 ? (
-                    <div className="py-4 text-center text-xs text-gray-500">Sem operações disponíveis.</div>
-                  ) : details.operacoes.map((operation) => (
-                    <div key={operation.id} className="flex items-center justify-between rounded-sm border px-3 py-2">
-                      <span className="truncate pr-3">{operation.nome || operation.id}</span>
-                      <span className="font-mono text-xs font-semibold text-gray-700">
-                        {operation.ole != null ? `${operation.ole.toFixed(1)}%` : "—"}
+          {idealOleDetailsCollaborator
+            ? (() => {
+                const details = idealOleDetails[
+                  normalizeKey(idealOleDetailsCollaborator.id)
+                ] || { operacoes: [] };
+                return (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between rounded-sm bg-gray-50 px-3 py-2">
+                      <span className="text-gray-600">Média OLE</span>
+                      <span className="font-semibold text-gray-900">
+                        {details.media != null
+                          ? `${details.media.toFixed(1)}%`
+                          : "—"}
                       </span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })() : null}
+                    <div className="max-h-64 space-y-1 overflow-y-auto">
+                      {details.operacoes.length === 0 ? (
+                        <div className="py-4 text-center text-xs text-gray-500">
+                          Sem operações disponíveis.
+                        </div>
+                      ) : (
+                        details.operacoes.map((operation) => (
+                          <div
+                            key={operation.id}
+                            className="flex items-center justify-between rounded-sm border px-3 py-2"
+                          >
+                            <span className="truncate pr-3">
+                              {operation.nome || operation.id}
+                            </span>
+                            <span className="font-mono text-xs font-semibold text-gray-700">
+                              {operation.ole != null
+                                ? `${operation.ole.toFixed(1)}%`
+                                : "—"}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })()
+            : null}
         </DialogContent>
       </Dialog>
       <Dialog
         open={confirmarCalculoModal.open}
         onOpenChange={(open) => {
-          if (!open) setConfirmarCalculoModal({ open: false, identificador: "" });
+          if (!open)
+            setConfirmarCalculoModal({ open: false, identificador: "" });
         }}
       >
         <DialogContent className="rounded-sm">
@@ -5003,7 +5529,8 @@ export default function Home() {
               Confirmar balanceamento
             </DialogTitle>
             <DialogDescription className="text-xs bg-amber-50 border border-amber-200 rounded-sm px-3 py-2 text-amber-700">
-              Confirmar balanceamento para <strong>{confirmarCalculoModal.identificador}</strong>?
+              Confirmar balanceamento para{" "}
+              <strong>{confirmarCalculoModal.identificador}</strong>?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -5011,7 +5538,9 @@ export default function Home() {
               type="button"
               variant="outline"
               className="rounded-sm text-xs cursor-pointer"
-              onClick={() => setConfirmarCalculoModal({ open: false, identificador: "" })}
+              onClick={() =>
+                setConfirmarCalculoModal({ open: false, identificador: "" })
+              }
             >
               Cancelar
             </Button>
@@ -5037,9 +5566,13 @@ export default function Home() {
       >
         <DialogContent className="rounded-sm">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Erro ao calcular balanceamento</DialogTitle>
+            <DialogTitle className="text-base font-semibold">
+              Erro ao calcular balanceamento
+            </DialogTitle>
             <DialogDescription className="text-xs">
-              <div className="whitespace-pre-wrap">{erroCalculoModal || "Ocorreu um erro inesperado."}</div>
+              <div className="whitespace-pre-wrap">
+                {erroCalculoModal || "Ocorreu um erro inesperado."}
+              </div>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
