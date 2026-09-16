@@ -60,13 +60,13 @@ function Donut({ counts }: { counts: Record<string, number> }) {
   const level3 = dominantLevel?.[1] || 0;
   return (
     <div
-      className="relative h-24 w-24 shrink-0 rounded-full"
+      className="relative h-30 w-30 shrink-0 rounded-full"
       style={{
         background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb",
       }}
     >
-      <div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center">
-        <span className="text-lg font-bold text-slate-700">
+      <div className="absolute inset-[21px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center">
+        <span className="text-xl font-bold text-slate-700">
           {total ? `${Math.round((level3 / total) * 100)}%` : "N/D"}
         </span>
         <span className="text-[8px] uppercase leading-tight text-slate-500">
@@ -77,12 +77,12 @@ function Donut({ counts }: { counts: Record<string, number> }) {
   );
   return (
     <div
-      className="relative h-24 w-24 shrink-0 rounded-full"
+      className="relative h-30 w-30 shrink-0 rounded-full"
       style={{
         background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb",
       }}
     >
-      <div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center">
+      <div className="absolute inset-[21px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center">
         <span className="text-lg font-bold text-slate-700">
           {total ? `${Math.round((level3 / total) * 100)}%` : "N/D"}
         </span>
@@ -255,7 +255,7 @@ export function CoberturaGeral() {
                                 }}
                               />
 
-                              <span className="font-medium text-gray-800">
+                              <span className="font-large text-gray-800">
                                 Nível {level}
                               </span>
                             </div>
@@ -344,7 +344,7 @@ export function CoberturaGeral() {
                 </div>
                 <div className="mt-4 flex items-center gap-4">
                   <Donut counts={counts} />
-                  <div className="space-y-1 text-[10px] text-gray-600">
+                  <div className="space-y-1 text-[13px] text-gray-600">
                     {["1", "2", "3", "4"].map((level) => (
                       <div key={level} className="flex items-center gap-2">
                         <span
