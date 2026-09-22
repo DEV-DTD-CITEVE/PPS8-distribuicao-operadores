@@ -1,11 +1,44 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
-import { Info } from "lucide-react";
+import { Info, Pencil, Save, X } from "lucide-react";
 
 type RecordApi = Record<string, any>;
 type Operation = { id: string; name: string; capable: number; levels: Record<string, number> };
-type Family = { id: string; name: string; operations: Operation[] };
+type Family = {
+  id: string;
+  name: string;
+  operations: Operation[];
+  levelCounts: Record<string, number>;
+  levelCountsPct: Record<string, number>;
+};
+
+const DEFAULT_COVERAGE_THRESHOLDS = [10, 25, 50];
+const DEFAULT_OLE_THRESHOLDS = [50, 70, 85];
+const DEFAULT_LEVEL_MATRIX: number[][] = [
+  [1, 1, 2, 2],
+  [1, 2, 2, 3],
+  [2, 2, 3, 4],
+  [2, 3, 4, 4],
+];
+
+
+const normalizeThresholds = (
+  value: unknown,
+  fallback: number[],
+): number[] => {
+  if (!Array.isArray(value) || value.length !== 3) {
+    return [...fallback];
+  }
+
+  const parsed = value.map(Number);
+
+  if (!parsed.every(Number.isFinite)) {
+    return [...fallback];
+  }
+
+  return parsed;
+};
 
 const array = (value: unknown): RecordApi[] =>
   Array.isArray(value) ? (value as RecordApi[]) : [];
@@ -46,48 +79,45 @@ const proficiencyLevelColors: Record<number, string> = {
 };
 
 
-function Donut({ counts }: { counts: Record<string, number> }) {
-  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+function Donut({ countsPct }: { countsPct: Record<string, number> }) {
   let offset = 0;
-  const parts = Object.entries(counts).map(([level, value]) => {
+
+  const parts = ["1", "2", "3", "4"].map((level) => {
+    const value = countsPct[level] ?? 0;
     const start = offset;
-    offset += total ? (value / total) * 100 : 0;
+    offset += value;
+
     return `${levelColors[level]} ${start}% ${offset}%`;
   });
-  const dominantLevel = Object.entries(counts).sort(
-    ([, countA], [, countB]) => countB - countA,
+
+  const dominantLevel = Object.entries(countsPct).sort(
+    ([, pctA], [, pctB]) => pctB - pctA,
   )[0];
-  const level3 = dominantLevel?.[1] || 0;
+
+  const dominantLevelKey = dominantLevel?.[0];
+  const dominantPct = dominantLevel?.[1] ?? 0;
+
+  const hasData = Object.values(countsPct).some((value) => value > 0);
+
+  const dominantColor =
+    dominantLevelKey && levelColors[dominantLevelKey]
+      ? levelColors[dominantLevelKey]
+      : "#64748b";
+
   return (
     <div
       className="relative h-30 w-30 shrink-0 rounded-full"
       style={{
-        background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb",
+        background: hasData ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb",
       }}
     >
       <div className="absolute inset-[21px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center">
-        <span className="text-xl font-bold text-slate-700">
-          {total ? `${Math.round((level3 / total) * 100)}%` : "N/D"}
+        <span className="text-xl font-bold" style={{ color: dominantColor }}>
+          {hasData ? `${dominantPct.toFixed(1)}%` : "N/D"}
         </span>
-        <span className="text-[8px] uppercase leading-tight text-slate-500">
-          nível {total ? dominantLevel?.[0] : "—"}
-        </span>
-      </div>
-    </div>
-  );
-  return (
-    <div
-      className="relative h-30 w-30 shrink-0 rounded-full"
-      style={{
-        background: total ? `conic-gradient(${parts.join(", ")})` : "#e5e7eb",
-      }}
-    >
-      <div className="absolute inset-[21px] flex flex-col items-center justify-center rounded-full bg-slate-100 text-center">
-        <span className="text-lg font-bold text-slate-700">
-          {total ? `${Math.round((level3 / total) * 100)}%` : "N/D"}
-        </span>
-        <span className="text-[8px] uppercase leading-tight text-slate-500">
-          nível 3
+
+        <span className="text-[10px] font-bold uppercase leading-tight text-gray-700">
+          nível {hasData ? dominantLevelKey : "—"}
         </span>
       </div>
     </div>
@@ -99,6 +129,55 @@ export function CoberturaGeral() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showLevelsInfo, setShowLevelsInfo] = useState(false);
+  const [coverageThresholds, setCoverageThresholds] = useState<number[]>(
+    DEFAULT_COVERAGE_THRESHOLDS,
+  );
+
+  const [oleThresholds, setOleThresholds] = useState<number[]>(
+    DEFAULT_OLE_THRESHOLDS,
+  );
+
+  const [draftCoverageThresholds, setDraftCoverageThresholds] = useState<
+    number[]
+  >(DEFAULT_COVERAGE_THRESHOLDS);
+
+  const [draftOleThresholds, setDraftOleThresholds] = useState<number[]>(
+    DEFAULT_OLE_THRESHOLDS,
+  );
+
+  const [editingThresholds, setEditingThresholds] = useState(false);
+
+  const [savingThresholds, setSavingThresholds] = useState(false);
+
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [levelMatrix, setLevelMatrix] =
+    useState<number[][]>(DEFAULT_LEVEL_MATRIX);
+
+  const [draftLevelMatrix, setDraftLevelMatrix] = useState<number[][]>(
+    DEFAULT_LEVEL_MATRIX.map((row) => [...row]),
+  );
+
+  const normalizeLevelMatrix = (
+    value: unknown,
+    fallback: number[][],
+  ): number[][] => {
+    if (!Array.isArray(value) || value.length !== 4) {
+      return fallback.map((row) => [...row]);
+    }
+
+    const parsed = value.map((row) =>
+      Array.isArray(row) ? row.map(Number) : [],
+    );
+
+    const valid =
+      parsed.every((row) => row.length === 4) &&
+      parsed
+        .flat()
+        .every((level) => Number.isInteger(level) && level >= 1 && level <= 4);
+
+    return valid ? parsed : fallback.map((row) => [...row]);
+  };
+
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -110,15 +189,65 @@ export function CoberturaGeral() {
           response.data && typeof response.data === "object"
             ? (response.data as RecordApi)
             : {};
+        const meta =
+          data.meta && typeof data.meta === "object"
+            ? (data.meta as RecordApi)
+            : {};
+
+        const loadedCoverageThresholds = normalizeThresholds(
+          meta.coverage_thresholds,
+          DEFAULT_COVERAGE_THRESHOLDS,
+        );
+
+        const loadedOleThresholds = normalizeThresholds(
+          meta.ole_thresholds,
+          DEFAULT_OLE_THRESHOLDS,
+        );
+
+        const loadedLevelMatrix = normalizeLevelMatrix(
+          meta.level_matrix,
+          DEFAULT_LEVEL_MATRIX,
+        );
+
+        if (active) {
+          setCoverageThresholds(loadedCoverageThresholds);
+          setDraftCoverageThresholds(loadedCoverageThresholds);
+
+          setOleThresholds(loadedOleThresholds);
+          setDraftOleThresholds(loadedOleThresholds);
+
+          setLevelMatrix(loadedLevelMatrix);
+          setDraftLevelMatrix(loadedLevelMatrix.map((row) => [...row]));
+        }
         const loaded = array(data.families).map((family) => ({
           id: text(family, ["family_id", "id", "code"]),
+
           name: text(family, ["family_name", "name", "label"]) || "Família",
+
+          levelCounts: Object.fromEntries(
+            Object.entries(
+              (family.family_level_counts ??
+                family.familyLevelCounts ??
+                {}) as RecordApi,
+            ).map(([level, count]) => [level, Number(count) || 0]),
+          ),
+          levelCountsPct: Object.fromEntries(
+            Object.entries(
+              (family.family_level_counts_pct ??
+                family.familyLevelCountsPct ??
+                {}) as RecordApi,
+            ).map(([level, pct]) => [level, Number(pct) || 0]),
+          ),
+
           operations: array(family.operations ?? family.operacoes).map(
             (item) => ({
               id: text(item, ["operation_id", "id", "code"]),
+
               name:
                 text(item, ["operation_name", "name", "label"]) || "Operação",
+
               capable: number(item, ["operators_capable", "capable_operators"]),
+
               levels: Object.fromEntries(
                 Object.entries(
                   (item.level_counts ?? item.levelCounts ?? {}) as RecordApi,
@@ -144,21 +273,26 @@ export function CoberturaGeral() {
     () =>
       families
         .map((family) => {
-          const counts = family.operations.reduce<Record<string, number>>(
-            (result, operation) => {
-              Object.entries(operation.levels).forEach(([level, count]) => {
-                result[level] = (result[level] || 0) + count;
-              });
-              return result;
-            },
-            { "1": 0, "2": 0, "3": 0, "4": 0 },
-          );
+          const counts: Record<string, number> = {
+            "1": family.levelCounts["1"] ?? 0,
+            "2": family.levelCounts["2"] ?? 0,
+            "3": family.levelCounts["3"] ?? 0,
+            "4": family.levelCounts["4"] ?? 0,
+          };
+
+          const countsPct: Record<string, number> = {
+            "1": family.levelCountsPct["1"] ?? 0,
+            "2": family.levelCountsPct["2"] ?? 0,
+            "3": family.levelCountsPct["3"] ?? 0,
+            "4": family.levelCountsPct["4"] ?? 0,
+          };
           const covered = family.operations.filter(
             (operation) => operation.capable > 0,
           ).length;
           return {
             family,
             counts,
+            countsPct,
             covered,
             fragile: [...family.operations]
               .sort((a, b) => a.capable - b.capable)
@@ -176,6 +310,187 @@ export function CoberturaGeral() {
         ),
     [families],
   );
+
+  const handleGuardarThresholds = async () => {
+    const next = draftOleThresholds.map(Number);
+    const nextCoverage = draftCoverageThresholds.map(Number);
+
+    const nextOle = draftOleThresholds.map(Number);
+
+    if (nextCoverage.length !== 3 || !nextCoverage.every(Number.isFinite)) {
+      setSettingsError("Os limites da cobertura têm de ser valores numéricos.");
+      return;
+    }
+
+    if (nextOle.length !== 3 || !nextOle.every(Number.isFinite)) {
+      setSettingsError("Os limites OLE têm de ser valores numéricos.");
+      return;
+    }
+
+    const [coverageFirst, coverageSecond, coverageThird] = nextCoverage;
+
+    if (
+      coverageFirst < 0 ||
+      coverageThird > 100 ||
+      !(coverageFirst < coverageSecond && coverageSecond < coverageThird)
+    ) {
+      setSettingsError(
+        "Os limites da cobertura devem estar entre 0 e 100 e em ordem crescente.",
+      );
+      return;
+    }
+
+    const [oleFirst, oleSecond, oleThird] = nextOle;
+
+    if (
+      oleFirst < 0 ||
+      oleThird > 100 ||
+      !(oleFirst < oleSecond && oleSecond < oleThird)
+    ) {
+      setSettingsError(
+        "Os limites OLE devem estar entre 0 e 100 e em ordem crescente.",
+      );
+      return;
+    }
+
+    if (next.length !== 3 || !next.every(Number.isFinite)) {
+      setSettingsError("Os limites OLE têm de ser valores numéricos.");
+      return;
+    }
+
+    const [first, second, third] = next;
+
+    if (first < 0 || third > 100 || !(first < second && second < third)) {
+      setSettingsError(
+        "Os limites OLE devem estar entre 0 e 100 e em ordem crescente.",
+      );
+      return;
+    }
+
+    setSavingThresholds(true);
+    setSettingsError(null);
+
+    try {
+      await axios.put(`${API_BASE_URL}/polyvalence/settings`, {
+        coverage_thresholds: nextCoverage,
+        ole_thresholds: nextOle,
+        level_matrix: draftLevelMatrix,
+      });
+
+      setCoverageThresholds(nextCoverage);
+      setDraftCoverageThresholds(nextCoverage);
+
+      setOleThresholds(nextOle);
+      setDraftOleThresholds(nextOle);
+
+      setLevelMatrix(draftLevelMatrix.map((row) => [...row]));
+
+      setEditingThresholds(false);
+
+      // Atualizar os dados porque a alteração dos thresholds
+      // pode alterar a classificação dos níveis.
+      const response = await axios.get(
+        `${API_BASE_URL}/polyvalence/coverage-overview`,
+      );
+
+      const data =
+        response.data && typeof response.data === "object"
+          ? (response.data as RecordApi)
+          : {};
+
+      const loaded = array(data.families).map((family) => ({
+        id: text(family, ["family_id", "id", "code"]),
+
+        name: text(family, ["family_name", "name", "label"]) || "Família",
+
+        levelCounts: Object.fromEntries(
+          Object.entries(
+            (family.family_level_counts ??
+              family.familyLevelCounts ??
+              {}) as RecordApi,
+          ).map(([level, count]) => [level, Number(count) || 0]),
+        ),
+
+        levelCountsPct: Object.fromEntries(
+          Object.entries(
+            (family.family_level_counts_pct ??
+              family.familyLevelCountsPct ??
+              {}) as RecordApi,
+          ).map(([level, pct]) => [level, Number(pct) || 0]),
+        ),
+
+        operations: array(family.operations ?? family.operacoes).map(
+          (item) => ({
+            id: text(item, ["operation_id", "id", "code"]),
+
+            name: text(item, ["operation_name", "name", "label"]) || "Operação",
+
+            capable: number(item, ["operators_capable", "capable_operators"]),
+
+            levels: Object.fromEntries(
+              Object.entries(
+                (item.level_counts ?? item.levelCounts ?? {}) as RecordApi,
+              ).map(([level, count]) => [level, Number(count) || 0]),
+            ),
+          }),
+        ),
+      }));
+
+      setFamilies(loaded);
+
+      const meta =
+        data.meta && typeof data.meta === "object"
+          ? (data.meta as RecordApi)
+          : {};
+
+      const refreshedCoverage = normalizeThresholds(
+        meta.coverage_thresholds,
+        coverageThresholds,
+      );
+
+      const refreshedOle = normalizeThresholds(meta.ole_thresholds, next);
+
+      const refreshedLevelMatrix = normalizeLevelMatrix(
+        meta.level_matrix,
+        draftLevelMatrix,
+      );
+
+      setCoverageThresholds(refreshedCoverage);
+      setOleThresholds(refreshedOle);
+      setDraftOleThresholds(refreshedOle);
+      setLevelMatrix(refreshedLevelMatrix);
+      setDraftLevelMatrix(refreshedLevelMatrix.map((row) => [...row]));
+    } catch (error) {
+      console.error("Erro ao guardar thresholds de polivalência:", error);
+
+      setSettingsError("Não foi possível guardar os parâmetros.");
+    } finally {
+      setSavingThresholds(false);
+    }
+  };
+
+  const activeOleThresholds = editingThresholds
+    ? draftOleThresholds
+    : oleThresholds;
+
+  const [oleThreshold1, oleThreshold2, oleThreshold3] = activeOleThresholds;
+
+  const activeCoverageThresholds = editingThresholds
+    ? draftCoverageThresholds
+    : coverageThresholds;
+
+  const [coverageThreshold1, coverageThreshold2, coverageThreshold3] =
+    activeCoverageThresholds;
+
+  const coverageLabels = [
+    `< ${coverageThreshold1}% da gama`,
+    `${coverageThreshold1}–${coverageThreshold2}% da gama`,
+    `${coverageThreshold2}–${coverageThreshold3}% da gama`,
+    `≥ ${coverageThreshold3}% da gama`,
+  ];
+
+  const activeLevelMatrix = editingThresholds ? draftLevelMatrix : levelMatrix;
+
   return (
     <div className="rounded-sm border border-gray-200 bg-white shadow-sm">
       <div className="relative flex items-start justify-between border-b border-gray-200 p-5">
@@ -199,11 +514,149 @@ export function CoberturaGeral() {
             <Info className="h-4 w-4" />
           </button>
           {showLevelsInfo && (
-            <div className="absolute right-0 top-9 z-30 w-[680px] max-w-[calc(100vw-2rem)] rounded-sm border border-gray-200 bg-white p-4 text-xs shadow-xl">
+            <div className="absolute right-0 top-9 z-30 w-[700px] max-w-[calc(100vw-2rem)] rounded-sm border border-gray-200 bg-white p-4 text-xs shadow-xl">
               {" "}
-              <div className="mb-5 text-base font-bold text-gray-900">
-                Matriz Polivalência × OEE
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <div className="text-base font-bold text-gray-900">
+                  Matriz Polivalência × OEE
+                </div>
+
+                {!editingThresholds ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftCoverageThresholds([...coverageThresholds]);
+
+                      setDraftOleThresholds([...oleThresholds]);
+
+                      setDraftLevelMatrix(levelMatrix.map((row) => [...row]));
+
+                      setSettingsError(null);
+                      setEditingThresholds(true);
+                    }}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-gray-300 bg-white px-2.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Editar
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftCoverageThresholds([...coverageThresholds]);
+
+                        setDraftOleThresholds([...oleThresholds]);
+
+                        setDraftLevelMatrix(levelMatrix.map((row) => [...row]));
+
+                        setSettingsError(null);
+                        setEditingThresholds(false);
+                      }}
+                      disabled={savingThresholds}
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-gray-300 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
+                    >
+                      <X className="h-3 w-3" />
+                      Cancelar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleGuardarThresholds()}
+                      disabled={savingThresholds}
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm bg-blue-500 px-2.5 text-[11px] font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+                    >
+                      <Save className="h-3 w-3" />
+                      {savingThresholds ? "A guardar..." : "Guardar"}
+                    </button>
+                  </div>
+                )}
               </div>
+              {editingThresholds && (
+                <div className="mb-4 rounded-sm border border-blue-100 bg-blue-50/50 p-3">
+                  <div className="mb-3">
+                    <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      Limites da cobertura da gama
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {draftCoverageThresholds.map((value, index) => (
+                        <label
+                          key={index}
+                          className="flex items-center gap-1.5 text-xs text-gray-600"
+                        >
+                          Limite {index + 1}
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={value}
+                              onChange={(event) => {
+                                const next = [...draftCoverageThresholds];
+
+                                next[index] = Number(event.target.value);
+
+                                setDraftCoverageThresholds(next);
+                              }}
+                              className="h-7 w-16 rounded-sm border border-gray-300 bg-white px-2 pr-5 text-right text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
+                            />
+
+                            <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
+                              %
+                            </span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-blue-100 pt-3">
+                    <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      Limites Avg OLE
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {draftOleThresholds.map((value, index) => (
+                        <label
+                          key={index}
+                          className="flex items-center gap-1.5 text-xs text-gray-600"
+                        >
+                          Limite {index + 1}
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={value}
+                              onChange={(event) => {
+                                const next = [...draftOleThresholds];
+
+                                next[index] = Number(event.target.value);
+
+                                setDraftOleThresholds(next);
+                              }}
+                              className="h-7 w-16 rounded-sm border border-gray-300 bg-white px-2 pr-5 text-right text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
+                            />
+
+                            <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
+                              %
+                            </span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {settingsError && (
+                    <div className="mt-3 text-[11px] text-red-600">
+                      {settingsError}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-xs">
                   <thead>
@@ -214,51 +667,91 @@ export function CoberturaGeral() {
                       </th>
 
                       <th className="min-w-[120px] px-2 pb-3 text-left font-semibold text-gray-800">
-                        Avg OLE &lt; 50%
+                        Avg OLE &lt; {oleThreshold1}%
                       </th>
 
                       <th className="min-w-[120px] px-2 pb-3 text-left font-semibold text-gray-800">
-                        Avg OLE 50–70%
+                        Avg OLE {oleThreshold1}–{oleThreshold2}%
                       </th>
 
                       <th className="min-w-[120px] px-2 pb-3 text-left font-semibold text-gray-800">
-                        Avg OLE 70–85%
+                        Avg OLE {oleThreshold2}–{oleThreshold3}%
                       </th>
 
                       <th className="min-w-[120px] px-2 pb-3 text-left font-semibold text-gray-800">
-                        Avg OLE ≥ 85%
+                        Avg OLE ≥ {oleThreshold3}%
                       </th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {proficiencyMatrix.map((row) => (
+                    {activeLevelMatrix.map((rowLevels, rowIndex) => (
                       <tr
-                        key={row.coverage}
+                        key={coverageLabels[rowIndex]}
                         className="border-b border-gray-100"
                       >
                         <td className="px-2 py-3 font-semibold text-gray-800">
-                          {row.coverage}
+                          {coverageLabels[rowIndex]}
                         </td>
 
-                        {row.levels.map((level, index) => (
+                        {rowLevels.map((level, columnIndex) => (
                           <td
-                            key={`${row.coverage}-${index}`}
+                            key={`${rowIndex}-${columnIndex}`}
                             className="px-2 py-3"
                           >
-                            <div className="flex items-center gap-2 whitespace-nowrap">
-                              <span
-                                className="h-4 w-4 shrink-0 rounded-full"
-                                style={{
-                                  backgroundColor:
-                                    proficiencyLevelColors[level],
-                                }}
-                              />
+                            {editingThresholds ? (
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="h-4 w-4 shrink-0 rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      proficiencyLevelColors[level],
+                                  }}
+                                />
 
-                              <span className="font-large text-gray-800">
-                                Nível {level}
-                              </span>
-                            </div>
+                                <select
+                                  value={level}
+                                  onChange={(event) => {
+                                    const nextLevel = Number(
+                                      event.target.value,
+                                    );
+
+                                    setDraftLevelMatrix((current) =>
+                                      current.map((matrixRow, rIndex) =>
+                                        rIndex === rowIndex
+                                          ? matrixRow.map(
+                                              (currentLevel, cIndex) =>
+                                                cIndex === columnIndex
+                                                  ? nextLevel
+                                                  : currentLevel,
+                                            )
+                                          : [...matrixRow],
+                                      ),
+                                    );
+                                  }}
+                                  className="h-7 rounded-sm border border-gray-300 bg-white px-2 text-xs font-medium text-gray-800 outline-none focus:border-blue-400"
+                                >
+                                  <option value={1}>Nível 1</option>
+                                  <option value={2}>Nível 2</option>
+                                  <option value={3}>Nível 3</option>
+                                  <option value={4}>Nível 4</option>
+                                </select>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 whitespace-nowrap">
+                                <span
+                                  className="h-4 w-4 shrink-0 rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      proficiencyLevelColors[level],
+                                  }}
+                                />
+
+                                <span className="text-gray-800">
+                                  Nível {level}
+                                </span>
+                              </div>
+                            )}
                           </td>
                         ))}
                       </tr>
@@ -311,7 +804,7 @@ export function CoberturaGeral() {
       ) : (
         <>
           <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
-            {cards.map(({ family, counts, covered, fragile }) => (
+            {cards.map(({ family, counts, countsPct, covered, fragile }) => (
               <div
                 key={family.id}
                 className="rounded-sm border border-gray-200 bg-gray-50/60 p-4"
@@ -343,17 +836,31 @@ export function CoberturaGeral() {
                   </div>
                 </div>
                 <div className="mt-4 flex items-center gap-4">
-                  <Donut counts={counts} />
+                  <Donut countsPct={countsPct} />
+
                   <div className="space-y-1 text-[13px] text-gray-600">
                     {["1", "2", "3", "4"].map((level) => (
                       <div key={level} className="flex items-center gap-2">
                         <span
                           className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: levelColors[level] }}
+                          style={{
+                            backgroundColor: levelColors[level],
+                          }}
                         />
-                        Nível {level}
+
+                        <span>Nível {level}</span>
+
                         <strong className="ml-auto pl-3 text-gray-800">
                           {counts[level]}
+                        </strong>
+
+                        <strong
+                          className="w-12 text-right"
+                          style={{
+                            color: levelColors[level],
+                          }}
+                        >
+                          {countsPct[level].toFixed(1)}%
                         </strong>
                       </div>
                     ))}
@@ -385,22 +892,6 @@ export function CoberturaGeral() {
                   )}
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-gray-200 px-5 py-4 text-[10px] text-gray-600">
-            {[
-              "1 — não sabe fazer (0–30%)",
-              "2 — elementar (30–50%)",
-              "3 — independente (50–80%)",
-              "4 — experiente (80–100%)",
-            ].map((label, index) => (
-              <span key={label} className="flex items-center gap-2">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: levelColors[String(index + 1)] }}
-                />
-                {label}
-              </span>
             ))}
           </div>
         </>
