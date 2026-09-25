@@ -325,6 +325,33 @@ export function CoberturaGeral() {
     [families],
   );
 
+  const sanitizePercentageInput = (
+  input: HTMLInputElement,
+): number => {
+  let raw = input.value;
+
+  // Remove zeros à esquerda:
+  // 050 -> 50
+  // 025 -> 25
+  // 001 -> 1
+  raw = raw.replace(/^0+(?=\d)/, "");
+
+  let value = Number(raw);
+
+  if (!Number.isFinite(value)) {
+    value = 0;
+  }
+
+  // Só inteiros entre 0 e 100
+  value = Math.trunc(value);
+  value = Math.min(100, Math.max(0, value));
+
+  // Força também visualmente o valor corrigido no input
+  input.value = String(value);
+
+  return value;
+};
+
   const handleGuardarThresholds = async () => {
     const next = draftOleThresholds.map(Number);
     const nextCoverage = draftCoverageThresholds.map(Number);
@@ -607,16 +634,25 @@ export function CoberturaGeral() {
                               max={100}
                               step={1}
                               value={value}
+                              onKeyDown={(event) => {
+                                if (
+                                  ["e", "E", "+", "-", ".", ","].includes(
+                                    event.key,
+                                  )
+                                ) {
+                                  event.preventDefault();
+                                }
+                              }}
                               onChange={(event) => {
                                 const next = [...draftCoverageThresholds];
 
-                                next[index] = normalizePercentageInput(
-                                  event.target.value,
+                                next[index] = sanitizePercentageInput(
+                                  event.currentTarget,
                                 );
 
                                 setDraftCoverageThresholds(next);
                               }}
-                              className="h-7 w-20 rounded-sm border border-gray-300 bg-white pl-5 pr-5 text-center text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
+                              className="h-7 w-20 rounded-sm border border-gray-300 bg-white pl-3 pr-8 text-left text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
                             />
 
                             <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
@@ -647,16 +683,25 @@ export function CoberturaGeral() {
                               max={100}
                               step={1}
                               value={value}
+                              onKeyDown={(event) => {
+                                if (
+                                  ["e", "E", "+", "-", ".", ","].includes(
+                                    event.key,
+                                  )
+                                ) {
+                                  event.preventDefault();
+                                }
+                              }}
                               onChange={(event) => {
                                 const next = [...draftOleThresholds];
 
-                                next[index] = normalizePercentageInput(
-                                  event.target.value,
+                                next[index] = sanitizePercentageInput(
+                                  event.currentTarget,
                                 );
 
                                 setDraftOleThresholds(next);
                               }}
-                              className="h-7 w-20 rounded-sm border border-gray-300 bg-white pl-5 pr-5 text-center text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
+                              className="h-7 w-20 rounded-sm border border-gray-300 bg-white pl-3 pr-8 text-left text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
                             />
 
                             <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
