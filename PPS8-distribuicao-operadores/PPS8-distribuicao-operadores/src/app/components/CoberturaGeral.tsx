@@ -22,6 +22,20 @@ const DEFAULT_LEVEL_MATRIX: number[][] = [
   [2, 3, 4, 4],
 ];
 
+const normalizePercentageInput = (rawValue: string): number => {
+  // Aceitar apenas algarismos
+  const digitsOnly = rawValue.replace(/\D/g, "");
+
+  if (!digitsOnly) return 0;
+
+  // Number() elimina zeros à esquerda:
+  // "023" -> 23
+  const value = Number(digitsOnly);
+
+  // Nunca permitir menos de 0 nem mais de 100
+  return Math.min(100, Math.max(0, value));
+};
+
 
 const normalizeThresholds = (
   value: unknown,
@@ -596,11 +610,13 @@ export function CoberturaGeral() {
                               onChange={(event) => {
                                 const next = [...draftCoverageThresholds];
 
-                                next[index] = Number(event.target.value);
+                                next[index] = normalizePercentageInput(
+                                  event.target.value,
+                                );
 
                                 setDraftCoverageThresholds(next);
                               }}
-                              className="h-7 w-16 rounded-sm border border-gray-300 bg-white px-2 pr-5 text-right text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
+                              className="h-7 w-20 rounded-sm border border-gray-300 bg-white pl-5 pr-5 text-center text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
                             />
 
                             <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
@@ -634,11 +650,13 @@ export function CoberturaGeral() {
                               onChange={(event) => {
                                 const next = [...draftOleThresholds];
 
-                                next[index] = Number(event.target.value);
+                                next[index] = normalizePercentageInput(
+                                  event.target.value,
+                                );
 
                                 setDraftOleThresholds(next);
                               }}
-                              className="h-7 w-16 rounded-sm border border-gray-300 bg-white px-2 pr-5 text-right text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
+                              className="h-7 w-20 rounded-sm border border-gray-300 bg-white pl-5 pr-5 text-center text-xs font-semibold text-gray-800 outline-none focus:border-blue-400"
                             />
 
                             <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">
