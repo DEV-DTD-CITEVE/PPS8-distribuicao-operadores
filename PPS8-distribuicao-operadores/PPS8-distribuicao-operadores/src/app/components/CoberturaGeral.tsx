@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
 import { Info, Pencil, Save, X } from "lucide-react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 type RecordApi = Record<string, any>;
 type Operation = { id: string; name: string; capable: number; levels: Record<string, number> };
@@ -549,13 +550,20 @@ export function CoberturaGeral() {
             type="button"
             title="O que significam os níveis?"
             aria-label="Informação sobre níveis de proficiência"
-            onClick={() => setShowLevelsInfo((current) => !current)}
+            onClick={() => setShowLevelsInfo(true)}
             className="rounded-full border border-gray-300 p-1.5 text-gray-500 transition-colors hover:border-gray-500 hover:bg-gray-50 hover:text-gray-800"
           >
             <Info className="h-4 w-4" />
           </button>
-          {showLevelsInfo && (
-            <div className="absolute right-0 top-9 z-30 w-[700px] max-w-[calc(100vw-2rem)] rounded-sm border border-gray-200 bg-white p-4 text-xs shadow-xl">
+
+          <DialogPrimitive.Root open={showLevelsInfo} onOpenChange={setShowLevelsInfo}>
+            <DialogPrimitive.Portal>
+              <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/30" onClick={() => setShowLevelsInfo(false)} />
+              <DialogPrimitive.Content
+                aria-describedby={undefined}
+                className="fixed left-1/2 top-1/2 z-50 w-[min(720px,calc(100vw-2rem))] max-h-[85vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-sm border border-gray-200 bg-white p-4 text-xs shadow-xl focus:outline-none"
+              >
+                <DialogPrimitive.Title className="sr-only">Configuração dos níveis de proficiência</DialogPrimitive.Title>
               {" "}
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div className="text-base font-bold text-gray-900">
@@ -851,8 +859,9 @@ export function CoberturaGeral() {
                   </li>
                 </ul>
               </div>
-            </div>
-          )}
+              </DialogPrimitive.Content>
+            </DialogPrimitive.Portal>
+          </DialogPrimitive.Root>
         </div>
       </div>
       {error && (

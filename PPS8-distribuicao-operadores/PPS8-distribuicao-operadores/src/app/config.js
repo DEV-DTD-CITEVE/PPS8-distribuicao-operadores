@@ -1,6 +1,8 @@
-const DEFAULT_LOCAL_API_BASE_URL = "http://dev.citeve.pt:7860/api";
+const DEFAULT_LOCAL_API_BASE_URL = "http://localhost:7860/api";
 const DEFAULT_DEV_CITEVE_API_BASE_URL = "http://dev.citeve.pt/texpact-wp2-pps8-balancer-api/api";
 const DEFAULT_DEV_CITEVE_ML_SUGGEST_API_BASE_URL = "http://dev.citeve.pt/texpact-wp2-pps8-ml-suggest-api/api";
+const DEFAULT_SRV_API_BASE_URL = "http://192.168.105.83:7860/api";
+const DEFAULT_SRV_PUBLIC_API_BASE_URL = "http://194.65.119.155:7860/api";
 const ENV_API_BASE_URL = import.meta?.env?.VITE_API_BASE_URL;
 const ENV_ML_SUGGEST_API_BASE_URL = import.meta?.env?.VITE_ML_SUGGEST_API_BASE_URL;
 
@@ -26,9 +28,11 @@ const getApiBaseUrl = () => {
     return normalizeBaseUrl(DEFAULT_LOCAL_API_BASE_URL);
   }
   if (hostname === "192.168.54.202") {
-    return normalizeBaseUrl(DEFAULT_DEV_CITEVE_API_BASE_URL);
+    return normalizeBaseUrl(DEFAULT_SRV_API_BASE_URL);
   } else if (hostname === "192.168.105.83") {
-    return normalizeBaseUrl(DEFAULT_DEV_CITEVE_API_BASE_URL);
+    return normalizeBaseUrl(DEFAULT_SRV_API_BASE_URL);
+  } else if (hostname === "194.65.119.155") {
+    return normalizeBaseUrl(DEFAULT_SRV_PUBLIC_API_BASE_URL);
   } else {
     return normalizeBaseUrl(DEFAULT_DEV_CITEVE_API_BASE_URL);
   }
