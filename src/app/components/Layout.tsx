@@ -2,10 +2,11 @@
 import {
   Calculator, Settings, FileText, BarChart3,
   FilePlus, FolderOpen, CheckCircle2, AlertCircle,
-  Link2, Link2Off, Loader2, HardDrive, X,
+  Link2, Link2Off, Loader2, HardDrive, X, LogOut,
 } from "lucide-react";
 import { useState } from "react";
 import { useStorage, EstadoConexao } from "../contexts/StorageContext";
+import { clearStoredPin } from "../utils/apiAuth";
 import Footer from "./Footer";
 
 const navItems = [
@@ -230,6 +231,18 @@ export default function Layout() {
                   Reconectar
                 </button>
               ) : null}
+
+              {/* Logout do PIN de acesso */}
+              <button
+                onClick={() => {
+                  clearStoredPin();
+                  window.location.reload();
+                }}
+                title="Terminar sessão (PIN de acesso)"
+                className="p-1.5 rounded-sm text-gray-600 hover:text-gray-400 hover:bg-[#3d3d3d]/50 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>
