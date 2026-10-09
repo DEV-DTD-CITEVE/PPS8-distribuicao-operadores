@@ -5,6 +5,8 @@ services:
       context: .
     image: pps8-operators-webapp:latest
     restart: always
+    ports:
+      - "8100:3000"
     networks:
       - common_network
 
